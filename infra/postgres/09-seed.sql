@@ -9,8 +9,7 @@ INSERT INTO roles (name, description) VALUES
 INSERT INTO permissions (code, description) VALUES
   ('problem:manage', '建立、編輯、刪除題目與測資'),
   ('exam:manage',    '建立面試者帳號、派題、查看所有面試者結果'),
-  ('exam:take',      '參加考試、提交程式碼、查看自己的結果'),
-  ('user:manage',    '管理平台使用者帳號');
+  ('exam:take',      '參加考試、提交程式碼、查看自己的結果');
 
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p
