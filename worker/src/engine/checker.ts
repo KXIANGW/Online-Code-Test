@@ -1,0 +1,1 @@
+// 比對 stdout 與 expectedOutput (處理空格、換行)
