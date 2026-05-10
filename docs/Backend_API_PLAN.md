@@ -1,18 +1,18 @@
-# Backend API 現況與後續計畫 — IAM / Problem / Exam / Language 模組
+# Backend API 現況與後續計畫 — IAM / Problem / Exam / Language / Submission 模組
 
 ## Context
 
-目前專案已完成 PostgreSQL schema/seed/scenario data 與 Backend API M1，包括 JWT auth、IAM、Problem、Exam、Language、RBAC 與 71 筆 integration tests；前端仍維持健康狀態頁，Submission/Judge Worker 尚未實作，本機測試需先啟動 PostgreSQL 才能完整執行。
+目前專案已完成 PostgreSQL schema/seed/scenario data 與 Backend API M1，包括 JWT auth、IAM、Problem、Exam、Language、Submission mock judge、RBAC 與 76 筆 integration tests；前端仍維持健康狀態頁，正式 Judge Worker / sandbox judging 尚未實作，本機測試需先啟動 PostgreSQL 才能完整執行。
 
 Database schema 已完整建置（見 `infra/postgres/` 下的 00-10 SQL 腳本，以及對應的 Drizzle ORM schema `backend/src/db/schema.ts`）。Backend 已由原本的 health/ping skeleton 擴充為可運作的 Fastify API，並以 Routes（HTTP 薄層）+ Services（業務邏輯、RBAC）分層實作。
 
 **目前狀態：**
 - 已實作 `/api/health`、`/api/ping`、`/api/auth`、`/api/users`、`/api/problems`、`/api/exam-sessions`、`/api/languages`
+- Submission API 已實作 mock judge 版；正式 Judge Worker、沙箱執行與真實評測留待下一階段處理
 - Auth 使用 `@fastify/jwt`，token payload 含 `sub`、`isSuperuser`、`permissions`
 - IAM / Problem / Exam / Language routes 已接上 service 層與 Drizzle DB access
 - RBAC 以 superuser short-circuit → permission check → ownership check 為主
 - Integration tests 使用 Vitest + Fastify `app.inject()`，對接真實 PostgreSQL DB
-- Submission API、Judge Worker、實際程式碼評測流程仍留待下一階段
 
 ---
 
@@ -30,7 +30,9 @@ Database schema 已完整建置（見 `infra/postgres/` 下的 00-10 SQL 腳本�
 | `backend/src/db/schema.ts` | Drizzle ORM schema，對齊 `infra/postgres/` SQL |
 | `infra/postgres/09-seed.sql` | roles、permissions、language_defaults |
 | `infra/postgres/10-scenarios.sql` | 9 位使用者、8 題、6 場考試與 submission 情境 |
-| `backend/src/__tests__/*.test.ts` | 71 筆 integration tests |
+| `backend/src/routes/submissions.ts` | Submission / result HTTP endpoints |
+| `backend/src/services/submission.service.ts` | Submission 建立、查詢、mock judge、結果彙總 |
+| `backend/src/__tests__/*.test.ts` | 76 筆 integration tests |
 
 ---
 
@@ -48,6 +50,7 @@ backend/src/
 │   ├── users.ts
 │   ├── problems.ts
 │   ├── exams.ts
+│   ├── submissions.ts
 │   ├── languages.ts
 │   ├── health.ts
 │   └── ping.ts
@@ -56,6 +59,7 @@ backend/src/
 │   ├── user.service.ts
 │   ├── problem.service.ts
 │   ├── exam.service.ts
+│   ├── submission.service.ts
 │   └── language.service.ts
 └── __tests__/
     ├── helpers/
@@ -64,7 +68,8 @@ backend/src/
     ├── auth.test.ts
     ├── users.test.ts
     ├── problems.test.ts
-    └── exams.test.ts
+    ├── exams.test.ts
+    └── submissions.test.ts
 ```
 
 ---
@@ -106,6 +111,15 @@ backend/src/
 | POST | `/api/exam-sessions/:id/start` | `exam:take`（本人）| 面試者開始考試，寫入 `actual_start_at`、`expires_at` |
 | POST | `/api/exam-sessions/:id/cancel` | `exam:manage` | 面試主管取消 |
 | GET | `/api/exam-sessions/:id/problems` | ownership check | 本場派題清單，包含題目基本資料與 `languageLimits` |
+
+### Submission / Result
+
+| Method | Path | 權限 | 說明 |
+|--------|------|------|------|
+| POST | `/api/exam-sessions/:sessionId/submissions` | `exam:take`（本人）| 建立 submission，寫入 `pending`，回 202 |
+| GET | `/api/exam-sessions/:sessionId/submissions` | ownership check | 查本場 submission history；不回傳 `sourceCode` |
+| GET | `/api/exam-sessions/:sessionId/submissions/:submissionId` | ownership check | 查單筆 submission detail，包含 `sourceCode` 與 testcase results |
+| GET | `/api/exam-sessions/:sessionId/result` | ownership check | 查 session result summary、每題最新狀態與分數 |
 
 ### Language
 
@@ -149,11 +163,20 @@ backend/src/
 - candidate 可將 `not_started` session start 成 `in_progress`；重複 start 回 409。
 - interviewer 可取消 exam session。
 
+### Submission / Mock Judge
+
+- candidate 只能對自己的 `in_progress` session submit；未開始、已取消、已提交或已過期 session 會回 409。
+- 建立 submission 時會驗證 `examSessionProblemId` 屬於該 session，且 `language` 必須是 enabled language。
+- Submission history / result 依 ownership 限制：superuser 可看全部；interviewer 只能看自己建立的 session；candidate 只能看自己的 session；problem_setter 不可查。
+- 目前 mock judge 是 lazy progression：讀取 submission list/detail/result 時會推進同場 `pending → judging → done`。
+- 同一題的第 1 / 2 / 3 次提交 mock verdict 依序為 `WA → TLE → AC`；完成評測時會寫入 per-testcase results、更新 `exam_session_problems.final_submission_id` / `score` 與 `exam_sessions.total_score`。
+- Hidden testcase 的 `actualOutput` 不會出現在 API response；submission list/result summary 也不回傳 `sourceCode`，只有 detail endpoint 會回傳原始碼。
+
 ---
 
 ## 測試覆蓋現況
 
-目前共有 4 個 test files、71 筆 integration tests。這些測試不是只驗證「happy path」，而是刻意依角色覆蓋 RBAC、ownership、資料隔離、錯誤狀態與關鍵業務規則。
+目前共有 5 個 test files、76 筆 integration tests。這些測試不是只驗證「happy path」，而是刻意依角色覆蓋 RBAC、ownership、資料隔離、錯誤狀態與關鍵業務規則。
 
 | Test file | 測試數 | 覆蓋重點 |
 |-----------|--------|----------|
@@ -161,6 +184,7 @@ backend/src/
 | `users.test.ts` | 20 | superuser / interviewer / candidate 的 IAM 權限與軟刪除 |
 | `problems.test.ts` | 25 | 題目 CRUD、測資 CRUD、hidden testcase sanitization、Language API、languageLimits |
 | `exams.test.ts` | 20 | 手動/隨機派題、歷史題目排除、session visibility、start/cancel、session problems |
+| `submissions.test.ts` | 5 | mock judge 狀態推進、submission history/result、source code visibility、RBAC/ownership、session 狀態 guard |
 
 ### 通用測試
 
@@ -263,6 +287,11 @@ Candidate 具備 `exam:take`，測試重點是「只能參加自己的考試」�
 | Exam | 嘗試取消考試回 403 |
 | Exam | 可查詢自己 session 的題目列表 |
 | Exam | 查詢其他 candidate session 的題目列表回 403 |
+| Submission | 可在自己的 `in_progress` session 建立 submission，初始狀態為 `pending` |
+| Submission | 多次讀取 detail / history / result 可觀察 mock judge 推進 `pending → judging → done` |
+| Submission | 同一題前三次提交 verdict 依序為 `WA`、`TLE`、`AC`，第三次取得滿分 |
+| Submission | 可查自己的 submission detail 與 testcase results，但 hidden testcase 不揭露 `actualOutput` |
+| Submission | 查詢其他 candidate 的 result / history 回 403 |
 
 ### 關鍵業務規則覆蓋
 
@@ -276,6 +305,11 @@ Candidate 具備 `exam:take`，測試重點是「只能參加自己的考試」�
 | Random assignment | 隨機派題排除 candidate 歷史題目，也處理題庫不足 |
 | Exam state transition | `not_started` → `in_progress`，重複 start 回 409 |
 | Language limits | 建題、查詢、覆寫、清空 languageLimits |
+| Submission state transition | mock judge lazy 推進 `pending → judging → done` |
+| Submission scoring | 最新提交寫入 `final_submission_id`，AC 給該題滿分，並更新 session `total_score` |
+| Source code visibility | history / result 不回傳 `sourceCode`；detail 可供 candidate 本人與建立該 session 的 interviewer 查看 |
+| Hidden testcase result safety | hidden testcase 不回傳 `actualOutput` |
+| Submission guards | 未開始、取消、已提交、過期 session 皆不可提交；過期 session 會 lazy 標記為 `expired` |
 
 測試會連到真實 PostgreSQL，並在每個 case 前 truncate 測試資料後重新 seed helper data。若本機 PostgreSQL 未啟動，`npm test` 會在連線 `127.0.0.1:5432` / `::1:5432` 時失敗。
 
@@ -283,8 +317,7 @@ Candidate 具備 `exam:take`，測試重點是「只能參加自己的考試」�
 
 ## 剩餘工作
 
-- 實作 Submission API：建立 submission、查詢 submission 狀態、查詢 candidate 自己的提交歷史。
-- 實作 Judge Worker：取出待評測 submission、套用 language default / problem language override、執行沙箱、寫回 verdict 與 per-testcase results。
+- 實作正式 Judge Worker / sandbox judging：取出待評測 submission、套用 language default / problem language override、執行沙箱、寫回 verdict 與 per-testcase results。
 - 補上考試送出與逾時處理：`in_progress` → `submitted`，以及 cron/lazy update 策略。
 - 補齊前端：登入、面試主管管理、出題、考試作答、結果頁。
 - 規劃正式 migration 流程：目前已有 init SQL 與 Drizzle schema，後續需要版本化 migration 策略。
@@ -307,7 +340,7 @@ Candidate 具備 `exam:take`，測試重點是「只能參加自己的考試」�
    cd backend
    npm test
    ```
-   預期為 4 個 test files、71 tests passed。若 PostgreSQL 未啟動，會出現 `ECONNREFUSED 127.0.0.1:5432` 或 `ECONNREFUSED ::1:5432`。
+   預期為 5 個 test files、76 tests passed。若 PostgreSQL 未啟動，會出現 `ECONNREFUSED 127.0.0.1:5432` 或 `ECONNREFUSED ::1:5432`。
 4. 啟動服務後可用 seed 帳號登入：
    ```bash
    curl -X POST http://localhost:3000/api/auth/login \

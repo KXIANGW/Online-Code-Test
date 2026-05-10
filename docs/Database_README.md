@@ -304,7 +304,7 @@ OK 條件：
 
 ## 8. 自動測試：Backend Integration Tests
 
-Database 的主要自動驗證目前由 backend integration tests 覆蓋，測試會實際連 PostgreSQL 並驗證 auth、RBAC、題目、語言、考試流程。
+Database 的主要自動驗證目前由 backend integration tests 覆蓋，測試會實際連 PostgreSQL 並驗證 auth、RBAC、題目、語言、考試流程，以及 Submission API 的 DB 寫入、mock judge 結果與分數一致性。
 
 ```bash
 cd backend
@@ -316,15 +316,120 @@ cd ..
 OK 條件：
 
 ```text
-Test Files  4 passed (4)
-Tests       71 passed (71)
+Test Files  5 passed (5)
+Tests       76 passed (76)
 ```
 
 若看到 `ECONNREFUSED 127.0.0.1:5432`，請回到第 3 步確認 `postgres` 是否 healthy。
 
 ---
 
-## 9. 測試帳號
+## 9. 手動測試：Scenario Submission Data
+
+這一節直接驗證 `10-scenarios.sql` 內建的 submission 情境，不依賴 Backend API README 或任何 shell 變數。固定使用 Frank Wu（`candidate_20260509_003`）的 submitted session：P1 Two Sum 有 3 次提交，最終 AC；P4 Binary Search 最終 WA；P7 Longest Common Subsequence 最終 CE。
+
+### 9.1 submissions 狀態與 verdict
+
+```bash
+docker compose exec -T postgres psql -U oct -d oct -c "
+SELECT esp.order_index,
+       p.title,
+       s.id,
+       s.language,
+       s.status,
+       s.verdict,
+       s.runtime_ms,
+       s.memory_kb
+FROM submissions s
+JOIN exam_session_problems esp ON esp.id = s.exam_session_problem_id
+JOIN exam_sessions es ON es.id = esp.exam_session_id
+JOIN users u ON u.id = es.candidate_id
+JOIN problems p ON p.id = esp.problem_id
+WHERE u.username = 'candidate_20260509_003'
+  AND es.status = 'submitted'
+ORDER BY s.submitted_at, s.id;
+"
+```
+
+OK 條件：
+- 回傳 6 筆。
+- `status` 都是 `done`。
+- Two Sum 依序有 `WA`、`TLE`、`AC` 三次提交。
+- Binary Search 最終為 `WA`，Longest Common Subsequence 最終為 `RE`、`CE`。
+
+### 9.2 testcase results 的 public / hidden output
+
+```bash
+docker compose exec -T postgres psql -U oct -d oct -c "
+WITH target_submission AS (
+  SELECT esp.final_submission_id AS submission_id
+  FROM exam_session_problems esp
+  JOIN exam_sessions es ON es.id = esp.exam_session_id
+  JOIN users u ON u.id = es.candidate_id
+  JOIN problems p ON p.id = esp.problem_id
+  WHERE u.username = 'candidate_20260509_003'
+    AND es.status = 'submitted'
+    AND p.title = 'Two Sum'
+)
+SELECT pt.order_index, pt.is_public, str.verdict, str.actual_output
+FROM submission_testcase_results str
+JOIN problem_testcases pt ON pt.id = str.testcase_id
+JOIN target_submission ts ON ts.submission_id = str.submission_id
+ORDER BY pt.order_index;
+"
+```
+
+OK 條件：
+- 回傳 Two Sum final AC submission 的 3 筆 testcase results。
+- public testcases 的 `actual_output` 有值。
+- hidden testcase 的 `actual_output` 是空值，避免洩漏隱藏測資輸出。
+
+### 9.3 final submission 與單題分數
+
+```bash
+docker compose exec -T postgres psql -U oct -d oct -c "
+SELECT esp.order_index,
+       p.title,
+       esp.score_weight,
+       esp.score,
+       esp.final_submission_id,
+       s.verdict AS final_verdict
+FROM exam_session_problems esp
+JOIN exam_sessions es ON es.id = esp.exam_session_id
+JOIN users u ON u.id = es.candidate_id
+JOIN problems p ON p.id = esp.problem_id
+LEFT JOIN submissions s ON s.id = esp.final_submission_id
+WHERE u.username = 'candidate_20260509_003'
+  AND es.status = 'submitted'
+ORDER BY esp.order_index;
+"
+```
+
+OK 條件：
+- 回傳 3 題。
+- Two Sum 的 `final_verdict` 是 `AC`，`score` 是 `30`。
+- Binary Search 的 `final_verdict` 是 `WA`，`score` 是 `0`。
+- Longest Common Subsequence 的 `final_verdict` 是 `CE`，`score` 是 `0`。
+
+### 9.4 session 總分
+
+```bash
+docker compose exec -T postgres psql -U oct -d oct -c "
+SELECT es.id, u.username, es.status, es.total_score, es.max_score
+FROM exam_sessions es
+JOIN users u ON u.id = es.candidate_id
+WHERE u.username = 'candidate_20260509_003'
+  AND es.status = 'submitted';
+"
+```
+
+OK 條件：
+- `total_score` 是 `30`。
+- `max_score` 是 `100`。
+
+---
+
+## 10. 測試帳號
 
 | 帳號 | 密碼 | 角色 |
 |------|------|------|
@@ -340,7 +445,7 @@ Tests       71 passed (71)
 
 ---
 
-## 10. 測完後關閉 Docker Compose
+## 11. 測完後關閉 Docker Compose
 
 保留 DB volume，只停止 container：
 
@@ -365,7 +470,7 @@ OK 條件：
 
 ---
 
-## 11. 常見問題
+## 12. 常見問題
 
 | 現象 | 原因 | 處理 |
 |------|------|------|

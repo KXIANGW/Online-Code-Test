@@ -2,7 +2,7 @@
 
 本文件為 Online Code Test 系統的資料庫實作規劃與目前狀態說明。所有資料統一存於單一 PostgreSQL 實例，依模組邏輯切分 table，未來拆微服務時邊界清楚。
 
-目前 database M1 已完成 init SQL、Drizzle schema、seed data 與 scenario data：`infra/postgres/00-extensions.sql` 到 `10-scenarios.sql` 可建立完整 schema、靜態參考資料與測試情境；`backend/src/db/schema.ts` 已對應主要 tables/enums。`10-scenarios.sql` 目前包含 9 位使用者、8 題、6 場考試與 submission / testcase result 測試資料，可支援 Backend API integration tests 與後續 Judge Worker 開發。
+目前 database M1 已完成 init SQL、Drizzle schema、seed data 與 scenario data：`infra/postgres/00-extensions.sql` 到 `10-scenarios.sql` 可建立完整 schema、靜態參考資料與測試情境；`backend/src/db/schema.ts` 已對應主要 tables/enums。`10-scenarios.sql` 目前包含 9 位使用者、8 題、6 場考試與 submission / testcase result 測試資料，可支援 Backend API integration tests、Submission API mock judge 與後續 Judge Worker 開發。
 
 ## 目錄
 
@@ -586,7 +586,7 @@ INSERT INTO language_defaults (language, display_name, time_multiplier, memory_m
 
 ### 9.1 Scenario Data
 
-`infra/postgres/10-scenarios.sql` 目前提供完整測試情境，不屬於靜態參考資料，主要給本機開發、API integration tests 與後續 Judge Worker 驗證使用。
+`infra/postgres/10-scenarios.sql` 目前提供完整測試情境，不屬於靜態參考資料，主要給本機開發、API integration tests、Submission API mock judge 與後續 Judge Worker 驗證使用。
 
 | 類型 | 目前內容 |
 |---|---|
@@ -672,6 +672,8 @@ WHERE id = :session_id
 
 ### 10.5 提交程式碼
 
+目前 Backend API 已實作 Submission API 的 mock judge 版：API 會先新增 `pending` submission，後續讀取 submission list/detail/result 時 lazy 推進 `pending → judging → done`，並在完成時寫回 testcase results、`final_submission_id`、題目分數與 session 總分。正式 Judge Worker 上線後，步驟 3 會改由 RabbitMQ / worker 接手。
+
 ```
 1. 驗證:
    - exam_session.status = 'in_progress'
@@ -682,14 +684,20 @@ WHERE id = :session_id
      (exam_session_problem_id, candidate_id, language, source_code, status='pending')
    RETURNING id
 
-3. 將 submission_id 推入 RabbitMQ judge.tasks queue
+3. 目前 mock judge:
+   - 查詢 submission list/detail/result 時推進 pending → judging → done
+   - 同題第 1 / 2 / 3 次提交 mock verdict 依序為 WA / TLE / AC
+   - 完成時直接寫回 submission_testcase_results 與分數相關欄位
+
+   未來正式 worker:
+   - 將 submission_id 推入 RabbitMQ judge.tasks queue
 
 4. 回傳 202 Accepted + submission_id 給前端
 ```
 
 ### 10.6 評測完成回寫(Worker → DB)
 
-這是最重要的流程,必須在單一 transaction 內完成,確保 final_submission_id 與 score 一致:
+這是最重要的流程,必須在單一 transaction 內完成,確保 final_submission_id 與 score 一致。目前 mock judge 已照這個資料寫入模式更新 DB；未來正式 Worker / sandbox judging 也應沿用同一個 transaction 邊界。
 
 ```
 BEGIN TRANSACTION
@@ -705,6 +713,7 @@ BEGIN TRANSACTION
   2. INSERT INTO submission_testcase_results (...)
        VALUES (... 每筆測資一筆 ...)
        -- actual_output 僅 is_public=TRUE 時才填值
+       -- hidden testcase 的 actual_output 維持 NULL
 
   3. -- 計算這題分數(全 AC 給滿分)
      SELECT score_weight FROM exam_session_problems WHERE id = :esp_id;
@@ -733,6 +742,8 @@ COMMIT
 ```
 
 > 注意:步驟 4 的 `final_submission_id` 永遠指向**最新**這筆,不管分數變高還是變低,符合「最後一次提交為準」規則。
+
+Backend integration tests 目前已覆蓋 Submission API 對這些 DB 欄位的寫入一致性：submission 狀態推進、per-testcase results、hidden testcase output 保護、`final_submission_id`、單題 `score` 與 session `total_score`。
 
 ### 10.7 面試者查詢自己的考試結果
 

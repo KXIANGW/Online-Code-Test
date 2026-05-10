@@ -114,8 +114,8 @@ cd ..
 OK 條件：
 
 ```text
-Test Files  4 passed (4)
-Tests       71 passed (71)
+Test Files  5 passed (5)
+Tests       76 passed (76)
 ```
 
 如果看到 `ECONNREFUSED 127.0.0.1:5432` 或 `ECONNREFUSED ::1:5432`，代表 PostgreSQL 沒有啟動或 host port 不對。先回到第 2 步確認 `docker compose ps`。
@@ -383,7 +383,188 @@ OK 條件：
 
 ---
 
-## 10. 測完後關閉 Docker Compose
+## 10. 手動測試：Submission / Result
+
+目前 Submission API 使用 mock judge，不會啟動真正的背景 worker。mock judge 是同步、lazy progression：只有讀取 submission history、submission detail 或 result endpoint 時，才會把同場 submission 從 `pending` 推進到 `judging`，再推進到 `done`。
+
+### 10.1 取得 session problem id
+
+```bash
+ESP_ID=$(curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/problems" \
+  -H "Authorization: Bearer $CAND_TOKEN" | jq -r '.[0].id')
+
+echo "$ESP_ID"
+```
+
+OK 條件：
+- 輸出是一個數字 id。
+
+### 10.2 第一次提交，預期最後為 WA
+
+```bash
+SUBMISSION_1=$(curl -s -X POST "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions" \
+  -H "Authorization: Bearer $CAND_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"examSessionProblemId\": $ESP_ID,
+    \"language\": \"python3\",
+    \"sourceCode\": \"print('wrong')\"
+  }" | jq -r .id)
+
+echo "$SUBMISSION_1"
+```
+
+OK 條件：
+- 輸出是一個數字 submission id。
+- API status code 為 202；body 內初始 `status` 為 `pending`。
+
+連續查詢同一筆 detail，觀察 mock judge 推進：
+
+```bash
+curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions/$SUBMISSION_1" \
+  -H "Authorization: Bearer $CAND_TOKEN" | jq '{id, status, verdict, score}'
+
+curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions/$SUBMISSION_1" \
+  -H "Authorization: Bearer $CAND_TOKEN" | jq '{id, status, verdict, score}'
+
+curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions/$SUBMISSION_1" \
+  -H "Authorization: Bearer $CAND_TOKEN" | jq '{id, status, verdict, score}'
+```
+
+OK 條件：
+- 三次查詢會依序看到 `pending`、`judging`、`done`。
+- 完成後 `verdict` 是 `WA`，`score` 是 `0`。
+
+### 10.3 第二、三次提交，預期 TLE → AC
+
+```bash
+SUBMISSION_2=$(curl -s -X POST "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions" \
+  -H "Authorization: Bearer $CAND_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"examSessionProblemId\": $ESP_ID,
+    \"language\": \"python3\",
+    \"sourceCode\": \"while True: pass\"
+  }" | jq -r .id)
+
+curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions/$SUBMISSION_2" \
+  -H "Authorization: Bearer $CAND_TOKEN" | jq '{id, status, verdict, score}'
+curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions/$SUBMISSION_2" \
+  -H "Authorization: Bearer $CAND_TOKEN" | jq '{id, status, verdict, score}'
+curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions/$SUBMISSION_2" \
+  -H "Authorization: Bearer $CAND_TOKEN" | jq '{id, status, verdict, score}'
+```
+
+OK 條件：
+- 第 2 次提交完成後 `verdict` 是 `TLE`，`score` 是 `0`。
+
+```bash
+SUBMISSION_3=$(curl -s -X POST "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions" \
+  -H "Authorization: Bearer $CAND_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"examSessionProblemId\": $ESP_ID,
+    \"language\": \"python3\",
+    \"sourceCode\": \"print('OK')\"
+  }" | jq -r .id)
+
+curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions/$SUBMISSION_3" \
+  -H "Authorization: Bearer $CAND_TOKEN" | jq '{id, status, verdict, score}'
+curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions/$SUBMISSION_3" \
+  -H "Authorization: Bearer $CAND_TOKEN" | jq '{id, status, verdict, score}'
+curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions/$SUBMISSION_3" \
+  -H "Authorization: Bearer $CAND_TOKEN" | jq '{id, status, verdict, score, testcaseResults}'
+```
+
+OK 條件：
+- 第 3 次提交完成後 `verdict` 是 `AC`。
+- `score` 是 `100`。
+- public testcase 有 `actualOutput`。
+- hidden testcase 不包含 `actualOutput` 欄位。
+
+### 10.4 查詢 submission history 與 result
+
+```bash
+curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions" \
+  -H "Authorization: Bearer $CAND_TOKEN" \
+  | jq 'map({id, status, verdict, score, isFinalSubmission, hasSourceCode: has("sourceCode")})'
+```
+
+OK 條件：
+- 回傳 3 筆，順序為第一次到第三次提交。
+- 三筆都沒有 `sourceCode`。
+- 第三筆 `isFinalSubmission` 是 `true`。
+
+```bash
+curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/result" \
+  -H "Authorization: Bearer $CAND_TOKEN" \
+  | jq '{totalScore, maxScore, problems: [.problems[] | {latestStatus, latestSubmissionId, finalSubmissionId, score}]}'
+```
+
+OK 條件：
+- `totalScore` 是 `100`。
+- `maxScore` 是 `100`。
+- 該題 `latestStatus` 是 `AC`。
+- `latestSubmissionId` 與 `finalSubmissionId` 都是 `SUBMISSION_3`。
+
+### 10.5 interviewer 可看 detail 原始碼，但不可提交
+
+```bash
+curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions/$SUBMISSION_3" \
+  -H "Authorization: Bearer $ALICE_TOKEN" | jq '{id, sourceCode, verdict}'
+```
+
+OK 條件：
+- `sourceCode` 是 `print('OK')`。
+- `verdict` 是 `AC`。
+
+```bash
+curl -s -X POST "http://localhost:3000/api/exam-sessions/$SESSION_ID/submissions" \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"examSessionProblemId\": $ESP_ID,
+    \"language\": \"python3\",
+    \"sourceCode\": \"interviewer code\"
+  }" | jq .
+```
+
+OK 條件：
+- 回傳 `403 Forbidden`。
+
+### 10.6 candidate 不可看其他 candidate 的結果
+
+建立第二位 candidate 的 session：
+
+```bash
+OTHER_CANDIDATE_ID=$(curl -s http://localhost:3000/api/users \
+  -H "Authorization: Bearer $ROOT_TOKEN" \
+  | jq -r '.[] | select(.username=="candidate_20260509_002") | .id')
+
+OTHER_SESSION_ID=$(curl -s -X POST http://localhost:3000/api/exam-sessions \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"candidateId\": $OTHER_CANDIDATE_ID,
+    \"durationMinutes\": 90,
+    \"problems\": [
+      {\"problemId\": $PROBLEM_ID, \"scoreWeight\": 100, \"orderIndex\": 1}
+    ]
+  }" | jq -r .id)
+
+curl -s "http://localhost:3000/api/exam-sessions/$OTHER_SESSION_ID/result" \
+  -H "Authorization: Bearer $CAND_TOKEN" | jq .
+
+curl -s "http://localhost:3000/api/exam-sessions/$OTHER_SESSION_ID/submissions" \
+  -H "Authorization: Bearer $CAND_TOKEN" | jq .
+```
+
+OK 條件：
+- 兩個查詢都回傳 `403 Forbidden`。
+
+---
+
+## 11. 測完後關閉 Docker Compose
 
 先到啟動 backend 的 terminal 按 `Ctrl+C` 停止 `npm run dev`。
 
@@ -410,7 +591,7 @@ OK 條件：
 
 ---
 
-## 11. 測試帳號
+## 12. 測試帳號
 
 | 帳號 | 密碼 | 角色 |
 |------|------|------|
@@ -426,7 +607,7 @@ OK 條件：
 
 ---
 
-## 12. 常見問題
+## 13. 常見問題
 
 | 現象 | 原因 | 處理 |
 |------|------|------|
