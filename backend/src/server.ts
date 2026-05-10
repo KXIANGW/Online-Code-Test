@@ -10,6 +10,7 @@ import { userRoutes } from "./routes/users";
 import { problemRoutes } from "./routes/problems";
 import { examRoutes } from "./routes/exams";
 import { languageRoutes } from "./routes/languages";
+import { submissionRoutes } from "./routes/submissions";
 
 export async function buildApp() {
   const app = Fastify({
@@ -30,6 +31,7 @@ export async function buildApp() {
     await api.register(authRoutes, { prefix: "/auth" });
     await api.register(userRoutes, { prefix: "/users" });
     await api.register(problemRoutes, { prefix: "/problems" });
+    await api.register(submissionRoutes, { prefix: "/exam-sessions" });
     await api.register(examRoutes, { prefix: "/exam-sessions" });
     await api.register(languageRoutes, { prefix: "/languages" });
   }, { prefix: "/api" });
