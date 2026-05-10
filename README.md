@@ -2,7 +2,7 @@
 
 NTHU 1142 雲原生 HW2 / Team 12。本目錄是 **M1 最小可跑骨架**：frontend + backend + PostgreSQL 三個容器，一鍵 `docker compose up` 拉起全部環境。
 
-資料庫 Schema 設計詳見 [`infra/postgres/Database_PLAN.md`](./infra/postgres/Database_PLAN.md)。本骨架對應 M1，後續 M2（真判題 + 沙箱）/ M3（K8s + 觀測性）/ M4（六種測試）會在此基礎上擴張。
+資料庫 Schema 設計詳見 [`docs/Database_PLAN.md`](./docs/Database_PLAN.md)。完整驗證流程可從 [`docs/Backend_API_README.md`](./docs/Backend_API_README.md) 與 [`docs/Database_README.md`](./docs/Database_README.md) 開始。本骨架對應 M1，後續 M2（真判題 + 沙箱）/ M3（K8s + 觀測性）/ M4（六種測試）會在此基礎上擴張。
 
 ---
 
@@ -55,7 +55,9 @@ Backend container 啟動時會先跑 DB migrations，新機器 clone 後不需�
 
 - [`backend/`](./backend/README.md) — Fastify + Drizzle + PostgreSQL
 - [`frontend/`](./frontend/README.md) — Vite + React 18 + Nginx
-- [`infra/postgres/`](./infra/postgres/Database_README.md) — Postgres 初始化腳本與測試指南
+- [`docs/Backend_API_README.md`](./docs/Backend_API_README.md) — Backend API 完整驗證流程
+- [`docs/Database_README.md`](./docs/Database_README.md) — Postgres 初始化腳本與資料驗證流程
+- [`infra/postgres/`](./infra/postgres/) — Postgres 初始化 SQL 腳本
 
 ---
 
@@ -93,4 +95,4 @@ Backend container 啟動時會先跑 DB migrations，新機器 clone 後不需�
 - **M3**：每 service 寫 Helm chart，OpenTelemetry + Prometheus + Loki，KEDA HPA
 - **M4**：unit / integration / e2e / load / stress / performance 六種測試 + 抄襲偵測
 
-詳見 [`infra/postgres/Database_PLAN.md`](./infra/postgres/Database_PLAN.md)。
+詳見 [`docs/Database_PLAN.md`](./docs/Database_PLAN.md)。

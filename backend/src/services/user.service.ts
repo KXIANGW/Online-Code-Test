@@ -1,0 +1,174 @@
+import bcrypt from "bcrypt";
+import { db } from "../db/client";
+import { users, userRoles, roles } from "../db/schema";
+import { eq, isNull, inArray, sql } from "drizzle-orm";
+import { ForbiddenError, NotFoundError } from "../errors";
+import type { FastifyJWT } from "@fastify/jwt";
+
+type CurrentUser = FastifyJWT["user"];
+
+export function requireSuperuser(user: CurrentUser): void {
+  if (!user.isSuperuser) throw ForbiddenError();
+}
+
+export function requirePermissionOrSuperuser(user: CurrentUser, perm: string): void {
+  if (!user.isSuperuser && !user.permissions.includes(perm)) throw ForbiddenError();
+}
+
+export async function listUsers(currentUser: CurrentUser) {
+  requireSuperuser(currentUser);
+  return db
+    .select({
+      id: users.id,
+      username: users.username,
+      displayName: users.displayName,
+      isSuperuser: users.isSuperuser,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .where(isNull(users.deletedAt));
+}
+
+export async function createUser(
+  currentUser: CurrentUser,
+  data: { username: string; password: string; displayName?: string; roleNames?: string[] }
+) {
+  const canCreate =
+    currentUser.isSuperuser || currentUser.permissions.includes("exam:manage");
+  if (!canCreate) throw ForbiddenError();
+
+  // exam:manage (non-superuser) may only create candidate-role accounts
+  if (!currentUser.isSuperuser) {
+    const requested = data.roleNames ?? [];
+    if (requested.some((r) => r !== "candidate")) throw ForbiddenError();
+  }
+
+  const effectiveRoles: string[] =
+    data.roleNames && data.roleNames.length > 0 ? data.roleNames : ["candidate"];
+
+  const passwordHash = await bcrypt.hash(data.password, 10);
+
+  return db.transaction(async (tx) => {
+    const userRows = await tx
+      .insert(users)
+      .values({
+        username: data.username,
+        passwordHash,
+        displayName: data.displayName,
+        isSuperuser: false,
+      })
+      .returning();
+
+    const user = userRows[0]!;
+
+    const roleRows = await tx
+      .select({ id: roles.id })
+      .from(roles)
+      .where(inArray(roles.name, effectiveRoles));
+
+    if (roleRows.length > 0) {
+      await tx.insert(userRoles).values(
+        roleRows.map((r) => ({ userId: user.id, roleId: r.id }))
+      );
+    }
+
+    return { id: user.id, username: user.username, displayName: user.displayName };
+  });
+}
+
+export async function batchCreateCandidates(
+  currentUser: CurrentUser,
+  count: number
+): Promise<{ username: string; password: string }[]> {
+  if (!currentUser.isSuperuser && !currentUser.permissions.includes("exam:manage")) {
+    throw ForbiddenError();
+  }
+
+  const today = new Date();
+  const dateStr = today.toISOString().slice(0, 10).replace(/-/g, "");
+
+  const existing = await db
+    .select({ username: users.username })
+    .from(users)
+    .where(sql`username LIKE ${"candidate_" + dateStr + "_%"}`);
+
+  const existingNums = existing
+    .map((u) => parseInt(u.username.split("_").pop() ?? "0"))
+    .filter((n) => !isNaN(n));
+  const startNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1;
+
+  const results: { username: string; password: string }[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const num = String(startNum + i).padStart(3, "0");
+    const username = `candidate_${dateStr}_${num}`;
+    const password = generatePassword(12);
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const candidateRole = await db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(eq(roles.name, "candidate"));
+
+    await db.transaction(async (tx) => {
+      const insertedRows = await tx
+        .insert(users)
+        .values({ username, passwordHash, displayName: username, isSuperuser: false })
+        .returning({ id: users.id });
+
+      const newUser = insertedRows[0]!;
+      if (candidateRole.length > 0) {
+        await tx
+          .insert(userRoles)
+          .values({ userId: newUser.id, roleId: candidateRole[0]!.id });
+      }
+    });
+
+    results.push({ username, password });
+  }
+
+  return results;
+}
+
+export async function getUser(currentUser: CurrentUser, targetId: number) {
+  if (!currentUser.isSuperuser && currentUser.id !== targetId) throw ForbiddenError();
+
+  const [user] = await db
+    .select({
+      id: users.id,
+      username: users.username,
+      displayName: users.displayName,
+      isSuperuser: users.isSuperuser,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .where(eq(users.id, targetId));
+
+  if (!user) throw NotFoundError("user");
+  return user;
+}
+
+export async function deleteUser(currentUser: CurrentUser, targetId: number) {
+  requireSuperuser(currentUser);
+
+  const [existing] = await db
+    .select({ id: users.id, deletedAt: users.deletedAt })
+    .from(users)
+    .where(eq(users.id, targetId));
+
+  if (!existing || existing.deletedAt !== null) throw NotFoundError("user");
+
+  await db
+    .update(users)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(eq(users.id, targetId));
+}
+
+function generatePassword(length: number): string {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$";
+  let result = "";
+  for (let i = 0; i < length; i++) {
+    result += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result;
+}

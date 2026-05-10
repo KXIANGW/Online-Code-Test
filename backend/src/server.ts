@@ -4,8 +4,15 @@ import { env } from "./env";
 import { pool } from "./db/client";
 import { healthRoutes } from "./routes/health";
 import { pingRoutes } from "./routes/ping";
+import { jwtPlugin } from "./plugins/jwt";
+import { authRoutes } from "./routes/auth";
+import { userRoutes } from "./routes/users";
+import { problemRoutes } from "./routes/problems";
+import { examRoutes } from "./routes/exams";
+import { languageRoutes } from "./routes/languages";
+import { submissionRoutes } from "./routes/submissions";
 
-async function buildApp() {
+export async function buildApp() {
   const app = Fastify({
     logger: {
       level: env.LOG_LEVEL,
@@ -16,9 +23,17 @@ async function buildApp() {
   });
 
   await app.register(sensible);
+  await app.register(jwtPlugin);
+
   await app.register(async (api) => {
     await api.register(healthRoutes);
     await api.register(pingRoutes);
+    await api.register(authRoutes, { prefix: "/auth" });
+    await api.register(userRoutes, { prefix: "/users" });
+    await api.register(problemRoutes, { prefix: "/problems" });
+    await api.register(submissionRoutes, { prefix: "/exam-sessions" });
+    await api.register(examRoutes, { prefix: "/exam-sessions" });
+    await api.register(languageRoutes, { prefix: "/languages" });
   }, { prefix: "/api" });
 
   return app;
@@ -49,4 +64,6 @@ async function start() {
   }
 }
 
-start();
+if (require.main === module) {
+  start();
+}

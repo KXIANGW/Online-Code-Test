@@ -1,6 +1,8 @@
 # Database Plan — Online Code Test (Team 12)
 
-本文件為 Online Code Test 系統的資料庫實作規劃。所有資料統一存於單一 PostgreSQL 實例，依模組邏輯切分 table，未來拆微服務時邊界清楚。
+本文件為 Online Code Test 系統的資料庫實作規劃與目前狀態說明。所有資料統一存於單一 PostgreSQL 實例，依模組邏輯切分 table，未來拆微服務時邊界清楚。
+
+目前 database M1 已完成 init SQL、Drizzle schema、seed data 與 scenario data：`infra/postgres/00-extensions.sql` 到 `10-scenarios.sql` 可建立完整 schema、靜態參考資料與測試情境；`backend/src/db/schema.ts` 已對應主要 tables/enums。`10-scenarios.sql` 目前包含 9 位使用者、8 題、6 場考試與 submission / testcase result 測試資料，可支援 Backend API integration tests、Submission API mock judge 與後續 Judge Worker 開發。
 
 ## 目錄
 
@@ -45,7 +47,7 @@
 ### 1.3 已確定的核心業務規則
 
 - **角色**：Root（superuser flag）、面試主管、出題主管、面試者；一人可同時是多種角色（user_roles 多對多）
-- **權限粒度**：粗顆粒（`problem:manage`、`exam:manage`、`exam:take`、`user:manage`）
+- **權限粒度**：粗顆粒（目前 seed `problem:manage`、`exam:manage`、`exam:take`；Root 透過 `is_superuser` 直接放行）
 - **題目**：不版本化、難度三級 enum、測資存 PG `TEXT`、區分公開/隱藏
 - **考試**：無「考卷模板」概念，每場考試都是獨立 session；題數預設 3 題但可彈性調整；難度組合自由（不強制 easy/medium/hard 各一）
 - **派題**：建帳號時派好（手動或隨機），同一面試者所有歷史考試題目不重複，本場考試內題目也不重複
@@ -198,7 +200,6 @@ CREATE TABLE permissions (
 | `problem:manage` | 建立、編輯、刪除題目與測資 |
 | `exam:manage` | 建立面試者帳號、派題、查看所有面試者結果 |
 | `exam:take` | 參加考試、提交程式碼、查看自己的結果 |
-| `user:manage` | 管理平台使用者帳號(Root 才會用到,但 Root 走 superuser short-circuit) |
 
 > 「面試者只能看自己的東西」這類 ownership 規則**不進 RBAC**,由 service 層業務邏輯處理(例如 query 自動加 `WHERE candidate_id = current_user.id`)。
 
@@ -564,8 +565,7 @@ INSERT INTO roles (name, description) VALUES
 INSERT INTO permissions (code, description) VALUES
   ('problem:manage', '建立、編輯、刪除題目與測資'),
   ('exam:manage',    '建立面試者帳號、派題、查看所有面試者結果'),
-  ('exam:take',      '參加考試、提交程式碼、查看自己的結果'),
-  ('user:manage',    '管理平台使用者帳號');
+  ('exam:take',      '參加考試、提交程式碼、查看自己的結果');
 
 -- 角色權限綁定
 INSERT INTO role_permissions (role_id, permission_id)
@@ -583,6 +583,21 @@ INSERT INTO language_defaults (language, display_name, time_multiplier, memory_m
 -- INSERT INTO users (username, password_hash, display_name, is_superuser)
 -- VALUES ('root', '$2b$12$...', 'System Root', TRUE);
 ```
+
+### 9.1 Scenario Data
+
+`infra/postgres/10-scenarios.sql` 目前提供完整測試情境，不屬於靜態參考資料，主要給本機開發、API integration tests、Submission API mock judge 與後續 Judge Worker 驗證使用。
+
+| 類型 | 目前內容 |
+|---|---|
+| 使用者 | 9 位：`root`、`alice`、`bob`、`carol`、5 位 candidate |
+| 角色組合 | `root` 為 superuser；`alice` interviewer；`bob` interviewer + problem_setter；`carol` problem_setter；candidate 皆為 `exam:take` |
+| 題庫 | 8 題，涵蓋 easy / medium / hard 與 public / hidden testcases |
+| 考試 | 6 場 sessions，涵蓋 `not_started`、`in_progress`、`submitted`、`cancelled` |
+| 提交 | 含多次提交、最後提交為準、AC/WA/TLE/CE 等 verdict 與 per-testcase results |
+| 重考 | Henry 的兩場考試題目不重複，可驗證隨機派題避開歷史題目 |
+
+> `09-seed.sql` 只放 roles、permissions、role_permissions、language_defaults 這類靜態資料；使用者、題目、考試與提交情境集中在 `10-scenarios.sql`，方便未來拆成 dev/test seed。
 
 ---
 
@@ -657,6 +672,8 @@ WHERE id = :session_id
 
 ### 10.5 提交程式碼
 
+目前 Backend API 已實作 Submission API 的 mock judge 版：API 會先新增 `pending` submission，後續讀取 submission list/detail/result 時 lazy 推進 `pending → judging → done`，並在完成時寫回 testcase results、`final_submission_id`、題目分數與 session 總分。正式 Judge Worker 上線後，步驟 3 會改由 RabbitMQ / worker 接手。
+
 ```
 1. 驗證:
    - exam_session.status = 'in_progress'
@@ -667,14 +684,20 @@ WHERE id = :session_id
      (exam_session_problem_id, candidate_id, language, source_code, status='pending')
    RETURNING id
 
-3. 將 submission_id 推入 RabbitMQ judge.tasks queue
+3. 目前 mock judge:
+   - 查詢 submission list/detail/result 時推進 pending → judging → done
+   - 同題第 1 / 2 / 3 次提交 mock verdict 依序為 WA / TLE / AC
+   - 完成時直接寫回 submission_testcase_results 與分數相關欄位
+
+   未來正式 worker:
+   - 將 submission_id 推入 RabbitMQ judge.tasks queue
 
 4. 回傳 202 Accepted + submission_id 給前端
 ```
 
 ### 10.6 評測完成回寫(Worker → DB)
 
-這是最重要的流程,必須在單一 transaction 內完成,確保 final_submission_id 與 score 一致:
+這是最重要的流程,必須在單一 transaction 內完成,確保 final_submission_id 與 score 一致。目前 mock judge 已照這個資料寫入模式更新 DB；未來正式 Worker / sandbox judging 也應沿用同一個 transaction 邊界。
 
 ```
 BEGIN TRANSACTION
@@ -690,6 +713,7 @@ BEGIN TRANSACTION
   2. INSERT INTO submission_testcase_results (...)
        VALUES (... 每筆測資一筆 ...)
        -- actual_output 僅 is_public=TRUE 時才填值
+       -- hidden testcase 的 actual_output 維持 NULL
 
   3. -- 計算這題分數(全 AC 給滿分)
      SELECT score_weight FROM exam_session_problems WHERE id = :esp_id;
@@ -718,6 +742,8 @@ COMMIT
 ```
 
 > 注意:步驟 4 的 `final_submission_id` 永遠指向**最新**這筆,不管分數變高還是變低,符合「最後一次提交為準」規則。
+
+Backend integration tests 目前已覆蓋 Submission API 對這些 DB 欄位的寫入一致性：submission 狀態推進、per-testcase results、hidden testcase output 保護、`final_submission_id`、單題 `score` 與 session `total_score`。
 
 ### 10.7 面試者查詢自己的考試結果
 
