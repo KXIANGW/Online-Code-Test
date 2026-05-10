@@ -1,0 +1,4 @@
+FROM gcc:12-slim
+WORKDIR /code
+# 這裡不需要 USER judge，因為編譯有時需要權限，
+# 但執行時 (runner.ts) 建議用非 root 用戶。
