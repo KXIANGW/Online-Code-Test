@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { getHealth, getPing, type HealthResponse, type PingResponse } from "./api/client";
+import {
+  getHealth,
+  getPing,
+  type HealthResponse,
+  type PingResponse,
+} from "./api/client";
 
 type Status = "loading" | "ok" | "error";
 
@@ -45,7 +50,10 @@ export default function App() {
         {health.status === "ok" && health.data && (
           <ul style={styles.list}>
             <li>
-              status: <strong style={statusColor(health.data.status)}>{health.data.status}</strong>
+              status:{" "}
+              <strong style={statusColor(health.data.status)}>
+                {health.data.status}
+              </strong>
             </li>
             <li>db latency: {health.data.dbLatencyMs ?? "n/a"} ms</li>
             <li>uptime: {health.data.uptimeSec ?? "n/a"} s</li>
