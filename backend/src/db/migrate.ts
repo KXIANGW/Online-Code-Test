@@ -9,6 +9,23 @@ async function main() {
   try {
     console.log("[migrate] ensuring pgcrypto extension...");
     await pool.query("CREATE EXTENSION IF NOT EXISTS pgcrypto;");
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'submission_type') THEN
+          CREATE TYPE submission_type AS ENUM ('simple', 'formal');
+        END IF;
+      END $$;
+    `);
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF to_regclass('public.submissions') IS NOT NULL THEN
+          ALTER TABLE submissions
+            ADD COLUMN IF NOT EXISTS submission_type submission_type NOT NULL DEFAULT 'formal';
+        END IF;
+      END $$;
+    `);
     console.log("[migrate] done.");
   } finally {
     await pool.end();

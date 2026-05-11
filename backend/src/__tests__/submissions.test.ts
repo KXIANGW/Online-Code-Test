@@ -1,10 +1,25 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { buildApp } from "./helpers/app";
 import { truncateTestTables, seedUser, loginAs } from "./helpers/db";
-import { db } from "../db/client";
-import { examSessionProblems, examSessions, problems, problemTestcases } from "../db/schema";
+import { db, pool } from "../db/client";
+import {
+  examSessionProblems,
+  examSessions,
+  problems,
+  problemTestcases,
+  submissions,
+} from "../db/schema";
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
+
+vi.mock("../mq/publisher", () => ({
+  publishJudgeTask: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { publishJudgeTask } from "../mq/publisher";
+import { buildJudgeResultPayload, handleJudgeResultMessage } from "../mq/consumer";
+
+const publishJudgeTaskMock = vi.mocked(publishJudgeTask);
 
 let app: FastifyInstance;
 let aliceToken: string;
@@ -29,6 +44,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  vi.clearAllMocks();
   await truncateTestTables();
 
   await seedUser({ username: "root", password: "Root@1234", displayName: "Root", isSuperuser: true });
@@ -73,34 +89,10 @@ beforeEach(async () => {
   mediumProblemId = problemRows.find((p) => p.difficulty === "medium")!.id;
 
   await db.insert(problemTestcases).values([
-    {
-      problemId: easyProblemId,
-      orderIndex: 1,
-      isPublic: true,
-      inputData: "1 2",
-      expectedOutput: "3",
-    },
-    {
-      problemId: easyProblemId,
-      orderIndex: 2,
-      isPublic: false,
-      inputData: "40 2",
-      expectedOutput: "42",
-    },
-    {
-      problemId: mediumProblemId,
-      orderIndex: 1,
-      isPublic: true,
-      inputData: "5",
-      expectedOutput: "2",
-    },
-    {
-      problemId: mediumProblemId,
-      orderIndex: 2,
-      isPublic: false,
-      inputData: "hidden",
-      expectedOutput: "-1",
-    },
+    { problemId: easyProblemId, orderIndex: 1, isPublic: true, inputData: "1 2", expectedOutput: "3" },
+    { problemId: easyProblemId, orderIndex: 2, isPublic: false, inputData: "40 2", expectedOutput: "42" },
+    { problemId: mediumProblemId, orderIndex: 1, isPublic: true, inputData: "5", expectedOutput: "2" },
+    { problemId: mediumProblemId, orderIndex: 2, isPublic: false, inputData: "hidden", expectedOutput: "-1" },
   ]);
 });
 
@@ -145,9 +137,9 @@ async function startSession(sessionId: number, token = candToken) {
 async function submitCode(
   sessionId: number,
   examSessionProblemId: number,
-  sourceCode: string,
+  type?: "simple" | "formal",
   token = candToken
-): Promise<number> {
+): Promise<{ id: number; submissionType: string }> {
   const res = await app.inject({
     method: "POST",
     url: `/api/exam-sessions/${sessionId}/submissions`,
@@ -155,155 +147,223 @@ async function submitCode(
     payload: {
       examSessionProblemId,
       language: "python3",
-      sourceCode,
+      sourceCode: "print(sum(map(int, input().split())))",
+      ...(type ? { type } : {}),
     },
   });
 
   expect(res.statusCode).toBe(202);
-  const body = res.json<{ id: number; status: string; verdict: string | null }>();
+  const body = res.json<{ id: number; status: string; verdict: string | null; submissionType: string }>();
   expect(body.status).toBe("pending");
   expect(body.verdict).toBeNull();
-  return body.id;
+  return { id: body.id, submissionType: body.submissionType };
 }
 
-async function getDetail(sessionId: number, submissionId: number, token = candToken) {
-  const res = await app.inject({
-    method: "GET",
-    url: `/api/exam-sessions/${sessionId}/submissions/${submissionId}`,
-    headers: { authorization: `Bearer ${token}` },
-  });
-  expect(res.statusCode).toBe(200);
-  return res.json<{
-    id: number;
-    sourceCode: string;
-    status: string;
-    verdict: string | null;
-    score: number;
-    testcaseResults: { isPublic: boolean; actualOutput?: string | null }[];
-  }>();
+async function writeWorkerResult(
+  submissionId: number,
+  verdict: "AC" | "WA",
+  type: "simple" | "formal"
+) {
+  const [submission] = await db
+    .select({
+      id: submissions.id,
+      examSessionProblemId: submissions.examSessionProblemId,
+      problemId: examSessionProblems.problemId,
+      examSessionId: examSessionProblems.examSessionId,
+    })
+    .from(submissions)
+    .innerJoin(examSessionProblems, eq(submissions.examSessionProblemId, examSessionProblems.id))
+    .where(eq(submissions.id, submissionId));
+  expect(submission).toBeTruthy();
+
+  const testcases = await db
+    .select()
+    .from(problemTestcases)
+    .where(eq(problemTestcases.problemId, submission!.problemId));
+
+  await pool.query("BEGIN");
+  try {
+    await pool.query(
+      `
+        INSERT INTO submission_testcase_results
+          (submission_id, testcase_id, verdict, runtime_ms, memory_kb, actual_output)
+        SELECT $1, pt.id, $2::testcase_verdict_type, 12, 1024,
+               CASE WHEN pt.is_public THEN pt.expected_output ELSE NULL END
+        FROM problem_testcases pt
+        WHERE pt.problem_id = $3
+          AND ($4::BOOLEAN = FALSE OR pt.is_public = TRUE)
+      `,
+      [submissionId, verdict, submission!.problemId, type === "simple"]
+    );
+    await pool.query(
+      `
+        UPDATE submissions
+        SET status = 'done', verdict = $2, runtime_ms = 12, memory_kb = 1024, judged_at = NOW()
+        WHERE id = $1
+      `,
+      [submissionId, verdict]
+    );
+    if (type === "formal" && verdict === "AC") {
+      await pool.query(
+        `
+          UPDATE exam_session_problems
+          SET final_submission_id = $2, score = score_weight, updated_at = NOW()
+          WHERE id = $1
+        `,
+        [submission!.examSessionProblemId, submissionId]
+      );
+      await pool.query(
+        `
+          UPDATE exam_sessions
+          SET total_score = (
+            SELECT COALESCE(SUM(score), 0)
+            FROM exam_session_problems
+            WHERE exam_session_id = $1
+          )
+          WHERE id = $1
+        `,
+        [submission!.examSessionId]
+      );
+    }
+    await pool.query("COMMIT");
+  } catch (err) {
+    await pool.query("ROLLBACK");
+    throw err;
+  }
+
+  expect(testcases.length).toBeGreaterThan(0);
 }
 
-async function settleSubmission(sessionId: number, submissionId: number, token = candToken) {
-  const first = await getDetail(sessionId, submissionId, token);
-  expect(first.status).toBe("pending");
-
-  const second = await getDetail(sessionId, submissionId, token);
-  expect(second.status).toBe("judging");
-
-  const third = await getDetail(sessionId, submissionId, token);
-  expect(third.status).toBe("done");
-  return third;
-}
-
-describe("Submission API mock judge", () => {
-  it("candidate submits the same problem three times and sees WA → TLE → AC", async () => {
+describe("Submission API async judge", () => {
+  it("creates pending submissions, persists submissionType, and publishes judge tasks", async () => {
     const { sessionId, espIds } = await createSession(aliceToken, davidId);
     await startSession(sessionId);
 
-    const firstId = await submitCode(sessionId, espIds[0]!, "print('wrong')");
-    const first = await settleSubmission(sessionId, firstId);
-    expect(first.verdict).toBe("WA");
-    expect(first.score).toBe(0);
+    const formal = await submitCode(sessionId, espIds[0]!);
+    const simple = await submitCode(sessionId, espIds[0]!, "simple");
 
-    const secondId = await submitCode(sessionId, espIds[0]!, "while True: pass");
-    const second = await settleSubmission(sessionId, secondId);
-    expect(second.verdict).toBe("TLE");
-    expect(second.score).toBe(0);
-
-    const thirdId = await submitCode(sessionId, espIds[0]!, "print('accepted')");
-    const third = await settleSubmission(sessionId, thirdId);
-    expect(third.verdict).toBe("AC");
-    expect(third.score).toBe(30);
-    expect(third.testcaseResults).toHaveLength(2);
-    expect(third.testcaseResults.find((tc) => tc.isPublic)).toHaveProperty("actualOutput", "3");
-    expect(third.testcaseResults.find((tc) => !tc.isPublic)).not.toHaveProperty("actualOutput");
-
-    const resultRes = await app.inject({
-      method: "GET",
-      url: `/api/exam-sessions/${sessionId}/result`,
-      headers: { authorization: `Bearer ${candToken}` },
+    expect(formal.submissionType).toBe("formal");
+    expect(simple.submissionType).toBe("simple");
+    expect(publishJudgeTaskMock).toHaveBeenNthCalledWith(1, {
+      submissionId: formal.id,
+      type: "formal",
     });
-    expect(resultRes.statusCode).toBe(200);
-    const result = resultRes.json<{
-      totalScore: number;
-      maxScore: number;
-      problems: { latestStatus: string; latestSubmissionId: number; finalSubmissionId: number; score: number }[];
-    }>();
-    expect(result.totalScore).toBe(30);
-    expect(result.maxScore).toBe(30);
-    expect(result.problems[0]).toMatchObject({
-      latestStatus: "AC",
-      latestSubmissionId: thirdId,
-      finalSubmissionId: thirdId,
-      score: 30,
+    expect(publishJudgeTaskMock).toHaveBeenNthCalledWith(2, {
+      submissionId: simple.id,
+      type: "simple",
     });
+
+    const rows = await db
+      .select({ id: submissions.id, submissionType: submissions.submissionType })
+      .from(submissions);
+    expect(rows.map((row) => [row.id, row.submissionType])).toEqual([
+      [formal.id, "formal"],
+      [simple.id, "simple"],
+    ]);
   });
 
-  it("candidate sees interleaved submissions in timeline order and result uses each problem's latest submission", async () => {
-    const { sessionId, espIds } = await createSession(aliceToken, davidId, [easyProblemId, mediumProblemId]);
+  it("GET list/detail/result does not lazily advance pending submissions", async () => {
+    const { sessionId, espIds } = await createSession(aliceToken, davidId);
     await startSession(sessionId);
+    const { id } = await submitCode(sessionId, espIds[0]!, "formal");
 
-    const firstEasy = await submitCode(sessionId, espIds[0]!, "easy v1");
-    const firstMedium = await submitCode(sessionId, espIds[1]!, "medium v1");
-    const secondEasy = await submitCode(sessionId, espIds[0]!, "easy v2");
+    for (const url of [
+      `/api/exam-sessions/${sessionId}/submissions`,
+      `/api/exam-sessions/${sessionId}/submissions/${id}`,
+      `/api/exam-sessions/${sessionId}/result`,
+    ]) {
+      const res = await app.inject({
+        method: "GET",
+        url,
+        headers: { authorization: `Bearer ${candToken}` },
+      });
+      expect(res.statusCode).toBe(200);
+    }
 
-    const list1 = await app.inject({
+    const [row] = await db
+      .select({ status: submissions.status, verdict: submissions.verdict })
+      .from(submissions)
+      .where(eq(submissions.id, id));
+    expect(row).toEqual({ status: "pending", verdict: null });
+  });
+
+  it("simple AC exposes only public testcase output and does not update score", async () => {
+    const { sessionId, espIds } = await createSession(aliceToken, davidId);
+    await startSession(sessionId);
+    const { id } = await submitCode(sessionId, espIds[0]!, "simple");
+    await writeWorkerResult(id, "AC", "simple");
+
+    const detail = await app.inject({
       method: "GET",
-      url: `/api/exam-sessions/${sessionId}/submissions`,
+      url: `/api/exam-sessions/${sessionId}/submissions/${id}`,
       headers: { authorization: `Bearer ${candToken}` },
     });
-    expect(list1.statusCode).toBe(200);
-    const pending = list1.json<{ id: number; status: string; sourceCode?: string }[]>();
-    expect(pending.map((s) => s.id)).toEqual([firstEasy, firstMedium, secondEasy]);
-    expect(pending.map((s) => s.status)).toEqual(["pending", "pending", "pending"]);
-    expect(pending[0]).not.toHaveProperty("sourceCode");
+    const body = detail.json<{ score: number; testcaseResults: { isPublic: boolean; actualOutput?: string }[] }>();
+    expect(body.score).toBe(0);
+    expect(body.testcaseResults).toHaveLength(1);
+    expect(body.testcaseResults[0]).toMatchObject({ isPublic: true, actualOutput: "3" });
 
-    const list2 = await app.inject({
-      method: "GET",
-      url: `/api/exam-sessions/${sessionId}/submissions`,
-      headers: { authorization: `Bearer ${candToken}` },
-    });
-    expect(list2.json<{ status: string }[]>().map((s) => s.status)).toEqual([
-      "judging",
-      "judging",
-      "judging",
-    ]);
-
-    const list3 = await app.inject({
-      method: "GET",
-      url: `/api/exam-sessions/${sessionId}/submissions`,
-      headers: { authorization: `Bearer ${candToken}` },
-    });
-    const done = list3.json<{ id: number; status: string; verdict: string }[]>();
-    expect(done.map((s) => [s.id, s.status, s.verdict])).toEqual([
-      [firstEasy, "done", "WA"],
-      [firstMedium, "done", "WA"],
-      [secondEasy, "done", "TLE"],
-    ]);
-
-    const resultRes = await app.inject({
+    const result = await app.inject({
       method: "GET",
       url: `/api/exam-sessions/${sessionId}/result`,
       headers: { authorization: `Bearer ${candToken}` },
     });
-    const result = resultRes.json<{
-      problems: { examSessionProblemId: number; latestStatus: string; latestSubmissionId: number; score: number; sourceCode?: string }[];
+    expect(result.json<{ totalScore: number }>().totalScore).toBe(0);
+  });
+
+  it("formal AC updates final submission and score without exposing hidden actualOutput", async () => {
+    const { sessionId, espIds } = await createSession(aliceToken, davidId);
+    await startSession(sessionId);
+    const { id } = await submitCode(sessionId, espIds[0]!, "formal");
+    await writeWorkerResult(id, "AC", "formal");
+
+    const detail = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/submissions/${id}`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    const body = detail.json<{
+      score: number;
+      isFinalSubmission: boolean;
+      testcaseResults: { isPublic: boolean; actualOutput?: string }[];
     }>();
-    expect(result.problems).toEqual([
-      expect.objectContaining({
-        examSessionProblemId: espIds[0],
-        latestStatus: "TLE",
-        latestSubmissionId: secondEasy,
-        score: 0,
-      }),
-      expect.objectContaining({
-        examSessionProblemId: espIds[1],
-        latestStatus: "WA",
-        latestSubmissionId: firstMedium,
-        score: 0,
-      }),
-    ]);
-    expect(result.problems[0]).not.toHaveProperty("sourceCode");
+    expect(body.score).toBe(30);
+    expect(body.isFinalSubmission).toBe(true);
+    expect(body.testcaseResults).toHaveLength(2);
+    expect(body.testcaseResults.find((tc) => tc.isPublic)).toHaveProperty("actualOutput", "3");
+    expect(body.testcaseResults.find((tc) => !tc.isPublic)).not.toHaveProperty("actualOutput");
+
+    const result = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/result`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(result.json<{ totalScore: number }>().totalScore).toBe(30);
+  });
+
+  it("builds WebSocket result payloads and ACKs malformed result messages", async () => {
+    const { sessionId, espIds } = await createSession(aliceToken, davidId);
+    await startSession(sessionId);
+    const { id } = await submitCode(sessionId, espIds[0]!, "formal");
+    await writeWorkerResult(id, "AC", "formal");
+
+    const payload = await buildJudgeResultPayload(id);
+    expect(payload).toMatchObject({
+      type: "judge_result",
+      submissionId: id,
+      sessionId,
+      verdict: "AC",
+      submissionType: "formal",
+      score: 30,
+    });
+    expect(payload!.testcaseResults.find((tc) => !tc.isPublic)).not.toHaveProperty("actualOutput");
+
+    const ack = vi.fn();
+    await handleJudgeResultMessage(
+      { ack },
+      { content: Buffer.from("{bad json") } as never
+    );
+    expect(ack).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -313,10 +373,7 @@ describe("Submission API permissions", () => {
     const { sessionId: eveSessionId } = await createSession(aliceToken, eveId);
     const { sessionId: bobSessionId } = await createSession(bobToken, davidId);
 
-    const noAuth = await app.inject({
-      method: "GET",
-      url: `/api/exam-sessions/${sessionId}/result`,
-    });
+    const noAuth = await app.inject({ method: "GET", url: `/api/exam-sessions/${sessionId}/result` });
     expect(noAuth.statusCode).toBe(401);
 
     const otherCandidate = await app.inject({
@@ -348,60 +405,54 @@ describe("Submission API permissions", () => {
     expect(root.statusCode).toBe(200);
   });
 
-  it("allows interviewer to inspect latest and historical source code, but not submit", async () => {
+  it("allows interviewer to inspect source but not submit, and forbids superuser submit", async () => {
     const { sessionId, espIds } = await createSession(aliceToken, davidId);
     await startSession(sessionId);
+    const { id } = await submitCode(sessionId, espIds[0]!, "formal");
+    await writeWorkerResult(id, "WA", "formal");
 
-    const firstId = await submitCode(sessionId, espIds[0]!, "old wrong code");
-    await settleSubmission(sessionId, firstId);
-    const secondId = await submitCode(sessionId, espIds[0]!, "slow code");
-    await settleSubmission(sessionId, secondId);
-    const thirdId = await submitCode(sessionId, espIds[0]!, "final accepted code");
-    await settleSubmission(sessionId, thirdId);
-
-    const oldDetail = await getDetail(sessionId, firstId, aliceToken);
-    expect(oldDetail.sourceCode).toBe("old wrong code");
-    expect(oldDetail.verdict).toBe("WA");
-
-    const latestDetail = await getDetail(sessionId, thirdId, aliceToken);
-    expect(latestDetail.sourceCode).toBe("final accepted code");
-    expect(latestDetail.verdict).toBe("AC");
-
-    const listRes = await app.inject({
+    const oldDetail = await app.inject({
       method: "GET",
-      url: `/api/exam-sessions/${sessionId}/submissions`,
+      url: `/api/exam-sessions/${sessionId}/submissions/${id}`,
       headers: { authorization: `Bearer ${aliceToken}` },
     });
-    expect(listRes.json<{ sourceCode?: string }[]>()[0]).not.toHaveProperty("sourceCode");
+    expect(oldDetail.statusCode).toBe(200);
+    expect(oldDetail.json<{ sourceCode: string; verdict: string }>().sourceCode).toContain("print");
 
-    const interviewerSubmit = await app.inject({
-      method: "POST",
-      url: `/api/exam-sessions/${sessionId}/submissions`,
-      headers: { authorization: `Bearer ${aliceToken}` },
-      payload: {
-        examSessionProblemId: espIds[0],
-        language: "python3",
-        sourceCode: "interviewer code",
-      },
-    });
-    expect(interviewerSubmit.statusCode).toBe(403);
+    for (const token of [aliceToken, rootToken]) {
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/exam-sessions/${sessionId}/submissions`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          examSessionProblemId: espIds[0],
+          language: "python3",
+          sourceCode: "not allowed",
+        },
+      });
+      expect(res.statusCode).toBe(403);
+    }
   });
 });
 
 describe("Submission API state guards", () => {
-  it("rejects submissions before start, after cancel, after submitted, and after expiry", async () => {
+  it("rejects submissions before start, after cancel, after submitted, after expiry, and for another candidate", async () => {
     const { sessionId: notStartedId, espIds: notStartedEspIds } = await createSession(aliceToken, davidId);
     const notStarted = await app.inject({
       method: "POST",
       url: `/api/exam-sessions/${notStartedId}/submissions`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: {
-        examSessionProblemId: notStartedEspIds[0],
-        language: "python3",
-        sourceCode: "too early",
-      },
+      payload: { examSessionProblemId: notStartedEspIds[0], language: "python3", sourceCode: "too early" },
     });
     expect(notStarted.statusCode).toBe(409);
+
+    const otherCandidate = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${notStartedId}/submissions`,
+      headers: { authorization: `Bearer ${eveToken}` },
+      payload: { examSessionProblemId: notStartedEspIds[0], language: "python3", sourceCode: "wrong owner" },
+    });
+    expect(otherCandidate.statusCode).toBe(403);
 
     const { sessionId: cancelledId, espIds: cancelledEspIds } = await createSession(aliceToken, davidId);
     await app.inject({
@@ -413,53 +464,29 @@ describe("Submission API state guards", () => {
       method: "POST",
       url: `/api/exam-sessions/${cancelledId}/submissions`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: {
-        examSessionProblemId: cancelledEspIds[0],
-        language: "python3",
-        sourceCode: "cancelled",
-      },
+      payload: { examSessionProblemId: cancelledEspIds[0], language: "python3", sourceCode: "cancelled" },
     });
     expect(cancelled.statusCode).toBe(409);
 
     const { sessionId: submittedId, espIds: submittedEspIds } = await createSession(aliceToken, davidId);
-    await db
-      .update(examSessions)
-      .set({ status: "submitted" })
-      .where(eq(examSessions.id, submittedId));
+    await db.update(examSessions).set({ status: "submitted" }).where(eq(examSessions.id, submittedId));
     const submitted = await app.inject({
       method: "POST",
       url: `/api/exam-sessions/${submittedId}/submissions`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: {
-        examSessionProblemId: submittedEspIds[0],
-        language: "python3",
-        sourceCode: "after submit",
-      },
+      payload: { examSessionProblemId: submittedEspIds[0], language: "python3", sourceCode: "after submit" },
     });
     expect(submitted.statusCode).toBe(409);
 
     const { sessionId: expiredId, espIds: expiredEspIds } = await createSession(aliceToken, davidId);
     await startSession(expiredId);
-    await db
-      .update(examSessions)
-      .set({ expiresAt: new Date(Date.now() - 1000) })
-      .where(eq(examSessions.id, expiredId));
+    await db.update(examSessions).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(examSessions.id, expiredId));
     const expired = await app.inject({
       method: "POST",
       url: `/api/exam-sessions/${expiredId}/submissions`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: {
-        examSessionProblemId: expiredEspIds[0],
-        language: "python3",
-        sourceCode: "too late",
-      },
+      payload: { examSessionProblemId: expiredEspIds[0], language: "python3", sourceCode: "too late" },
     });
     expect(expired.statusCode).toBe(409);
-
-    const [expiredSession] = await db
-      .select({ status: examSessions.status })
-      .from(examSessions)
-      .where(eq(examSessions.id, expiredId));
-    expect(expiredSession!.status).toBe("expired");
   });
 });

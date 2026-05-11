@@ -2,7 +2,7 @@
   "name": "@oct/frontend",
   "version": "0.0.1",
   "private": true,
-  "description": "Online Code Test frontend (M1 skeleton)",
+  "description": "Online Code Test frontend",
   "type": "module",
   "scripts": {
     "dev": "vite",

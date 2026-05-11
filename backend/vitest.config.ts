@@ -6,6 +6,8 @@ process.env["DATABASE_URL"] =
   process.env["TEST_DATABASE_URL"] ??
   process.env["DATABASE_URL"] ??
   "postgres://oct:oct_dev_password_change_me@localhost:5432/oct";
+process.env["RABBITMQ_URL"] =
+  process.env["RABBITMQ_URL"] ?? "amqp://oct:oct_dev_password@localhost:5672";
 
 export default defineConfig({
   test: {

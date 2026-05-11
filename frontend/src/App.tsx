@@ -41,7 +41,7 @@ export default function App() {
 
   return (
     <main style={styles.page}>
-      <h1 style={styles.h1}>Online Code Test — M1 skeleton</h1>
+      <h1 style={styles.h1}>Online Code Test — M2 async judge</h1>
       <p style={styles.sub}>NTHU 1142 雲原生 HW2 / Team 12</p>
 
       <section style={styles.card}>

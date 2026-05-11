@@ -1,1 +1,3 @@
-// 封裝 Docker Engine API (如 dockerode)
+import Docker from "dockerode";
+
+export const docker = new Docker({ socketPath: "/var/run/docker.sock" });

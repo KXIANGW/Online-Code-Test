@@ -1,71 +1,71 @@
-// 處理 C++/Java 等需要預編譯的語言
-import Docker from 'dockerode';
-import fs from 'fs-extra';
-import path from 'path';
+import type Docker from "dockerode";
+import { docker as defaultDocker } from "../providers/docker";
 
-const docker = new Docker();
-
-interface CompileOptions {
-  submissionId: number;
-  language: string;
-  hostWorkDir: string; // 複用 runner 建立的暫存路徑
+export interface CompileOptions {
+  language: "python3" | "cpp17";
+  hostWorkDir: string;
+  dockerClient?: Docker;
 }
 
-interface CompileResult {
+export interface CompileResult {
   success: boolean;
-  errorLog?: string; // 存放編譯錯誤 (CE) 的訊息
+  errorLog?: string;
 }
 
 export async function compileInSandbox(options: CompileOptions): Promise<CompileResult> {
-  const { submissionId, language, hostWorkDir } = options;
+  const docker = options.dockerClient ?? defaultDocker;
+  if (options.language === "python3") return { success: true };
 
-  // 如果是 Python，不需要編譯，直接回傳成功
-  if (language === 'python') return { success: true };
-
-  // 根據語言決定編譯指令
-  let compileCmd: string[];
-  let image: string;
-
-  if (language === 'cpp') {
-    image = 'oj-sandbox-cpp';
-    // -O2 優化, -lm 連結數學庫, 產出名為 solution 的執行檔
-    compileCmd = ['g++', 'solution.cpp', '-O2', '-o', 'solution', '-lm'];
-  } else if (language === 'java') {
-    image = 'oj-sandbox-java';
-    compileCmd = ['javac', 'Main.java'];
-  } else {
-    return { success: false, errorLog: `Unsupported language: ${language}` };
-  }
-
-  const containerConfig = {
-    Image: image,
-    Cmd: compileCmd,
+  const container = await docker.createContainer({
+    Image: "oj-sandbox-cpp",
+    Cmd: ["g++", "solution.cpp", "-O2", "-std=c++17", "-o", "solution", "-lm"],
+    WorkingDir: "/code",
     HostConfig: {
-      Binds: [`${hostWorkDir}:/code`],
-      Memory: 512 * 1024 * 1024, // 編譯通常比較耗記憶體，給 512MB
-      NetworkMode: 'none',
-      AutoRemove: true,
+      Binds: [`${options.hostWorkDir}:/code`],
+      Memory: 512 * 1024 * 1024,
+      NetworkMode: "none",
     },
-    WorkingDir: '/code',
-  };
+  });
 
   try {
-    const container = await docker.createContainer(containerConfig);
     await container.start();
-    
-    // 等待編譯結束
     const waitResult = await container.wait();
-    
+    const logs = await container.logs({ stdout: true, stderr: true });
+    const { stderr, stdout } = parseDockerLogs(logs);
+
     if (waitResult.StatusCode !== 0) {
-      // 獲取編譯失敗的錯誤訊息 (stderr)
-      const logs = await container.logs({ stderr: true });
-      // 移除前 8 bytes 的 Docker header
-      const errorLog = logs.slice(8).toString('utf8');
-      return { success: false, errorLog };
+      return { success: false, errorLog: stderr || stdout || "Compilation failed" };
     }
 
     return { success: true };
-  } catch (error: any) {
-    return { success: false, errorLog: error.message };
+  } catch (err) {
+    return {
+      success: false,
+      errorLog: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    await container.remove({ force: true }).catch(() => undefined);
   }
+}
+
+export function parseDockerLogs(buffer: Buffer): { stdout: string; stderr: string } {
+  let stdout = "";
+  let stderr = "";
+  let offset = 0;
+
+  while (offset + 8 <= buffer.length) {
+    const streamType = buffer.readUInt8(offset);
+    const size = buffer.readUInt32BE(offset + 4);
+    const start = offset + 8;
+    const end = start + size;
+    if (end > buffer.length) break;
+
+    const chunk = buffer.toString("utf8", start, end);
+    if (streamType === 1) stdout += chunk;
+    if (streamType === 2) stderr += chunk;
+    offset = end;
+  }
+
+  if (offset === 0 && buffer.length > 0) stdout = buffer.toString("utf8");
+  return { stdout, stderr };
 }

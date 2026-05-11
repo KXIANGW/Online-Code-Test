@@ -13,6 +13,7 @@ const createSubmissionBody = z.object({
   examSessionProblemId: z.number().int().positive(),
   language: z.string().min(1).max(32),
   sourceCode: z.string().min(1),
+  type: z.enum(["simple", "formal"]).default("formal"),
 });
 
 export const submissionRoutes: FastifyPluginAsync = async (app) => {

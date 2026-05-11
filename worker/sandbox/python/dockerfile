@@ -1,6 +1,0 @@
-FROM python:3.10-slim
-RUN useradd -m judge
-USER judge
-WORKDIR /code
-# run.sh 負責處理編譯(如有)與執行
-COPY run.sh /usr/local/bin/run.sh

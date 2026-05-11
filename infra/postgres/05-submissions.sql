@@ -5,6 +5,7 @@ CREATE TABLE submissions (
   candidate_id            BIGINT            NOT NULL REFERENCES users(id),
   language                VARCHAR(32)       NOT NULL REFERENCES language_defaults(language),
   source_code             TEXT              NOT NULL,
+  submission_type          submission_type   NOT NULL DEFAULT 'formal',
   status                  submission_status NOT NULL DEFAULT 'pending',
   verdict                 verdict_type,
   runtime_ms              INT,
