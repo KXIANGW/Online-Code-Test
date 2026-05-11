@@ -180,19 +180,99 @@ worker/
 
 ## 測試覆蓋現況
 
+目前共有 5 個 test files、17 筆 tests。測試分成兩層：engine / consumer 以 mock Docker、mock DB 驗證判題流程決策；`db/queries.integration.test.ts` 則連到真實 PostgreSQL，驗證 worker 寫入 submission、testcase results、score 與 final submission 的 DB 行為。
+
 | Test file | 測試數 | 覆蓋重點 |
 |-----------|--------|----------|
-| `engine/checker.test.ts` | 約 5 | AC/WA 比對含尾端空白/換行邊界 |
-| `engine/compiler.test.ts` | 約 10 | 編譯成功、CE 回傳 errorLog |
-| `engine/runner.test.ts` | 約 15 | TLE（timeout）、MLE（exit 137）、RE（非零 exit）、AC |
-| `consumers/judge.consumer.test.ts` | 約 20 | 完整判題流程 mock（DB queries、Docker mocked） |
+| `engine/checker.test.ts` | 2 | AC/WA 比對含尾端空白/換行邊界 |
+| `engine/compiler.test.ts` | 2 | 編譯失敗 CE、Python skip compile |
+| `engine/runner.test.ts` | 4 | TLE（timeout）、MLE（exit 137）、RE（非零 exit）、output limit |
+| `consumers/judge.consumer.test.ts` | 4 | 完整判題流程 mock（DB queries、Docker mocked）、publish/ACK、skipped |
+| `db/queries.integration.test.ts` | 5 | PostgreSQL integration：submission/testcase loading、formal/simple scoring、CE/system_error 寫入 |
 
-測試使用 Vitest，`db/queries` 與 Dockerode 在 consumer 測試中以 `vi.mock` 替換，engine 測試依賴 Docker 環境（需本機 Docker 運行）。
+測試使用 Vitest。`consumers` 測試中 `db/queries` 與 Dockerode 以 `vi.mock` 替換；`db/queries.integration.test.ts` 會連到真實 PostgreSQL，需設定 `TEST_DATABASE_URL` 或 `DATABASE_URL`。
+
+### Engine 測試
+
+Engine 測試聚焦在「單一判題原語」是否穩定，不依賴 RabbitMQ 或 backend API。
+
+| 模組 | 測試目標 |
+|------|----------|
+| Checker | 忽略尾端空白、換行與 CRLF 差異，等價輸出判為 `AC` |
+| Checker | 輸出內容不同時判為 `WA`，並回傳第一個差異行的 diff |
+| Compiler | C++ 編譯容器失敗時回傳 `CE` error log，不繼續執行 testcase |
+| Compiler | Python 不需 compile，直接回傳 success |
+| Runner | Docker exit code `137` 對應 `MLE` |
+| Runner | 非 0 exit code 對應 `RE`，並保留 stderr |
+| Runner | testcase timeout 時 kill container，回傳 `TLE` |
+| Runner | stdout 超過 `outputLimitKb` 時回傳 `RE` 與 `Output limit exceeded` |
+
+### Consumer 測試
+
+Consumer 測試聚焦在 RabbitMQ message 被消費後，worker 如何串接 DB query、compiler、runner、checker 與 result publish。這層使用 mock，避免測試速度與 Docker/RabbitMQ 狀態耦合。
+
+| 測試目標 | 驗證內容 |
+|----------|----------|
+| Queue concurrency | `startJudgeConsumer` 會先設定 `prefetch(1)`，避免單一 worker 同時吃多個判題工作 |
+| Simple submission | `simple` 只抓 public testcases，執行後寫入 `writeJudgeResults`，並 publish `judge.results` |
+| Resource limits | 從 DB 載入的 `outputLimitKb` 會傳入 `runOneTestcase`，與 time/memory limit 一起參與判題 |
+| Formal submission | `formal` 會抓全部 testcases，包括 hidden testcases |
+| Failure short-circuit | 第一個 testcase `WA` 後，後續 testcase 會標記 `skipped` |
+| Publish/ACK | 成功判題後 publish `judge.results`，並 ACK 原始 `judge.tasks` message |
+| Unknown exception | DB 或判題流程丟錯時，submission 會標記 `system_error`，並 ACK message，避免 queue 卡住 |
+
+### DB Integration 測試
+
+這層不是純 SQL unit tests，而是用 worker 實際使用的 `db/queries` 函式連到真實 PostgreSQL。測試資料會建立 users、problem、language limits、public/hidden testcases、exam session、exam session problem 與 submissions，藉此驗證 DB 欄位在真實判題流程中的意義。
+
+| 測試目標 | 驗證內容 |
+|----------|----------|
+| `getSubmissionById` | 可載入 candidate、problem、session problem、source code、submission type |
+| Language limits | 題目層 `problem_language_limits` 會覆寫 `language_defaults`，例如 Python time/memory multiplier |
+| Output limit | `problems.output_limit_kb` 會被載入成 `outputLimitKb`，供 runner 執行輸出限制 |
+| `getTestcases` | `simple` 模式只回 public testcases；`formal` 模式回全部 testcases |
+| Judge order | testcases 依 `order_index` 排序，不依 insert 順序 |
+| Formal AC scoring | `formal` + `AC` 會把該 submission 寫成 `final_submission_id`，題目分數設為 `score_weight`，並更新 session `total_score` |
+| Formal non-AC scoring | 後續完成的 `formal` 非 AC submission 也會成為 final submission，分數歸 0，session `total_score` 跟著歸 0 |
+| Simple scoring no-op | `simple` 即使 AC，也不更新 `final_submission_id`、題目分數或 session `total_score` |
+| CE behavior | `CE` 會寫入 submission verdict，但不新增任何 `submission_testcase_results` rows |
+| State updates | `updateSubmissionJudging` 可將 submission 標記為 `judging`；`markSubmissionSystemError` 可標記為 `system_error` 並清空 verdict |
+
+### 關鍵業務規則覆蓋
+
+| 規則 | 測試涵蓋 |
+|------|----------|
+| Public vs hidden testcases | `simple` 只執行 public；`formal` 執行 public + hidden |
+| Hidden output safety | hidden testcase 的 `actualOutput` 可由 worker 寫入為 `null`，由 backend result API 繼續保護不外洩 |
+| Final submission | 每次完成的 `formal` submission 都會覆寫 `exam_session_problems.final_submission_id` |
+| Score rule | `formal` AC 得 `score_weight`；`formal` 非 AC 得 0；`simple` 不影響分數 |
+| Output limit | `problems.output_limit_kb` 從 DB 載入、傳入 runner，stdout 超限時判成失敗 |
+| Language multiplier | 題目語言覆寫優先於全域預設，並實際影響 worker 使用的 time/memory limit |
+| CE no testcase rows | 編譯失敗沒有 per-testcase result，避免產生不存在的執行結果 |
+| Short-circuit | 第一個 non-AC testcase 後，後續 testcase 標記 `skipped` |
+| Queue safety | 成功或例外路徑都會 ACK message，例外路徑額外標記 `system_error` |
+
+### 測試環境需求
+
+| 測試類型 | 需求 |
+|----------|------|
+| Checker / compiler / runner unit tests | 不需要 PostgreSQL 或 RabbitMQ；Docker client 已被 mock |
+| Consumer tests | 不需要 PostgreSQL、RabbitMQ 或 Docker；DB / Docker / engine dependency 皆以 `vi.mock` 替換 |
+| DB integration tests | 需要 PostgreSQL，透過 `TEST_DATABASE_URL` 或 `DATABASE_URL` 連線 |
+| Full manual worker test | 需要 postgres + rabbitmq + backend + worker，以及可用的 sandbox runtime |
+
+常用自動測試指令：
+
+```bash
+cd worker
+TEST_DATABASE_URL=postgres://oct:oct_dev_password_change_me@localhost:5432/oct npm test
+npm run lint
+```
 
 ---
 
 ## 剩餘工作
 
-- **Worker 整合測試**：目前為 unit/mock 測試；補充端到端整合測試（真實 DB + RabbitMQ + Docker sandbox），驗證 formal 提交分數更新。
+- **Worker 端到端整合測試**：目前已有真實 PostgreSQL 的 `db/queries` integration tests；仍可補充真實 RabbitMQ + Docker sandbox 的 E2E worker 測試，驗證從 `judge.tasks` 到 `judge.results` 的完整鏈路。
 - **gVisor CI 安裝策略**：gVisor 需在 host 安裝，CI runner 需要支援巢狀虛擬化；目前 CI 用 `SANDBOX_RUNTIME=runc`，需評估是否引入 gVisor 專屬 CI 環境。
 - **Sandbox image 版本管理**：`oj-sandbox-cpp` / `oj-sandbox-python` 目前需手動 build；整合進 docker-compose build 或 registry push 流程。

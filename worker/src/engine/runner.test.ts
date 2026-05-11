@@ -44,6 +44,7 @@ describe("runOneTestcase", () => {
       inputData: "1\n",
       timeLimitMs: 1000,
       memoryLimitMb: 64,
+      outputLimitKb: 64,
       sandboxRuntime: "runc",
       dockerClient: docker as never,
     });
@@ -63,6 +64,7 @@ describe("runOneTestcase", () => {
       inputData: "",
       timeLimitMs: 1000,
       memoryLimitMb: 64,
+      outputLimitKb: 64,
       sandboxRuntime: "runc",
       dockerClient: docker as never,
     });
@@ -86,12 +88,33 @@ describe("runOneTestcase", () => {
       inputData: "",
       timeLimitMs: 1,
       memoryLimitMb: 64,
+      outputLimitKb: 64,
       sandboxRuntime: "runc",
       dockerClient: docker as never,
     });
 
     expect(result.verdict).toBe("TLE");
     expect(container.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps excessive stdout to RE", async () => {
+    const { docker } = dockerWithStatus(0, dockerLog(1, "x".repeat(2049)));
+
+    const result = await runOneTestcase({
+      language: "python3",
+      hostWorkDir: await tempDir(),
+      inputData: "",
+      timeLimitMs: 1000,
+      memoryLimitMb: 64,
+      outputLimitKb: 2,
+      sandboxRuntime: "runc",
+      dockerClient: docker as never,
+    });
+
+    expect(result).toMatchObject({
+      verdict: "RE",
+      stderr: "Output limit exceeded",
+    });
   });
 });
 

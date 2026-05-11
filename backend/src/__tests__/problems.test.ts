@@ -74,6 +74,31 @@ describe("POST /api/problems", () => {
     });
     expect(res.statusCode).toBe(403);
   });
+
+  it("invalid payload and duplicate testcase order → 400/409", async () => {
+    const token = await loginAs(app, "carol", "Test@1234");
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/problems",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ...sampleProblem, timeLimitMs: 0 },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const duplicateOrder = await app.inject({
+      method: "POST",
+      url: "/api/problems",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ...sampleProblem,
+        testcases: [
+          { orderIndex: 1, isPublic: true, inputData: "a", expectedOutput: "a" },
+          { orderIndex: 1, isPublic: false, inputData: "b", expectedOutput: "b" },
+        ],
+      },
+    });
+    expect(duplicateOrder.statusCode).toBe(409);
+  });
 });
 
 // ── GET /api/problems ──────────────────────────────────────────────────────────
@@ -189,6 +214,23 @@ describe("GET /api/problems/:id", () => {
     const hiddenTc = body.testcases.find((tc) => !tc.isPublic);
     expect(hiddenTc?.inputData).toBeUndefined();
   });
+
+  it("invalid id → 400 and missing problem → 404", async () => {
+    const token = await loginAs(app, "carol", "Test@1234");
+    const invalid = await app.inject({
+      method: "GET",
+      url: "/api/problems/nope",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const missing = await app.inject({
+      method: "GET",
+      url: "/api/problems/999999",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
 });
 
 // ── PUT /api/problems/:id ──────────────────────────────────────────────────────
@@ -258,6 +300,25 @@ describe("POST /api/problems/:id/testcases", () => {
     });
     expect(tcRes.statusCode).toBe(201);
     expect(tcRes.json<{ id: number }>().id).toBeDefined();
+  });
+
+  it("duplicate orderIndex on an existing problem → 409", async () => {
+    const token = await loginAs(app, "carol", "Test@1234");
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/problems",
+      headers: { authorization: `Bearer ${token}` },
+      payload: sampleProblem,
+    });
+    const { id } = createRes.json<{ id: number }>();
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/problems/${id}/testcases`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { orderIndex: 1, isPublic: true, inputData: "dup", expectedOutput: "dup" },
+    });
+    expect(res.statusCode).toBe(409);
   });
 });
 
@@ -377,6 +438,54 @@ describe("DELETE /api/problems/:id", () => {
       headers: { authorization: `Bearer ${aliceToken}` },
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  it("soft-deleted problem rejects detail/update/testcase/language operations", async () => {
+    const token = await loginAs(app, "carol", "Test@1234");
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/problems",
+      headers: { authorization: `Bearer ${token}` },
+      payload: sampleProblem,
+    });
+    const { id } = createRes.json<{ id: number }>();
+
+    await app.inject({
+      method: "DELETE",
+      url: `/api/problems/${id}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    const detail = await app.inject({
+      method: "GET",
+      url: `/api/problems/${id}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(detail.statusCode).toBe(404);
+
+    const update = await app.inject({
+      method: "PUT",
+      url: `/api/problems/${id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { title: "Nope" },
+    });
+    expect(update.statusCode).toBe(404);
+
+    const testcase = await app.inject({
+      method: "POST",
+      url: `/api/problems/${id}/testcases`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { orderIndex: 3, isPublic: true, inputData: "", expectedOutput: "" },
+    });
+    expect(testcase.statusCode).toBe(404);
+
+    const languages = await app.inject({
+      method: "PUT",
+      url: `/api/problems/${id}/languages`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: [{ language: "cpp17", timeMultiplier: 1, memoryMultiplier: 1 }],
+    });
+    expect(languages.statusCode).toBe(404);
   });
 });
 
@@ -514,6 +623,36 @@ describe("PUT /api/problems/:id/languages", () => {
       payload: [{ language: "cpp17", timeMultiplier: 1.0, memoryMultiplier: 1.0 }],
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  it("unknown language → 400 and duplicate language → 409", async () => {
+    const token = await loginAs(app, "carol", "Test@1234");
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/problems",
+      headers: { authorization: `Bearer ${token}` },
+      payload: sampleProblem,
+    });
+    const { id } = createRes.json<{ id: number }>();
+
+    const unknown = await app.inject({
+      method: "PUT",
+      url: `/api/problems/${id}/languages`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: [{ language: "ruby", timeMultiplier: 1, memoryMultiplier: 1 }],
+    });
+    expect(unknown.statusCode).toBe(400);
+
+    const duplicate = await app.inject({
+      method: "PUT",
+      url: `/api/problems/${id}/languages`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: [
+        { language: "cpp17", timeMultiplier: 1, memoryMultiplier: 1 },
+        { language: "cpp17", timeMultiplier: 2, memoryMultiplier: 2 },
+      ],
+    });
+    expect(duplicate.statusCode).toBe(409);
   });
 });
 

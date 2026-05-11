@@ -5,6 +5,7 @@ import { db, pool } from "../db/client";
 import {
   examSessionProblems,
   examSessions,
+  languageDefaults,
   problems,
   problemTestcases,
   submissions,
@@ -203,14 +204,16 @@ async function writeWorkerResult(
       `,
       [submissionId, verdict]
     );
-    if (type === "formal" && verdict === "AC") {
+    if (type === "formal") {
       await pool.query(
         `
           UPDATE exam_session_problems
-          SET final_submission_id = $2, score = score_weight, updated_at = NOW()
+          SET final_submission_id = $2,
+              score = CASE WHEN $3 = 'AC' THEN score_weight ELSE 0 END,
+              updated_at = NOW()
           WHERE id = $1
         `,
-        [submission!.examSessionProblemId, submissionId]
+        [submission!.examSessionProblemId, submissionId, verdict]
       );
       await pool.query(
         `
@@ -339,6 +342,39 @@ describe("Submission API async judge", () => {
       headers: { authorization: `Bearer ${candToken}` },
     });
     expect(result.json<{ totalScore: number }>().totalScore).toBe(30);
+  });
+
+  it("latest formal submission decides final score, including non-AC after AC", async () => {
+    const { sessionId, espIds } = await createSession(aliceToken, davidId);
+    await startSession(sessionId);
+    const first = await submitCode(sessionId, espIds[0]!, "formal");
+    await writeWorkerResult(first.id, "AC", "formal");
+    const second = await submitCode(sessionId, espIds[0]!, "formal");
+    await writeWorkerResult(second.id, "WA", "formal");
+
+    const firstDetail = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/submissions/${first.id}`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(firstDetail.json<{ isFinalSubmission: boolean; score: number }>())
+      .toMatchObject({ isFinalSubmission: false, score: 0 });
+
+    const secondDetail = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/submissions/${second.id}`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(secondDetail.json<{ isFinalSubmission: boolean; score: number }>())
+      .toMatchObject({ isFinalSubmission: true, score: 0 });
+
+    const result = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/result`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(result.json<{ totalScore: number; problems: { latestStatus: string }[] }>())
+      .toMatchObject({ totalScore: 0, problems: [expect.objectContaining({ latestStatus: "WA" })] });
   });
 
   it("builds WebSocket result payloads and ACKs malformed result messages", async () => {
@@ -488,5 +524,65 @@ describe("Submission API state guards", () => {
       payload: { examSessionProblemId: expiredEspIds[0], language: "python3", sourceCode: "too late" },
     });
     expect(expired.statusCode).toBe(409);
+  });
+
+  it("rejects invalid payloads, unsupported/disabled languages, and wrong session problem id", async () => {
+    const { sessionId, espIds } = await createSession(aliceToken, davidId);
+    const { sessionId: otherSessionId, espIds: otherEspIds } = await createSession(aliceToken, eveId);
+    await startSession(sessionId);
+
+    const invalidType = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/submissions`,
+      headers: { authorization: `Bearer ${candToken}` },
+      payload: { examSessionProblemId: espIds[0], language: "python3", sourceCode: "", type: "practice" },
+    });
+    expect(invalidType.statusCode).toBe(400);
+
+    const unsupportedLanguage = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/submissions`,
+      headers: { authorization: `Bearer ${candToken}` },
+      payload: { examSessionProblemId: espIds[0], language: "ruby", sourceCode: "puts 1" },
+    });
+    expect(unsupportedLanguage.statusCode).toBe(400);
+
+    await db.update(languageDefaults).set({ isEnabled: false }).where(eq(languageDefaults.language, "python3"));
+    const disabledLanguage = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/submissions`,
+      headers: { authorization: `Bearer ${candToken}` },
+      payload: { examSessionProblemId: espIds[0], language: "python3", sourceCode: "print(1)" },
+    });
+    expect(disabledLanguage.statusCode).toBe(400);
+    await db.update(languageDefaults).set({ isEnabled: true }).where(eq(languageDefaults.language, "python3"));
+
+    const wrongSessionProblem = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/submissions`,
+      headers: { authorization: `Bearer ${candToken}` },
+      payload: { examSessionProblemId: otherEspIds[0], language: "python3", sourceCode: "print(1)" },
+    });
+    expect(wrongSessionProblem.statusCode).toBe(404);
+
+    expect(otherSessionId).toBeDefined();
+  });
+
+  it("invalid submission route ids → 400 and missing submission → 404", async () => {
+    const { sessionId } = await createSession(aliceToken, davidId);
+
+    const invalid = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/submissions/nope`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const missing = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/submissions/999999`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(missing.statusCode).toBe(404);
   });
 });

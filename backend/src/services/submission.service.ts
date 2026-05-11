@@ -234,6 +234,7 @@ export async function getSubmissionDetail(
       problemTitle: problems.title,
       orderIndex: examSessionProblems.orderIndex,
       scoreWeight: examSessionProblems.scoreWeight,
+      currentScore: examSessionProblems.score,
       finalSubmissionId: examSessionProblems.finalSubmissionId,
     })
     .from(submissions)
@@ -282,7 +283,7 @@ export async function getSubmissionDetail(
     memoryKb: submission.memoryKb,
     submittedAt: submission.submittedAt,
     judgedAt: submission.judgedAt,
-    score: submission.finalSubmissionId === submission.id ? submission.scoreWeight : 0,
+    score: submission.finalSubmissionId === submission.id ? submission.currentScore : 0,
     scoreWeight: submission.scoreWeight,
     isFinalSubmission: submission.finalSubmissionId === submission.id,
     testcaseResults: testcaseResults.map((result) => ({

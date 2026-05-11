@@ -122,22 +122,24 @@ cd backend && npm run lint && cd ..
 
 OK 條件：結尾沒有 TypeScript error。
 
-#### Step 4：Integration tests（79 tests）
+#### Step 4：Integration tests（99 tests）
 
 ```bash
 cd backend
-DATABASE_URL=postgres://oct:oct_dev_password_change_me@localhost:5432/oct npm test
+TEST_DATABASE_URL=postgres://oct:oct_dev_password_change_me@localhost:5432/oct npm test
 cd ..
 ```
+
+若未設定 `TEST_DATABASE_URL`，測試會 fallback 使用 `DATABASE_URL`。這批測試會連到真實 PostgreSQL，並直接驗證 API 對 DB 欄位、FK/unique/check constraint、RBAC 與 worker result 寫入後狀態的整合行為。
 
 OK 條件：
 
 ```text
-Test Files  5 passed (5)
-Tests       79 passed (79)
+Test Files  6 passed (6)
+Tests       99 passed (99)
 ```
 
-若看到 `ECONNREFUSED 127.0.0.1:5432`，回到 Step 1 確認 PostgreSQL 狀態。
+若看到 `ECONNREFUSED 127.0.0.1:5432`、`connect EPERM localhost:5432`，或其他 PostgreSQL 連線錯誤，回到 Step 1 確認 PostgreSQL 狀態與 `TEST_DATABASE_URL` / `DATABASE_URL`。
 
 #### Step 5：重置 DB（為手動測試準備 scenario data）
 
@@ -283,17 +285,25 @@ echo "SUBMISSION_1=$SUBMISSION_1"
 
 ## 5. Worker 測試
 
-Worker 測試需要完整 compose stack（postgres + rabbitmq + backend + worker）。
+Worker 手動測試需要完整 compose stack（postgres + rabbitmq + backend + worker）。自動測試中的 DB integration tests 至少需要 PostgreSQL 可連線。
 
 ### 5.1 自動測試
 
-Worker unit tests 覆蓋 compiler、runner、checker、consumer 模組（約 50 tests），不需要 RabbitMQ 或 Docker socket：
+Worker tests 覆蓋 compiler、runner、checker、consumer mock，以及 `db/queries` 的 PostgreSQL integration tests（17 tests）。RabbitMQ 不需要啟動；DB integration tests 需要 `TEST_DATABASE_URL` 或 `DATABASE_URL` 指向真實 PostgreSQL：
 
 ```bash
 cd worker
 npm install
-npm test
+TEST_DATABASE_URL=postgres://oct:oct_dev_password_change_me@localhost:5432/oct npm test
 npm run lint
+cd ..
+```
+
+只想跑不碰 DB 的 worker unit tests 時，可指定非 integration 檔案：
+
+```bash
+cd worker
+npm test -- src/engine src/consumers
 cd ..
 ```
 
@@ -419,9 +429,9 @@ Database 手動測試只需要 PostgreSQL，不需要完整 stack。
 
 ### 6.1 自動測試
 
-> **目前沒有獨立的 Database 自動測試。**
+> **目前沒有純 SQL / per-column 的 Database unit tests。**
 >
-> Database schema、RBAC 規則、seed data 正確性目前由 **Backend integration tests**（第 4.1 節）覆蓋，共 79 tests 驗證 auth、RBAC、題目、語言、考試流程及 DB 寫入行為。
+> Database schema、RBAC 規則、seed data 正確性目前由 **Backend integration tests**（第 4.1 節）與 **Worker DB integration tests**（第 5.1 節）覆蓋。這是本專案目前比較合理的做法：不為每個 DB 欄位寫孤立測試，而是透過 API/worker 流程證明重要欄位真的影響 Online Code Test 行為，例如 testcase order uniqueness、session problem uniqueness、language references、hidden testcase redaction、`output_limit_kb`、final submission FK 與 score 更新。
 >
 > 預計 M3 補充：獨立的 schema migration 驗證腳本。
 

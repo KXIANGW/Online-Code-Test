@@ -2,7 +2,7 @@
 
 ## 目前狀態
 
-目前專案已完成 PostgreSQL schema/seed/scenario data 與 Backend API M1，包括 JWT auth、IAM、Problem、Exam、Language、Submission mock judge、RBAC 與 76 筆 integration tests；M2 已完成 RabbitMQ 非同步判題整合（移除 mock judge）與 WebSocket 即時推播，前端仍維持健康狀態頁，正式前端功能留待後續實作。
+目前專案已完成 PostgreSQL schema/seed/scenario data 與 Backend API M1，包括 JWT auth、IAM、Problem、Exam、Language、RBAC 與 99 筆 integration tests；M2 已完成 RabbitMQ 非同步判題整合（移除 mock judge）與 WebSocket 即時推播，前端仍維持健康狀態頁，正式前端功能留待後續實作。
 
 Database schema 已完整建置（見 `infra/postgres/` 下的 00-11 SQL 腳本，以及對應的 Drizzle ORM schema `backend/src/db/schema.ts`）。Backend 以 Routes（HTTP 薄層）+ Services（業務邏輯、RBAC）分層實作，M2 新增 MQ 發布/消費與 WebSocket hub。
 
@@ -58,11 +58,12 @@ backend/src/
     ├── helpers/
     │   ├── app.ts         # 建立測試用 Fastify app，seed 9 位使用者 / 8 題 / 6 場考試
     │   └── db.ts          # DB truncate / 重新 seed 工具函式
-    ├── auth.test.ts        # 6 tests
-    ├── users.test.ts       # 20 tests
-    ├── problems.test.ts    # 25 tests
-    ├── exams.test.ts       # 20 tests
-    └── submissions.test.ts # 5 tests
+    ├── auth.test.ts        # 7 tests
+    ├── users.test.ts       # 24 tests
+    ├── problems.test.ts    # 30 tests
+    ├── exams.test.ts       # 24 tests
+    ├── submissions.test.ts # 11 tests
+    └── system.test.ts      # 3 tests
 ```
 
 **分層設計理由：**
@@ -133,15 +134,16 @@ backend/src/
 
 ## 測試覆蓋現況
 
-目前共有 5 個 test files、76 筆 integration tests。這些測試不是只驗證「happy path」，而是刻意依角色覆蓋 RBAC、ownership、資料隔離、錯誤狀態與關鍵業務規則。
+目前共有 6 個 test files、99 筆 integration tests。這些測試不是只驗證「happy path」，而是刻意依角色覆蓋 RBAC、ownership、資料隔離、錯誤狀態與關鍵業務規則。
 
 | Test file | 測試數 | 覆蓋重點 |
 |-----------|--------|----------|
-| `auth.test.ts` | 6 | 登入成功/失敗、軟刪除帳號、body validation、未認證 401 |
-| `users.test.ts` | 20 | superuser / interviewer / candidate 的 IAM 權限與軟刪除 |
-| `problems.test.ts` | 25 | 題目 CRUD、測資 CRUD、hidden testcase sanitization、Language API、languageLimits |
-| `exams.test.ts` | 20 | 手動/隨機派題、歷史題目排除、session visibility、start/cancel、session problems |
-| `submissions.test.ts` | 5 | mock judge 狀態推進、submission history/result、source code visibility、RBAC/ownership、session 狀態 guard |
+| `auth.test.ts` | 7 | 登入成功/失敗、軟刪除帳號、body validation、未認證與 malformed JWT 401 |
+| `users.test.ts` | 24 | superuser / interviewer / candidate 的 IAM 權限、重複 username、未知 role、batch bounds 與軟刪除 |
+| `problems.test.ts` | 30 | 題目 CRUD、測資 CRUD、hidden testcase sanitization、Language API、languageLimits、deleted problem guards、constraint conflicts |
+| `exams.test.ts` | 24 | 手動/隨機派題、歷史題目排除、session visibility、start/cancel ownership、session problems、random pool conflicts |
+| `submissions.test.ts` | 11 | async judge 狀態、submission history/result、source code visibility、RBAC/ownership、session 狀態 guard、final formal scoring |
+| `system.test.ts` | 3 | `/api/ping`、`/api/health`、`/api/ws` authentication/error behavior |
 
 ### 通用測試
 
@@ -245,8 +247,8 @@ Candidate 具備 `exam:take`，測試重點是「只能參加自己的考試」�
 | Exam | 可查詢自己 session 的題目列表 |
 | Exam | 查詢其他 candidate session 的題目列表回 403 |
 | Submission | 可在自己的 `in_progress` session 建立 submission，初始狀態為 `pending` |
-| Submission | 多次讀取 detail / history / result 可觀察 mock judge 推進 `pending → judging → done` |
-| Submission | 同一題前三次提交 verdict 依序為 `WA`、`TLE`、`AC`，第三次取得滿分 |
+| Submission | 讀取 detail / history / result 不會 lazy 推進狀態，worker result consumer 才能寫入 `judging` / `done` |
+| Submission | 最新 `formal` 提交決定 `final_submission_id`；AC 得滿分，非 AC 得 0，`simple` 不影響分數 |
 | Submission | 可查自己的 submission detail 與 testcase results，但 hidden testcase 不揭露 `actualOutput` |
 | Submission | 查詢其他 candidate 的 result / history 回 403 |
 
@@ -262,8 +264,8 @@ Candidate 具備 `exam:take`，測試重點是「只能參加自己的考試」�
 | Random assignment | 隨機派題排除 candidate 歷史題目，也處理題庫不足 |
 | Exam state transition | `not_started` → `in_progress`，重複 start 回 409 |
 | Language limits | 建題、查詢、覆寫、清空 languageLimits |
-| Submission state transition | mock judge lazy 推進 `pending → judging → done` |
-| Submission scoring | 最新提交寫入 `final_submission_id`，AC 給該題滿分，並更新 session `total_score` |
+| Submission state transition | API 建立 `pending`，worker result consumer 寫入 `judging` / `done` / `system_error` |
+| Submission scoring | 最新完成的 `formal` 提交寫入 `final_submission_id`，AC 給該題滿分、非 AC 歸 0，並更新 session `total_score`；`simple` 不影響分數 |
 | Source code visibility | history / result 不回傳 `sourceCode`；detail 可供 candidate 本人與建立該 session 的 interviewer 查看 |
 | Hidden testcase result safety | hidden testcase 不回傳 `actualOutput` |
 | Submission guards | 未開始、取消、已提交、過期 session 皆不可提交；過期 session 會 lazy 標記為 `expired` |

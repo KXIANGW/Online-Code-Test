@@ -9,6 +9,7 @@ import {
   deleteUser,
 } from "../services/user.service";
 import { BadRequestError } from "../errors";
+import { parsePositiveIntParam } from "./params";
 
 const createUserBody = z.object({
   username: z.string().min(1).max(64),
@@ -42,12 +43,12 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/:id", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
-    return getUser(request.user, parseInt(id));
+    return getUser(request.user, parsePositiveIntParam(id, "id"));
   });
 
   app.delete("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    await deleteUser(request.user, parseInt(id));
+    await deleteUser(request.user, parsePositiveIntParam(id, "id"));
     return reply.status(204).send();
   });
 };

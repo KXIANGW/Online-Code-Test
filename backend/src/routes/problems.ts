@@ -13,6 +13,7 @@ import {
   setProblemLanguageLimits,
 } from "../services/problem.service";
 import { BadRequestError } from "../errors";
+import { parsePositiveIntParam } from "./params";
 
 const testcaseSchema = z.object({
   orderIndex: z.number().int().min(0),
@@ -61,19 +62,19 @@ export const problemRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/:id", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
-    return getProblem(request.user, parseInt(id));
+    return getProblem(request.user, parsePositiveIntParam(id, "id"));
   });
 
   app.put("/:id", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
     const result = updateProblemBody.safeParse(request.body);
     if (!result.success) throw BadRequestError(result.error.message);
-    return updateProblem(request.user, parseInt(id), result.data);
+    return updateProblem(request.user, parsePositiveIntParam(id, "id"), result.data);
   });
 
   app.delete("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    await deleteProblem(request.user, parseInt(id));
+    await deleteProblem(request.user, parsePositiveIntParam(id, "id"));
     return reply.status(204).send();
   });
 
@@ -81,7 +82,7 @@ export const problemRoutes: FastifyPluginAsync = async (app) => {
     const { id } = request.params as { id: string };
     const result = testcaseSchema.safeParse(request.body);
     if (!result.success) throw BadRequestError(result.error.message);
-    const tc = await addTestcase(request.user, parseInt(id), result.data);
+    const tc = await addTestcase(request.user, parsePositiveIntParam(id, "id"), result.data);
     return reply.status(201).send(tc);
   });
 
@@ -89,12 +90,21 @@ export const problemRoutes: FastifyPluginAsync = async (app) => {
     const { id, tcId } = request.params as { id: string; tcId: string };
     const result = testcaseSchema.partial().safeParse(request.body);
     if (!result.success) throw BadRequestError(result.error.message);
-    return updateTestcase(request.user, parseInt(id), parseInt(tcId), result.data);
+    return updateTestcase(
+      request.user,
+      parsePositiveIntParam(id, "id"),
+      parsePositiveIntParam(tcId, "tcId"),
+      result.data
+    );
   });
 
   app.delete("/:id/testcases/:tcId", { preHandler: [authenticate] }, async (request, reply) => {
     const { id, tcId } = request.params as { id: string; tcId: string };
-    await deleteTestcase(request.user, parseInt(id), parseInt(tcId));
+    await deleteTestcase(
+      request.user,
+      parsePositiveIntParam(id, "id"),
+      parsePositiveIntParam(tcId, "tcId")
+    );
     return reply.status(204).send();
   });
 
@@ -102,6 +112,6 @@ export const problemRoutes: FastifyPluginAsync = async (app) => {
     const { id } = request.params as { id: string };
     const result = z.array(languageLimitSchema).safeParse(request.body);
     if (!result.success) throw BadRequestError(result.error.message);
-    return setProblemLanguageLimits(request.user, parseInt(id), result.data);
+    return setProblemLanguageLimits(request.user, parsePositiveIntParam(id, "id"), result.data);
   });
 };

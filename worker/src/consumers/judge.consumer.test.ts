@@ -43,6 +43,7 @@ const submission = {
   submissionType: "simple",
   timeLimitMs: 1000,
   memoryLimitMb: 128,
+  outputLimitKb: 64,
   scoreWeight: 30,
 };
 
@@ -94,6 +95,7 @@ describe("judge consumer", () => {
 
     expect(updateSubmissionJudging).toHaveBeenCalledWith(123);
     expect(getTestcases).toHaveBeenCalledWith(40, true);
+    expect(runOneTestcase).toHaveBeenCalledWith(expect.objectContaining({ outputLimitKb: 64 }));
     expect(writeJudgeResults).toHaveBeenCalledWith(
       expect.objectContaining({
         submissionId: 123,

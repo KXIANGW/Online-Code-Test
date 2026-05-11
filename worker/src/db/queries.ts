@@ -16,6 +16,7 @@ export interface SubmissionForJudge {
   submissionType: SubmissionType;
   timeLimitMs: number;
   memoryLimitMb: number;
+  outputLimitKb: number;
   scoreWeight: number;
 }
 
@@ -58,6 +59,7 @@ export async function getSubmissionById(id: number): Promise<SubmissionForJudge 
     submission_type: SubmissionType;
     time_limit_ms: number;
     memory_limit_mb: number;
+    output_limit_kb: number;
     score_weight: number;
   }>(
     `
@@ -72,6 +74,7 @@ export async function getSubmissionById(id: number): Promise<SubmissionForJudge 
         s.submission_type,
         CEIL(p.time_limit_ms * COALESCE(pll.time_multiplier, ld.time_multiplier))::INT AS time_limit_ms,
         CEIL(p.memory_limit_mb * COALESCE(pll.memory_multiplier, ld.memory_multiplier))::INT AS memory_limit_mb,
+        p.output_limit_kb,
         esp.score_weight
       FROM submissions s
       JOIN exam_session_problems esp ON esp.id = s.exam_session_problem_id
@@ -101,6 +104,7 @@ export async function getSubmissionById(id: number): Promise<SubmissionForJudge 
     submissionType: row.submission_type,
     timeLimitMs: row.time_limit_ms,
     memoryLimitMb: row.memory_limit_mb,
+    outputLimitKb: row.output_limit_kb,
     scoreWeight: row.score_weight,
   };
 }
@@ -169,16 +173,16 @@ export async function writeJudgeResults(input: JudgeWriteInput): Promise<void> {
       [input.submissionId, input.verdict, input.runtimeMs, input.memoryKb]
     );
 
-    if (input.type === "formal" && input.verdict === "AC") {
+    if (input.type === "formal") {
       await client.query(
         `
           UPDATE exam_session_problems
           SET final_submission_id = $2,
-              score = score_weight,
+              score = CASE WHEN $3 = 'AC' THEN score_weight ELSE 0 END,
               updated_at = NOW()
           WHERE id = $1
         `,
-        [input.examSessionProblemId, input.submissionId]
+        [input.examSessionProblemId, input.submissionId, input.verdict]
       );
 
       await client.query(

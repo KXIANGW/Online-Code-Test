@@ -143,6 +143,28 @@ describe("POST /api/users", () => {
     });
     expect(res.statusCode).toBe(403);
   });
+
+  it("duplicate username → 409", async () => {
+    const token = await loginAs(app, "root", "Root@1234");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { username: "alice", password: "Password123", roleNames: ["candidate"] },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it("unknown role name → 400", async () => {
+    const token = await loginAs(app, "root", "Root@1234");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { username: "badrole", password: "Password123", roleNames: ["ghost"] },
+    });
+    expect(res.statusCode).toBe(400);
+  });
 });
 
 // ── POST /api/users/batch ──────────────────────────────────────────────────────
@@ -185,6 +207,19 @@ describe("POST /api/users/batch", () => {
       payload: { count: 1 },
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  it("invalid count bounds → 400", async () => {
+    const token = await loginAs(app, "root", "Root@1234");
+    for (const count of [0, 101]) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/users/batch",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { count },
+      });
+      expect(res.statusCode).toBe(400);
+    }
   });
 });
 
@@ -279,6 +314,24 @@ describe("GET /api/users/:id", () => {
     });
     expect(res.statusCode).toBe(403);
   });
+
+  it("invalid id → 400 and missing user → 404", async () => {
+    const token = await loginAs(app, "root", "Root@1234");
+
+    const invalid = await app.inject({
+      method: "GET",
+      url: "/api/users/not-a-number",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const missing = await app.inject({
+      method: "GET",
+      url: "/api/users/999999",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
 });
 
 // ── DELETE /api/users/:id ──────────────────────────────────────────────────────
@@ -311,6 +364,20 @@ describe("DELETE /api/users/:id", () => {
       payload: { username: "alice", password: "Test@1234" },
     });
     expect(loginRes.statusCode).toBe(401);
+
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(listRes.json<{ username: string }[]>().find((u) => u.username === "alice")).toBeUndefined();
+
+    const getRes = await app.inject({
+      method: "GET",
+      url: `/api/users/${alice.id}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(getRes.statusCode).toBe(404);
   });
 
   it("interviewer → 403 (cannot delete users)", async () => {

@@ -196,6 +196,7 @@ async function judgeTestcases(
       inputData: testcase.inputData,
       timeLimitMs: submission.timeLimitMs,
       memoryLimitMb: submission.memoryLimitMb,
+      outputLimitKb: submission.outputLimitKb,
       sandboxRuntime: config.sandboxRuntime,
     });
 

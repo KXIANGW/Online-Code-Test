@@ -2,7 +2,7 @@ import bcrypt from "bcrypt";
 import { db } from "../db/client";
 import { users, userRoles, roles } from "../db/schema";
 import { eq, isNull, inArray, sql } from "drizzle-orm";
-import { ForbiddenError, NotFoundError } from "../errors";
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 
 type CurrentUser = FastifyJWT["user"];
@@ -49,6 +49,15 @@ export async function createUser(
   const passwordHash = await bcrypt.hash(data.password, 10);
 
   return db.transaction(async (tx) => {
+    const roleRows = await tx
+      .select({ id: roles.id, name: roles.name })
+      .from(roles)
+      .where(inArray(roles.name, effectiveRoles));
+
+    if (roleRows.length !== new Set(effectiveRoles).size) {
+      throw BadRequestError("Unknown role");
+    }
+
     const userRows = await tx
       .insert(users)
       .values({
@@ -61,18 +70,14 @@ export async function createUser(
 
     const user = userRows[0]!;
 
-    const roleRows = await tx
-      .select({ id: roles.id })
-      .from(roles)
-      .where(inArray(roles.name, effectiveRoles));
-
-    if (roleRows.length > 0) {
-      await tx.insert(userRoles).values(
-        roleRows.map((r) => ({ userId: user.id, roleId: r.id }))
-      );
-    }
+    await tx.insert(userRoles).values(
+      roleRows.map((r) => ({ userId: user.id, roleId: r.id }))
+    );
 
     return { id: user.id, username: user.username, displayName: user.displayName };
+  }).catch((err: unknown) => {
+    if (isPgErrorCode(err, "23505")) throw ConflictError("Username already exists");
+    throw err;
   });
 }
 
@@ -140,12 +145,14 @@ export async function getUser(currentUser: CurrentUser, targetId: number) {
       displayName: users.displayName,
       isSuperuser: users.isSuperuser,
       createdAt: users.createdAt,
+      deletedAt: users.deletedAt,
     })
     .from(users)
     .where(eq(users.id, targetId));
 
-  if (!user) throw NotFoundError("user");
-  return user;
+  if (!user || user.deletedAt !== null) throw NotFoundError("user");
+  const { deletedAt: _deletedAt, ...response } = user;
+  return response;
 }
 
 export async function deleteUser(currentUser: CurrentUser, targetId: number) {
@@ -171,4 +178,8 @@ function generatePassword(length: number): string {
     result += chars[Math.floor(Math.random() * chars.length)];
   }
   return result;
+}
+
+function isPgErrorCode(err: unknown, code: string): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === code;
 }

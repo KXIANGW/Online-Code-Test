@@ -10,6 +10,7 @@ export interface RunOneOptions {
   inputData: string;
   timeLimitMs: number;
   memoryLimitMb: number;
+  outputLimitKb: number;
   sandboxRuntime: string;
   dockerClient?: Docker;
 }
@@ -74,6 +75,16 @@ export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResu
 
     if (waitResult.StatusCode !== 0) {
       return { verdict: "RE", stdout, stderr, runtimeMs, memoryKb: null };
+    }
+
+    if (Buffer.byteLength(stdout, "utf8") > options.outputLimitKb * 1024) {
+      return {
+        verdict: "RE",
+        stdout,
+        stderr: stderr || "Output limit exceeded",
+        runtimeMs,
+        memoryKb: null,
+      };
     }
 
     return { verdict: "AC", stdout, stderr, runtimeMs, memoryKb: null };
