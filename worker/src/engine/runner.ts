@@ -52,9 +52,9 @@ export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResu
 
     const waitPromise = container.wait();
     const timeoutPromise = new Promise<never>((_, reject) => {
-      timeout = setTimeout(async () => {
+      timeout = setTimeout(() => {
         timedOut = true;
-        await container.kill().catch(() => undefined);
+        container.kill().catch(() => undefined);
         reject(new Error("TLE"));
       }, options.timeLimitMs);
     });
@@ -63,6 +63,10 @@ export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResu
     const runtimeMs = Math.max(0, Date.now() - startedAt);
     const logs = await container.logs({ stdout: true, stderr: true });
     const { stdout, stderr } = parseDockerLogs(logs);
+
+    if (timedOut) {
+      return { verdict: "TLE", stdout, stderr, runtimeMs: options.timeLimitMs, memoryKb: null };
+    }
 
     if (waitResult.StatusCode === 137) {
       return { verdict: "MLE", stdout, stderr, runtimeMs, memoryKb: null };
