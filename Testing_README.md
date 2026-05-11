@@ -18,9 +18,68 @@
 
 ---
 
-## 1. 環境建置：啟動所有服務
+## 1. 測試模式與 Container 狀態
 
-完整堆疊（postgres + rabbitmq + backend + worker + frontend）：
+請先決定你要跑哪一種測試。不同測試模式需要的 container 不同；不要一律全開，否則 E2E 可能會被 compose 裡的 `worker` 搶走 RabbitMQ queue。
+
+| 目的 | 需要開的 container | 不要開的 container | 指令入口 |
+|------|-------------------|--------------------|----------|
+| Backend 一般自動測試 | `postgres` | `rabbitmq`、`backend`、`worker`、`frontend` | `cd backend && npm test` |
+| Worker 自動測試 | `postgres`（跑 DB integration 時） | `backend`、`worker`、`frontend` | `cd worker && npm test` |
+| Backend + Worker E2E | `postgres`、`rabbitmq` | `backend`、`worker`、`frontend` | `cd backend && npm run test:e2e` |
+| 手動測試 | `postgres`、`rabbitmq`、`backend`、`worker`、`frontend` | 無 | `make up` 後用 curl / frontend 操作 |
+| Database 手動檢查 | `postgres` | 其他都不需要 | `make psql` |
+
+建議心法：
+
+- 跑自動測試前，先用 `docker compose down -v` 清掉舊資料與舊 container，讓結果可重現。
+- 跑 E2E 時，只開 `postgres rabbitmq`。E2E 會在測試程序內自己啟動 backend app 與 worker consumer。
+- 跑手動測試時，才全開完整 stack。
+- 如果你剛跑完手動測試又要跑 E2E，請先關掉完整 stack，或至少停掉 `backend worker frontend`。
+
+### 1.1 推薦執行順序
+
+從乾淨狀態完整驗證一次，建議照這個順序：
+
+```bash
+# 1. Backend 一般自動測試：只開 postgres
+docker compose down -v
+docker compose up -d postgres
+cd backend
+npm install
+TEST_DATABASE_URL=postgres://oct:oct_dev_password_change_me@localhost:5432/oct npm test
+npm run lint
+cd ..
+
+# 2. Worker 自動測試：仍只需要 postgres
+cd worker
+npm install
+TEST_DATABASE_URL=postgres://oct:oct_dev_password_change_me@localhost:5432/oct npm test
+npm run lint
+cd ..
+
+# 3. Backend + Worker E2E：重置後只開 postgres + rabbitmq
+docker compose down -v
+make sandbox-images
+docker compose up -d postgres rabbitmq
+cd backend
+TEST_DATABASE_URL=postgres://oct:oct_dev_password_change_me@localhost:5432/oct \
+SANDBOX_RUNTIME=runc \
+npm run test:e2e
+cd ..
+
+# 4. 手動測試：重置後全開完整 stack
+docker compose down -v
+make sandbox-images
+make up
+make ps
+```
+
+如果只想跑其中一種測試，直接跳到對應章節即可。
+
+### 1.2 完整手動測試環境
+
+完整堆疊是給手動測試用的，包含 postgres + rabbitmq + backend + worker + frontend：
 
 ```bash
 cp .env.example .env
@@ -94,11 +153,15 @@ make psql            # 進入 psql shell
 
 ## 4. Backend 測試
 
-Backend 測試分兩個模式：自動測試只需要 PostgreSQL，手動測試需要另外啟動本機 backend process。
+Backend 測試分三種：
+
+- 一般自動測試：只需要 `postgres` container，不需要 RabbitMQ、backend container、worker container。
+- E2E async judge：只需要 `postgres` + `rabbitmq` containers，不要開 compose 的 `backend` / `worker` / `frontend`。
+- 手動測試：需要完整 stack 全開。
 
 ### 4.1 自動測試
 
-#### Step 1：清掉舊資料並啟動 PostgreSQL
+#### Step 1：清掉舊資料，只啟動 PostgreSQL
 
 ```bash
 docker compose down -v
@@ -106,7 +169,10 @@ docker compose up -d postgres
 docker compose ps
 ```
 
-OK 條件：`postgres` 狀態為 `healthy`。
+OK 條件：
+
+- `postgres` 狀態為 `healthy`。
+- `backend`、`worker`、`frontend` 沒有 running。一般 backend tests 會用 `app.inject()` 在測試程序內跑 backend，不需要 backend container。
 
 #### Step 2：安裝依賴
 
@@ -141,23 +207,98 @@ Tests       99 passed (99)
 
 若看到 `ECONNREFUSED 127.0.0.1:5432`、`connect EPERM localhost:5432`，或其他 PostgreSQL 連線錯誤，回到 Step 1 確認 PostgreSQL 狀態與 `TEST_DATABASE_URL` / `DATABASE_URL`。
 
-#### Step 5：重置 DB（為手動測試準備 scenario data）
+一般 `npm test` 不會執行 `src/__e2e__`，因為 E2E 需要 RabbitMQ、sandbox images、較長 timeout，請用下一節的 `npm run test:e2e` 單獨執行。
 
-Integration tests 會清除 scenario data。手動測試需要 scenario 帳號與考試情境，請在自動測試後重建：
+### 4.1.1 End-to-End async judge tests
+
+這批測試會連真實 PostgreSQL、RabbitMQ，並在測試程序內啟動 backend app、backend judge result consumer、worker judge consumer；提交會真的進 `judge.tasks` queue，worker 會用 Docker sandbox 跑 `oj-sandbox-python` / `oj-sandbox-cpp`，再寫回 PostgreSQL。
+
+#### Step 1：清掉舊資料，只啟動 PostgreSQL + RabbitMQ
+
+請不要讓 compose 裡的 `worker` 同時消費 queue，否則 FIFO / pending / worker restart 相關 E2E 會不穩。最穩定的做法是先完整關掉再只開基礎服務：
 
 ```bash
 docker compose down -v
-docker-compose up -d
+make sandbox-images
+docker compose up -d postgres rabbitmq
 docker compose ps
 ```
 
-OK 條件：`postgres` 回到 `healthy`，scenario 帳號重新建立。
+OK 條件：
+
+- `postgres` 狀態為 `healthy`。
+- `rabbitmq` 狀態為 `healthy`。
+- `backend`、`worker`、`frontend` 沒有 running。
+
+如果你不想刪 volume，也可以用下面方式從完整 stack 切到 E2E 模式：
+
+```bash
+docker compose stop backend worker frontend
+docker compose up -d postgres rabbitmq
+docker compose ps
+```
+
+#### Step 2：執行 E2E
+
+```bash
+cd backend
+TEST_DATABASE_URL=postgres://oct:oct_dev_password_change_me@localhost:5432/oct \
+SANDBOX_RUNTIME=runc \
+npm run test:e2e
+cd ..
+```
+
+OK 條件：
+
+```text
+Test Files  1 passed (1)
+Tests       10 passed (10)
+```
+
+目前涵蓋：
+
+- 從 API 建立全新的 interviewer、problem setter、四位 candidate。
+- problem setter 建立 3 題，每題含 public 與 hidden testcase。
+- interviewer 建立多個 3 題 session，考試時間 3 分鐘。
+- candidate 情境：一次滿分、多次提交後滿分、三題全錯、只對一題。
+- 每個 session 的 3 題都送進 RabbitMQ，由 worker 跑 sandbox 後回寫結果。
+- interviewer 與 candidate 都能透過 API 查看 final result。
+- 兩位 candidate 近乎同時提交時，慢任務 judging 期間，後提交任務仍維持 pending；完成時間也符合 worker `prefetch(1)` 的一筆一筆處理順序。
+- simple submission 不會更新 formal score 或 final submission。
+- formal AC 後再 formal WA，最後分數會歸零且 final submission 會更新到最新 formal。
+- session 過期後拒絕提交，result status 會標成 `expired`。
+- 另一位 interviewer 不能查看非自己建立的 session result。
+- sandbox verdict 覆蓋 `TLE`、`RE`、C++ `CE`。
+- worker 暫停消費時任務會留在 RabbitMQ，worker 重啟後仍能處理 pending submission。
+
+若看到這個錯誤：
+
+```text
+Expected 0 judge.tasks consumer(s) before starting the in-process E2E worker, but found 1.
+Stop any external worker first, for example: docker compose stop worker
+```
+
+代表 compose 的 `worker` 或其他 worker process 還在消費 RabbitMQ。請執行：
+
+```bash
+docker compose stop worker
+npm run test:e2e
+```
 
 ---
 
 ### 4.2 手動測試：完整環境驗證流程
 
-確認完整 stack 已啟動（完成 4.1 Step 5，`make ps` 顯示全部 healthy）。
+手動測試需要完整 stack 全開。因為前面的自動測試會清空資料，開始手動測試前請重建 scenario data：
+
+```bash
+docker compose down -v
+make sandbox-images
+make up
+make ps
+```
+
+OK 條件：`postgres`、`rabbitmq`、`backend`、`worker`、`frontend` 全部 healthy/running。
 
 以下所有指令從 repo 根目錄執行。
 
@@ -258,7 +399,7 @@ curl -s -X POST "http://localhost:3000/api/exam-sessions/$SESSION_ID/start" \
 
 OK 條件：`"status": "in_progress"`。
 
-#### 提交程式碼（API 層驗證，不含 Worker）
+#### 提交程式碼（會由 Worker 判題）
 
 ```bash
 ESP_ID=$(curl -s "http://localhost:3000/api/exam-sessions/$SESSION_ID/problems" \
@@ -276,7 +417,7 @@ SUBMISSION_1=$(curl -s -X POST "http://localhost:3000/api/exam-sessions/$SESSION
   }" | jq -r .id)
 
 echo "SUBMISSION_1=$SUBMISSION_1"
-# OK: API 回傳 202，初始 status 為 pending
+# OK: API 回傳 202，初始 status 為 pending；worker 會接著從 RabbitMQ 消費並判題
 ```
 
 > 完整的 Worker + WebSocket + 判題結果驗證請接著執行第 5 節 Worker 手動測試。
@@ -285,13 +426,18 @@ echo "SUBMISSION_1=$SUBMISSION_1"
 
 ## 5. Worker 測試
 
-Worker 手動測試需要完整 compose stack（postgres + rabbitmq + backend + worker）。自動測試中的 DB integration tests 至少需要 PostgreSQL 可連線。
+Worker 測試也分兩種：
+
+- 自動測試：只需要 `postgres`。不需要 RabbitMQ，也不需要 compose 的 `worker` container。
+- 手動測試：需要完整 stack，因為要真的從 backend 發任務、worker container 消費 RabbitMQ、sandbox 判題。
 
 ### 5.1 自動測試
 
 Worker tests 覆蓋 compiler、runner、checker、consumer mock，以及 `db/queries` 的 PostgreSQL integration tests（17 tests）。RabbitMQ 不需要啟動；DB integration tests 需要 `TEST_DATABASE_URL` 或 `DATABASE_URL` 指向真實 PostgreSQL：
 
 ```bash
+docker compose down -v
+docker compose up -d postgres
 cd worker
 npm install
 TEST_DATABASE_URL=postgres://oct:oct_dev_password_change_me@localhost:5432/oct npm test
@@ -313,7 +459,14 @@ OK 條件：所有 tests passed，lint 無 error。
 
 ### 5.2 手動測試：完整環境驗證流程
 
-確認完整 stack 已啟動（`make ps` 顯示全部 healthy）。
+確認完整 stack 已啟動（`make ps` 顯示全部 healthy）。如果你剛跑完自動測試，請先重建完整 stack：
+
+```bash
+docker compose down -v
+make sandbox-images
+make up
+make ps
+```
 
 #### 確認 RabbitMQ queue 狀態
 
