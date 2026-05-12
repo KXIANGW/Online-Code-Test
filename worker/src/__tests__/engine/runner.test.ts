@@ -4,6 +4,26 @@ import path from "path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runOneTestcase } from "../../engine/runner";
 
+const pythonSpec = {
+  id: "python3",
+  image: "oct-sandbox-python:3.11",
+  source: { filename: "solution.py" },
+  run: {
+    cmd: ["python3", "/code/solution.py"],
+    env: { PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1" },
+  },
+  enabled: true,
+};
+
+const cppSpec = {
+  id: "cpp17",
+  image: "oct-sandbox-cpp:12",
+  source: { filename: "solution.cpp" },
+  compile: { cmd: ["g++", "solution.cpp", "-O2", "-std=c++17", "-o", "solution", "-lm"] },
+  run: { cmd: ["/code/solution"] },
+  enabled: true,
+};
+
 let dirs: string[] = [];
 
 afterEach(async () => {
@@ -40,7 +60,7 @@ describe("runOneTestcase", () => {
     const { docker } = dockerWithStatus(137);
 
     const result = await runOneTestcase({
-      language: "python3",
+      spec: pythonSpec,
       hostWorkDir: await tempDir(),
       inputData: "1\n",
       timeLimitMs: 1000,
@@ -57,7 +77,7 @@ describe("runOneTestcase", () => {
     const { docker } = dockerWithStatus(0);
 
     await runOneTestcase({
-      language: "python3",
+      spec: pythonSpec,
       hostWorkDir: await tempDir(),
       inputData: "1\n",
       timeLimitMs: 1000,
@@ -70,7 +90,7 @@ describe("runOneTestcase", () => {
     expect(docker.createContainer).toHaveBeenCalledWith(
       expect.objectContaining({
         User: "1000:1000",
-        Env: ["PYTHONDONTWRITEBYTECODE=1", "PYTHONUNBUFFERED=1"],
+        Env: expect.arrayContaining(["PYTHONDONTWRITEBYTECODE=1", "PYTHONUNBUFFERED=1"]),
         HostConfig: expect.objectContaining({
           Binds: [expect.stringMatching(/:\/code:ro$/)],
           CapDrop: ["ALL"],
@@ -94,7 +114,7 @@ describe("runOneTestcase", () => {
     ]));
 
     const result = await runOneTestcase({
-      language: "cpp17",
+      spec: cppSpec,
       hostWorkDir: await tempDir(),
       inputData: "",
       timeLimitMs: 1000,
@@ -112,7 +132,7 @@ describe("runOneTestcase", () => {
     container.inspect.mockResolvedValue({ State: { OOMKilled: true } });
 
     const result = await runOneTestcase({
-      language: "python3",
+      spec: pythonSpec,
       hostWorkDir: await tempDir(),
       inputData: "",
       timeLimitMs: 1000,
@@ -136,7 +156,7 @@ describe("runOneTestcase", () => {
     const docker = { createContainer: vi.fn().mockResolvedValue(container) };
 
     const result = await runOneTestcase({
-      language: "python3",
+      spec: pythonSpec,
       hostWorkDir: await tempDir(),
       inputData: "",
       timeLimitMs: 1,
@@ -154,7 +174,7 @@ describe("runOneTestcase", () => {
     const { docker } = dockerWithStatus(0, dockerLog(1, "x".repeat(2049)));
 
     const result = await runOneTestcase({
-      language: "python3",
+      spec: pythonSpec,
       hostWorkDir: await tempDir(),
       inputData: "",
       timeLimitMs: 1000,

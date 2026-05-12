@@ -9,9 +9,10 @@ import {
   SANDBOX_USER,
   truncateUtf8,
 } from "./sandbox";
+import type { LanguageSpec } from "./languages";
 
 export interface RunOneOptions {
-  language: "cpp17" | "python3";
+  spec: LanguageSpec;
   hostWorkDir: string;
   inputData: string;
   timeLimitMs: number;
@@ -34,17 +35,17 @@ export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResu
   await prepareSandboxWorkDir(options.hostWorkDir);
   await fs.writeFile(path.join(options.hostWorkDir, "input.txt"), options.inputData);
 
-  const command =
-    options.language === "cpp17"
-      ? "/code/solution < /code/input.txt"
-      : "python3 /code/solution.py < /code/input.txt";
+  const shellCmd = `${options.spec.run.cmd.join(" ")} < /code/input.txt`;
+  const envVars = options.spec.run.env
+    ? Object.entries(options.spec.run.env).map(([k, v]) => `${k}=${v}`)
+    : [];
 
   const container = await docker.createContainer({
-    Image: options.language === "cpp17" ? "oct-sandbox-cpp:12" : "oct-sandbox-python:3.11",
-    Cmd: ["sh", "-c", command],
+    Image: options.spec.image,
+    Cmd: ["sh", "-c", shellCmd],
     WorkingDir: "/code",
     User: SANDBOX_USER,
-    Env: options.language === "python3" ? ["PYTHONDONTWRITEBYTECODE=1", "PYTHONUNBUFFERED=1"] : [],
+    Env: envVars,
     AttachStdout: true,
     AttachStderr: true,
     HostConfig: sandboxHostConfig({

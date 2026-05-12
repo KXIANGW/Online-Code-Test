@@ -2,6 +2,7 @@ import amqp, { type Channel, type ChannelModel } from "amqplib";
 import { config } from "./config";
 import { pool } from "./db/client";
 import { startJudgeConsumer } from "./consumers/judge.consumer";
+import { loadLanguages } from "./engine/languages";
 
 const JUDGE_TASKS_QUEUE = "judge.tasks";
 const JUDGE_RESULTS_EXCHANGE = "judge.results";
@@ -46,10 +47,11 @@ async function connectOnce(): Promise<void> {
     console.error("[worker] rabbitmq connection error", err);
   });
 
+  const languages = loadLanguages();
   const nextChannel = await nextConnection.createChannel();
   channel = nextChannel;
   await assertTopology(nextChannel);
-  await startJudgeConsumer(nextChannel);
+  await startJudgeConsumer(nextChannel, languages);
 }
 
 async function assertTopology(ch: Channel): Promise<void> {

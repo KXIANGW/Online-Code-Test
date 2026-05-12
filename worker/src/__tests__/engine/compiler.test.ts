@@ -1,6 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 import { compileInSandbox } from "../../engine/compiler";
 
+const cppSpec = {
+  id: "cpp17",
+  image: "oct-sandbox-cpp:12",
+  source: { filename: "solution.cpp" },
+  compile: { cmd: ["g++", "solution.cpp", "-O2", "-std=c++17", "-o", "solution", "-lm"] },
+  run: { cmd: ["/code/solution"] },
+  enabled: true,
+};
+
+const pythonSpec = {
+  id: "python3",
+  image: "oct-sandbox-python:3.11",
+  source: { filename: "solution.py" },
+  run: { cmd: ["python3", "/code/solution.py"] },
+  enabled: true,
+};
+
 describe("compileInSandbox", () => {
   it("returns CE logs for failed C++ compilation", async () => {
     const container = {
@@ -12,7 +29,7 @@ describe("compileInSandbox", () => {
     const docker = { createContainer: vi.fn().mockResolvedValue(container) };
 
     const result = await compileInSandbox({
-      language: "cpp17",
+      spec: cppSpec,
       hostWorkDir: "/tmp/work",
       dockerClient: docker as never,
     });
@@ -39,9 +56,9 @@ describe("compileInSandbox", () => {
     );
   });
 
-  it("skips compilation for Python", async () => {
+  it("skips compilation for Python (no compile spec)", async () => {
     await expect(
-      compileInSandbox({ language: "python3", hostWorkDir: "/tmp/work" })
+      compileInSandbox({ spec: pythonSpec, hostWorkDir: "/tmp/work" })
     ).resolves.toEqual({ success: true });
   });
 });
