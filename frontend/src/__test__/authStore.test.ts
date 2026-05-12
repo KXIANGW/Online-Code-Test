@@ -20,19 +20,20 @@ function makeToken(payload: object): string {
 // ── Test suite ────────────────────────────────────────────────────────────────
 //
 // WHY dynamic import?
-// authStore reads localStorage.getItem("oct_token") at module load time (line 8
-// of authStore.ts).  A static top-level import triggers that code before jsdom
-// has initialised localStorage in the Vitest worker, resulting in:
-//   TypeError: localStorage.getItem is not a function
+// authStore reads sessionStorage.getItem("oct_token") at module load time.
+// A static top-level import triggers that code before jsdom has initialized
+// sessionStorage in the Vitest worker, resulting in:
+//   TypeError: sessionStorage.getItem is not a function
 //
 // Solution: vi.resetModules() in beforeEach clears the module registry so every
 // test gets a fresh store instance, and each test dynamically imports authStore
-// AFTER jsdom (and any localStorage setup) is ready.
+// AFTER jsdom (and any sessionStorage setup) is ready.
 
 describe("useAuthStore", () => {
   beforeEach(() => {
     mockApiLogin.mockReset();
-    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.clear(); // kept so [FIX] isolation tests start with a clean slate
     vi.resetModules(); // purge module cache → next import re-executes module-level code
   });
 
@@ -82,7 +83,7 @@ describe("useAuthStore", () => {
       expect(useAuthStore.getState().isSuperuser).toBe(true);
     });
 
-    it("persists token and username to localStorage on success", async () => {
+    it("persists token and username to sessionStorage on success", async () => {
       // given
       const { useAuthStore } = await import("../stores/authStore");
       const token = makeToken({ isSuperuser: false, permissions: ["exam:take"] });
@@ -92,8 +93,8 @@ describe("useAuthStore", () => {
       await useAuthStore.getState().login("candidate01", "password");
 
       // expect
-      expect(localStorage.getItem(TOKEN_KEY)).toBe(token);
-      expect(localStorage.getItem(USERNAME_KEY)).toBe("candidate01");
+      expect(sessionStorage.getItem(TOKEN_KEY)).toBe(token);
+      expect(sessionStorage.getItem(USERNAME_KEY)).toBe("candidate01");
     });
 
     it("throws and leaves state unchanged when the API call fails", async () => {
@@ -111,7 +112,7 @@ describe("useAuthStore", () => {
       expect(state.username).toBeNull();
     });
 
-    it("does not write to localStorage when the API call fails", async () => {
+    it("does not write to sessionStorage when the API call fails", async () => {
       // given
       const { useAuthStore } = await import("../stores/authStore");
       mockApiLogin.mockRejectedValue(new Error("Unauthorized"));
@@ -120,8 +121,8 @@ describe("useAuthStore", () => {
       await useAuthStore.getState().login("wrong", "wrong").catch(() => {});
 
       // expect
-      expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(USERNAME_KEY)).toBeNull();
+      expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull();
+      expect(sessionStorage.getItem(USERNAME_KEY)).toBeNull();
     });
   });
 
@@ -146,8 +147,8 @@ describe("useAuthStore", () => {
       expect(state.permissions).toEqual([]);
     });
 
-    it("removes oct_token and oct_username from localStorage", async () => {
-      // given: a logged-in user with data in localStorage
+    it("removes oct_token and oct_username from sessionStorage", async () => {
+      // given: a logged-in user with data in sessionStorage
       const { useAuthStore } = await import("../stores/authStore");
       const token = makeToken({ isSuperuser: false, permissions: [] });
       mockApiLogin.mockResolvedValue({ token });
@@ -157,8 +158,8 @@ describe("useAuthStore", () => {
       useAuthStore.getState().logout();
 
       // expect
-      expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(USERNAME_KEY)).toBeNull();
+      expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull();
+      expect(sessionStorage.getItem(USERNAME_KEY)).toBeNull();
     });
 
     it("is idempotent — calling logout twice does not throw", async () => {
@@ -173,17 +174,17 @@ describe("useAuthStore", () => {
     });
   });
 
-  // ── Initialization from localStorage ─────────────────────────────────────
+  // ── Initialization from sessionStorage ───────────────────────────────────
   //
-  // authStore reads localStorage at module load time.  These tests set
-  // localStorage BEFORE the dynamic import so the module-level code reads the
+  // authStore reads sessionStorage at module load time.  These tests set
+  // sessionStorage BEFORE the dynamic import so the module-level code reads the
   // correct value, simulating a page reload with controlled storage state.
 
-  describe("initialization from localStorage", () => {
-    it("starts with null token and empty permissions when localStorage is empty", async () => {
-      // given: localStorage is empty (beforeEach already cleared it)
+  describe("initialization from sessionStorage", () => {
+    it("starts with null token and empty permissions when sessionStorage is empty", async () => {
+      // given: sessionStorage is empty (beforeEach already cleared it)
 
-      // when: page loads — authStore initialises
+      // when: page loads — authStore initializes
       const { useAuthStore } = await import("../stores/authStore");
 
       // expect
@@ -195,12 +196,12 @@ describe("useAuthStore", () => {
     });
 
     it("restores token, username, and permissions from a previously saved session", async () => {
-      // given: a previous session stored a valid candidate token
+      // given: a previous session stored a valid candidate token in sessionStorage
       const token = makeToken({ isSuperuser: false, permissions: ["exam:take"] });
-      localStorage.setItem(TOKEN_KEY, token);
-      localStorage.setItem(USERNAME_KEY, "candidate01");
+      sessionStorage.setItem(TOKEN_KEY, token);
+      sessionStorage.setItem(USERNAME_KEY, "candidate01");
 
-      // when: page reloads — authStore re-initialises
+      // when: page reloads — authStore re-initializes
       const { useAuthStore } = await import("../stores/authStore");
 
       // expect
@@ -212,9 +213,9 @@ describe("useAuthStore", () => {
     });
 
     it("restores isSuperuser=true when the stored token carries the superuser flag", async () => {
-      // given: a root user token is in localStorage
+      // given: a root user token is in sessionStorage
       const token = makeToken({ isSuperuser: true, permissions: [] });
-      localStorage.setItem(TOKEN_KEY, token);
+      sessionStorage.setItem(TOKEN_KEY, token);
 
       // when
       const { useAuthStore } = await import("../stores/authStore");
@@ -223,43 +224,37 @@ describe("useAuthStore", () => {
       expect(useAuthStore.getState().isSuperuser).toBe(true);
     });
 
-    // ── [BUG] Cross-tab localStorage contamination ─────────────────────────
+    // ── [FIX] Cross-tab isolation via sessionStorage ───────────────────────
     //
-    // localStorage is shared across all tabs of the same origin.  If Tab B
-    // logs in and overwrites oct_token, Tab A reads the wrong token on its next
-    // page refresh — because authStore decodes permissions from localStorage at
-    // module load time.
-    //
-    // Fix: replace localStorage with sessionStorage for oct_token so each tab
-    // has an isolated token and cross-tab contamination becomes impossible.
+    // sessionStorage is scoped to each browser tab (not shared across tabs of
+    // the same origin).  A login in Tab B writes to Tab B's sessionStorage only
+    // and cannot overwrite Tab A's token — eliminating the contamination bug.
 
-    it("[BUG] loads with wrong permissions when another tab's candidate login overwrote oct_token", async () => {
-      // given: Alice (interviewer) is in Tab A.
-      //        Tab B logs in as a candidate, overwriting oct_token in shared localStorage.
+    it("[FIX] another tab's localStorage write does not contaminate this tab's permissions", async () => {
+      // given: Tab B (a different tab) logs in as a candidate and writes to localStorage.
+      //        With sessionStorage, this write is invisible to Tab A's store.
       const candidateToken = makeToken({ isSuperuser: false, permissions: ["exam:take"] });
-      localStorage.setItem(TOKEN_KEY, candidateToken);
+      localStorage.setItem(TOKEN_KEY, candidateToken); // simulates Tab B (ignored by store)
 
-      // when: Alice's tab refreshes — authStore re-initialises from contaminated storage
+      // when: Tab A refreshes — authStore reads sessionStorage (empty)
       const { useAuthStore } = await import("../stores/authStore");
 
-      // expect: Alice now has exam:take instead of exam:manage
+      // expect: Tab A loads with no token — localStorage write had no effect
       const state = useAuthStore.getState();
-      expect(state.permissions).not.toContain("exam:manage");
-      expect(state.permissions).toContain("exam:take");
-      // RoleRedirect sends Alice to /dashboard instead of /interviewer
+      expect(state.token).toBeNull();
+      expect(state.permissions).toEqual([]);
     });
 
-    it("[BUG] loads as isSuperuser when a root tab login overwrote oct_token before refresh", async () => {
-      // given: a root tab logged in, its token now sits in shared localStorage
+    it("[FIX] a root tab's localStorage write does not grant superuser to other tabs", async () => {
+      // given: a root tab wrote its token to localStorage
       const rootToken = makeToken({ isSuperuser: true, permissions: [] });
-      localStorage.setItem(TOKEN_KEY, rootToken);
+      localStorage.setItem(TOKEN_KEY, rootToken); // simulates root Tab B (ignored by store)
 
-      // when: any other tab refreshes
+      // when: another tab refreshes — authStore reads its own (empty) sessionStorage
       const { useAuthStore } = await import("../stores/authStore");
 
-      // expect: that tab unintentionally gets superuser privileges
-      expect(useAuthStore.getState().isSuperuser).toBe(true);
-      // privilege escalation via shared storage
+      // expect: isSuperuser stays false — no privilege escalation via shared storage
+      expect(useAuthStore.getState().isSuperuser).toBe(false);
     });
   });
 });

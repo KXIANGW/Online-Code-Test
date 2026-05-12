@@ -10,7 +10,7 @@ export const api = axios.create({
 
 // Attach stored token to every request
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("oct_token");
+  const token = sessionStorage.getItem("oct_token");
   if (token) {
     config.headers["Authorization"] = `Bearer ${token}`;
   }
