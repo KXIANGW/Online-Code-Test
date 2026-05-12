@@ -5,6 +5,9 @@ coverage/
 .env
 .env.local
 *.log
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js
 .DS_Store
 .vscode/
 .idea/

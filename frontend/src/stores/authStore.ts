@@ -1,23 +1,9 @@
 import { create } from "zustand";
 import { login as apiLogin } from "../api/client";
+import { decodeJwt } from "../utils/jwt";
 
 const TOKEN_KEY = "oct_token";
 const USERNAME_KEY = "oct_username";
-
-function decodeJwt(token: string): { isSuperuser: boolean; permissions: string[] } {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]!)) as {
-      isSuperuser?: boolean;
-      permissions?: string[];
-    };
-    return {
-      isSuperuser: Boolean(payload.isSuperuser),
-      permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
-    };
-  } catch {
-    return { isSuperuser: false, permissions: [] };
-  }
-}
 
 const storedToken = localStorage.getItem(TOKEN_KEY);
 const decoded = storedToken
