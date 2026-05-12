@@ -50,62 +50,86 @@ describe("LoginPage", () => {
 
   // Render
   it("renders username input, password input, and submit button", () => {
+    // given
     renderLoginPage();
+
+    // when
+    // (no user interaction — asserting initial render)
+
+    // expect
     expect(getUsername()).toBeInTheDocument();
     expect(getPassword()).toBeInTheDocument();
     expect(getSubmitBtn()).toBeInTheDocument();
   });
 
   it("does not show an error on initial render", () => {
+    // given
     renderLoginPage();
+
+    // when
+    // (no user interaction — asserting initial render)
+
+    // expect
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   // Boundary: empty username
   it("shows validation error and skips API call when username is empty", async () => {
+    // given
     const user = userEvent.setup();
     renderLoginPage();
 
+    // when
     await user.click(getSubmitBtn());
 
+    // expect
     expect(screen.getByRole("alert")).toHaveTextContent("請輸入帳號");
     expect(mockLogin).not.toHaveBeenCalled();
   });
 
   // Boundary: whitespace-only username treated as empty
   it("treats whitespace-only username as empty", async () => {
+    // given
     const user = userEvent.setup();
     renderLoginPage();
 
+    // when
     await user.type(getUsername(), "   ");
     await user.click(getSubmitBtn());
 
+    // expect
     expect(screen.getByRole("alert")).toHaveTextContent("請輸入帳號");
     expect(mockLogin).not.toHaveBeenCalled();
   });
 
   // Boundary: empty password
   it("shows validation error and skips API call when password is empty", async () => {
+    // given
     const user = userEvent.setup();
     renderLoginPage();
 
+    // when
     await user.type(getUsername(), "candidate01");
     await user.click(getSubmitBtn());
 
+    // expect
     expect(screen.getByRole("alert")).toHaveTextContent("請輸入密碼");
     expect(mockLogin).not.toHaveBeenCalled();
   });
 
   // Happy path
   it("calls login with trimmed username and navigates to /dashboard on success", async () => {
+    // given
     const user = userEvent.setup();
     mockLogin.mockResolvedValueOnce(undefined);
     renderLoginPage();
 
+    // when
     await user.type(getUsername(), "  candidate01  ");
     await user.type(getPassword(), "password");
     await user.click(getSubmitBtn());
 
+    // expect
     await waitFor(() =>
       expect(mockLogin).toHaveBeenCalledWith("candidate01", "password")
     );
@@ -114,6 +138,7 @@ describe("LoginPage", () => {
 
   // Role-based routing: interviewer
   it("navigates to /interviewer when user has exam:manage permission", async () => {
+    // given
     const user = userEvent.setup();
     mockLogin.mockResolvedValueOnce(undefined);
     // Override getState for this test to return interviewer role
@@ -123,23 +148,28 @@ describe("LoginPage", () => {
     ).mockReturnValueOnce({ isSuperuser: false, permissions: ["exam:manage"] });
     renderLoginPage();
 
+    // when
     await user.type(getUsername(), "alice");
     await user.type(getPassword(), "password");
     await user.click(getSubmitBtn());
 
+    // expect
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/interviewer"));
   });
 
   // Negative: wrong credentials
   it("shows error message when login API returns an error", async () => {
+    // given
     const user = userEvent.setup();
     mockLogin.mockRejectedValueOnce(new Error("Unauthorized"));
     renderLoginPage();
 
+    // when
     await user.type(getUsername(), "wrong");
     await user.type(getPassword(), "wrong");
     await user.click(getSubmitBtn());
 
+    // expect
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent("帳號或密碼錯誤")
     );
@@ -148,12 +178,14 @@ describe("LoginPage", () => {
 
   // Previous error is cleared on re-submit
   it("clears previous error when re-submitting", async () => {
+    // given
     const user = userEvent.setup();
     mockLogin
       .mockRejectedValueOnce(new Error("Unauthorized"))
       .mockResolvedValueOnce(undefined);
     renderLoginPage();
 
+    // when
     await user.type(getUsername(), "wrong");
     await user.type(getPassword(), "wrong");
     await user.click(getSubmitBtn());
@@ -163,6 +195,7 @@ describe("LoginPage", () => {
     await user.type(getPassword(), "password");
     await user.click(getSubmitBtn());
 
+    // expect
     await waitFor(() =>
       expect(screen.queryByRole("alert")).not.toBeInTheDocument()
     );
@@ -170,6 +203,7 @@ describe("LoginPage", () => {
 
   // Loading state
   it("disables submit button and shows loading text while request is in flight", async () => {
+    // given
     const user = userEvent.setup();
     let resolveLogin!: () => void;
     mockLogin.mockReturnValueOnce(
@@ -179,10 +213,12 @@ describe("LoginPage", () => {
     );
     renderLoginPage();
 
+    // when
     await user.type(getUsername(), "candidate01");
     await user.type(getPassword(), "password");
     await user.click(getSubmitBtn());
 
+    // expect
     const loadingBtn = screen.getByRole("button", { name: "登入中..." });
     expect(loadingBtn).toBeDisabled();
 
@@ -192,6 +228,7 @@ describe("LoginPage", () => {
 
   // Inputs disabled during loading
   it("disables inputs while request is in flight", async () => {
+    // given
     const user = userEvent.setup();
     let resolveLogin!: () => void;
     mockLogin.mockReturnValueOnce(
@@ -201,10 +238,12 @@ describe("LoginPage", () => {
     );
     renderLoginPage();
 
+    // when
     await user.type(getUsername(), "candidate01");
     await user.type(getPassword(), "password");
     await user.click(getSubmitBtn());
 
+    // expect
     expect(getUsername()).toBeDisabled();
     expect(getPassword()).toBeDisabled();
 
