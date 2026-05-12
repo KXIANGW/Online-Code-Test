@@ -45,7 +45,6 @@ services:
       PORT: ${BACKEND_PORT:-3000}
       NODE_ENV: ${NODE_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      JWT_SECRET: ${JWT_SECRET}
     ports:
       - "${HOST_BACKEND_PORT:-3000}:${BACKEND_PORT:-3000}"
     depends_on:
