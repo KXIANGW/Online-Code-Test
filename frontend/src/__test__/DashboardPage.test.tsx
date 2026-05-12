@@ -51,42 +51,67 @@ describe("DashboardPage()", () => {
   });
 
   it("renders 3 section headings", () => {
+    // given
     setupAuthStore();
     setupExamStore();
+
+    // when
     renderDashboard();
+
+    // expect
     expect(screen.getByText("進行中")).toBeInTheDocument();
     expect(screen.getByText("待考")).toBeInTheDocument();
     expect(screen.getByText("歷史紀錄")).toBeInTheDocument();
   });
 
   it("renders brand link in navbar", () => {
+    // given
     setupAuthStore();
     setupExamStore();
+
+    // when
     renderDashboard();
+
+    // expect
     expect(screen.getByRole("link", { name: "Online Code Test" })).toBeInTheDocument();
   });
 
   it("shows all 3 empty-state messages when sessions is empty", () => {
+    // given
     setupAuthStore();
     setupExamStore([]);
+
+    // when
     renderDashboard();
+
+    // expect
     expect(screen.getByText("目前沒有進行中的考試")).toBeInTheDocument();
     expect(screen.getByText("目前沒有待考的考試")).toBeInTheDocument();
     expect(screen.getByText("尚無歷史紀錄")).toBeInTheDocument();
   });
 
   it("shows 進行中 and 待考 badges as 0 when sessions is empty", () => {
+    // given
     setupAuthStore();
     setupExamStore([]);
+
+    // when
     renderDashboard();
+
+    // expect
     const zeroBadges = screen.getAllByText("0");
     expect(zeroBadges.length).toBeGreaterThanOrEqual(2);
   });
 
   it("places in_progress session in 進行中 with 繼續考試 button", () => {
+    // given
     setupAuthStore();
     setupExamStore([mockExamSessions[1]!]); // id=2, in_progress
+
+    // when
     renderDashboard();
+
+    // expect
     expect(screen.getByText("考試 #2")).toBeInTheDocument();
     expect(screen.getByText(/到期：/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "繼續考試" })).toBeInTheDocument();
@@ -94,9 +119,14 @@ describe("DashboardPage()", () => {
   });
 
   it("places not_started session in 待考 with duration and 開始考試 button", () => {
+    // given
     setupAuthStore();
     setupExamStore([mockExamSessions[0]!]); // id=1, not_started, 90 min
+
+    // when
     renderDashboard();
+
+    // expect
     expect(screen.getByText("考試 #1")).toBeInTheDocument();
     expect(screen.getByText("90 分鐘")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "開始考試" })).toBeInTheDocument();
@@ -104,18 +134,28 @@ describe("DashboardPage()", () => {
   });
 
   it("places submitted session in 歷史紀錄 with score", () => {
+    // given
     setupAuthStore();
     setupExamStore([mockExamSessions[2]!]); // id=3, submitted, 50/100
+
+    // when
     renderDashboard();
+
+    // expect
     expect(screen.getByText("考試 #3")).toBeInTheDocument();
     expect(screen.getByText("50 / 100 分")).toBeInTheDocument();
     expect(screen.queryByText("尚無歷史紀錄")).not.toBeInTheDocument();
   });
 
   it("shows all 3 sessions with badge counts of 1 each for 進行中 and 待考", () => {
+    // given
     setupAuthStore();
     setupExamStore(mockExamSessions);
+
+    // when
     renderDashboard();
+
+    // expect
     expect(screen.getByText("考試 #1")).toBeInTheDocument();
     expect(screen.getByText("考試 #2")).toBeInTheDocument();
     expect(screen.getByText("考試 #3")).toBeInTheDocument();
@@ -124,34 +164,54 @@ describe("DashboardPage()", () => {
   });
 
   it("clicking 繼續考試 navigates to /exam/2", async () => {
+    // given
     setupAuthStore();
     setupExamStore([mockExamSessions[1]!]);
     renderDashboard();
+
+    // when
     await userEvent.click(screen.getByRole("button", { name: "繼續考試" }));
+
+    // expect
     expect(mockNavigate).toHaveBeenCalledWith("/exam/2");
   });
 
   it("clicking 開始考試 navigates to /exam/1", async () => {
+    // given
     setupAuthStore();
     setupExamStore([mockExamSessions[0]!]);
     renderDashboard();
+
+    // when
     await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+
+    // expect
     expect(mockNavigate).toHaveBeenCalledWith("/exam/1");
   });
 
   it("shows user initials derived from username", () => {
+    // given
     setupAuthStore("candidate01");
     setupExamStore();
+
+    // when
     renderDashboard();
+
+    // expect
     expect(screen.getByText("CA")).toBeInTheDocument();
   });
 
   it("logout: opens menu → clicks Log out → calls logout and navigates to /login", async () => {
+    // given
     setupAuthStore();
     setupExamStore();
     renderDashboard();
+
+    // when
     await userEvent.click(screen.getByRole("button", { name: "User menu" }));
     await userEvent.click(screen.getByText("Log out"));
+
+    // expect
     expect(mockLogout).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith("/login");
   });
