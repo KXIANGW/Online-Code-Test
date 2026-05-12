@@ -6,6 +6,13 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: "jsdom",
+    environmentOptions: {
+      jsdom: {
+        // Required: without a URL jsdom uses a "null" (opaque) origin and
+        // throws SecurityError on localStorage/sessionStorage access.
+        url: "http://localhost",
+      },
+    },
     setupFiles: ["./src/__test__/setup.ts"],
     globals: true,
   },
