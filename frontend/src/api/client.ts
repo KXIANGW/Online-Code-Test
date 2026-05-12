@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { LoginRequest, LoginResponse, ExamSession } from "../types";
+import type { LoginRequest, LoginResponse, ExamSession, SessionResult } from "../types";
 
 const baseURL = import.meta.env.VITE_API_BASE ?? "/api";
 
@@ -46,5 +46,10 @@ export async function login(req: LoginRequest): Promise<LoginResponse> {
 
 export async function getExamSessions(): Promise<ExamSession[]> {
   const { data } = await api.get<ExamSession[]>("/exam-sessions");
+  return data;
+}
+
+export async function getSessionResult(id: number): Promise<SessionResult> {
+  const { data } = await api.get<SessionResult>(`/exam-sessions/${id}/result`);
   return data;
 }
