@@ -2,7 +2,7 @@ import { mkdtemp, remove } from "fs-extra";
 import os from "os";
 import path from "path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runOneTestcase } from "./runner";
+import { runOneTestcase } from "../../engine/runner";
 
 let dirs: string[] = [];
 

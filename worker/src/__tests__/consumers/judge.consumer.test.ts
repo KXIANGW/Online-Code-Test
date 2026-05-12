@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../db/queries", () => ({
+vi.mock("../../db/queries", () => ({
   getSubmissionById: vi.fn(),
   getTestcases: vi.fn(),
   markSubmissionSystemError: vi.fn(),
@@ -8,15 +8,15 @@ vi.mock("../db/queries", () => ({
   writeJudgeResults: vi.fn(),
 }));
 
-vi.mock("../engine/compiler", () => ({
+vi.mock("../../engine/compiler", () => ({
   compileInSandbox: vi.fn(),
 }));
 
-vi.mock("../engine/runner", () => ({
+vi.mock("../../engine/runner", () => ({
   runOneTestcase: vi.fn(),
 }));
 
-vi.mock("../engine/checker", () => ({
+vi.mock("../../engine/checker", () => ({
   checkOutput: vi.fn(),
 }));
 
@@ -26,11 +26,11 @@ import {
   markSubmissionSystemError,
   updateSubmissionJudging,
   writeJudgeResults,
-} from "../db/queries";
-import { compileInSandbox } from "../engine/compiler";
-import { runOneTestcase } from "../engine/runner";
-import { checkOutput } from "../engine/checker";
-import { handleJudgeMessage, startJudgeConsumer } from "./judge.consumer";
+} from "../../db/queries";
+import { compileInSandbox } from "../../engine/compiler";
+import { runOneTestcase } from "../../engine/runner";
+import { checkOutput } from "../../engine/checker";
+import { handleJudgeMessage, startJudgeConsumer } from "../../consumers/judge.consumer";
 
 const submission = {
   id: 123,

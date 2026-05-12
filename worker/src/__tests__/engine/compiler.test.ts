@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { compileInSandbox } from "./compiler";
+import { compileInSandbox } from "../../engine/compiler";
 
 describe("compileInSandbox", () => {
   it("returns CE logs for failed C++ compilation", async () => {
