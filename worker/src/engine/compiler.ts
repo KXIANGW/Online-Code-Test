@@ -25,7 +25,7 @@ export async function compileInSandbox(options: CompileOptions): Promise<Compile
   await prepareSandboxWorkDir(options.hostWorkDir);
 
   const container = await docker.createContainer({
-    Image: "oj-sandbox-cpp",
+    Image: "oct-sandbox-cpp:12",
     Cmd: ["g++", "solution.cpp", "-O2", "-std=c++17", "-o", "solution", "-lm"],
     WorkingDir: "/code",
     User: SANDBOX_USER,

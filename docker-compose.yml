@@ -67,7 +67,7 @@ services:
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://oct:oct_dev_password@rabbitmq:5672}
       DATABASE_URL: ${DATABASE_URL:-postgres://oct:oct_dev_password_change_me@postgres:5432/oct}
       HOST_WORK_DIR: ${HOST_WORK_DIR:-/tmp/judge}
-      SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-runsc}
+      SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-runc}
       NODE_ENV: ${NODE_ENV:-development}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

@@ -40,7 +40,7 @@ export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResu
       : "python3 /code/solution.py < /code/input.txt";
 
   const container = await docker.createContainer({
-    Image: options.language === "cpp17" ? "oj-sandbox-cpp" : "oj-sandbox-python",
+    Image: options.language === "cpp17" ? "oct-sandbox-cpp:12" : "oct-sandbox-python:3.11",
     Cmd: ["sh", "-c", command],
     WorkingDir: "/code",
     User: SANDBOX_USER,
