@@ -1,7 +1,7 @@
 import { db } from "../db/client";
-import { examSessions, examSessionProblems, problems, problemLanguageLimits } from "../db/schema";
-import { eq, sql, inArray } from "drizzle-orm";
-import { ForbiddenError, NotFoundError, ConflictError } from "../errors";
+import { examSessions, examSessionProblems, problems, problemLanguageLimits, users } from "../db/schema";
+import { and, eq, sql, inArray, isNull } from "drizzle-orm";
+import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 
 type CurrentUser = FastifyJWT["user"];
@@ -25,6 +25,11 @@ export async function createExamSession(
   }
 ) {
   if (!canManageExam(currentUser)) throw ForbiddenError();
+  assertNoDuplicates(data.problems.map((p) => p.problemId), "Duplicate problem assignment");
+  assertNoDuplicates(data.problems.map((p) => p.orderIndex), "Duplicate problem orderIndex");
+
+  await assertCandidateExists(data.candidateId);
+  await assertProblemsAreActive(data.problems.map((p) => p.problemId));
 
   return db.transaction(async (tx) => {
     const rows = await tx
@@ -63,6 +68,7 @@ export async function createExamSessionRandom(
   }
 ) {
   if (!canManageExam(currentUser)) throw ForbiddenError();
+  await assertCandidateExists(data.candidateId);
 
   const difficulties: { level: Difficulty; count: number }[] = (
     [
@@ -71,6 +77,10 @@ export async function createExamSessionRandom(
       { level: "hard" as Difficulty, count: data.distribution.hard ?? 0 },
     ] as { level: Difficulty; count: number }[]
   ).filter((d) => d.count > 0);
+
+  if (difficulties.length === 0) {
+    throw BadRequestError("distribution must request at least one problem");
+  }
 
   const pickedIds: number[] = [];
 
@@ -214,6 +224,10 @@ export async function cancelExamSession(currentUser: CurrentUser, id: number) {
   const session = rows[0];
   if (!session) throw NotFoundError("exam session");
 
+  if (!currentUser.isSuperuser && session.createdBy !== currentUser.id) {
+    throw ForbiddenError();
+  }
+
   if (session.status === "cancelled") {
     throw ConflictError("Exam session is already cancelled");
   }
@@ -279,6 +293,35 @@ export async function getExamSessionProblems(currentUser: CurrentUser, sessionId
     ...p,
     languageLimits: allLangLimits
       .filter((l) => l.problemId === p.problemId)
-      .map(({ language, timeMultiplier, memoryMultiplier }) => ({ language, timeMultiplier, memoryMultiplier })),
+    .map(({ language, timeMultiplier, memoryMultiplier }) => ({ language, timeMultiplier, memoryMultiplier })),
   }));
+}
+
+function assertNoDuplicates<T>(values: T[], message: string): void {
+  if (new Set(values).size !== values.length) {
+    throw ConflictError(message);
+  }
+}
+
+async function assertCandidateExists(candidateId: number): Promise<void> {
+  const [candidate] = await db
+    .select({ id: users.id, deletedAt: users.deletedAt })
+    .from(users)
+    .where(eq(users.id, candidateId));
+
+  if (!candidate || candidate.deletedAt !== null) {
+    throw NotFoundError("candidate");
+  }
+}
+
+async function assertProblemsAreActive(problemIds: number[]): Promise<void> {
+  const uniqueIds = [...new Set(problemIds)];
+  const activeProblems = await db
+    .select({ id: problems.id })
+    .from(problems)
+    .where(and(inArray(problems.id, uniqueIds), isNull(problems.deletedAt)));
+
+  if (activeProblems.length !== uniqueIds.length) {
+    throw NotFoundError("problem");
+  }
 }

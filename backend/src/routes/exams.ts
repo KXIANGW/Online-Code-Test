@@ -11,6 +11,7 @@ import {
   getExamSessionProblems,
 } from "../services/exam.service";
 import { BadRequestError } from "../errors";
+import { parsePositiveIntParam } from "./params";
 
 const manualSessionBody = z.object({
   candidateId: z.number().int(),
@@ -62,21 +63,21 @@ export const examRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/:id", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
-    return getExamSession(request.user, parseInt(id));
+    return getExamSession(request.user, parsePositiveIntParam(id, "id"));
   });
 
   app.post("/:id/start", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
-    return startExamSession(request.user, parseInt(id));
+    return startExamSession(request.user, parsePositiveIntParam(id, "id"));
   });
 
   app.post("/:id/cancel", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
-    return cancelExamSession(request.user, parseInt(id));
+    return cancelExamSession(request.user, parsePositiveIntParam(id, "id"));
   });
 
   app.get("/:id/problems", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
-    return getExamSessionProblems(request.user, parseInt(id));
+    return getExamSessionProblems(request.user, parsePositiveIntParam(id, "id"));
   });
 };

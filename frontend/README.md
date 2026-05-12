@@ -1,30 +1,77 @@
-# Frontend — Online Code Test (M1)
+# Frontend — Online Code Test
 
-Vite + React 18 + TypeScript SPA。M1 只做一件事：呼叫 backend 的 `/api/health` 與 `/api/ping`，把 backend ↔ DB 連線狀態顯示出來，驗證整條鏈路通。
+## 目前狀態
 
-UI library（Mantine）、Monaco Editor、登入畫面、路由都還沒上 — 那是 M2 的工作。
+Vite 5 + React 18 + TypeScript SPA。目前畫面以 backend `/api/health` 與 `/api/ping` 狀態檢查為主；M2 的 RabbitMQ worker / WebSocket 判題流程已在 backend/worker 側完成，前端 WebSocket 整合與各功能頁面留待後續實作。
 
-## 技術棧
+---
 
-- Vite 5 + React 18 + TypeScript（與既有 `testing-lab/frontend` 對齊）
-- `axios` 打 API
-- 容器化部署：build 出 static → `nginx:1.27-alpine` serve + 反代 `/api/*` 到 `backend:3000`
+## 目錄結構
 
-## Scripts
+```text
+frontend/
+├── Dockerfile             # 兩階段 build：node 編譯 → nginx:1.27-alpine serve static
+├── nginx.conf             # SPA fallback（try_files → index.html）+ /api/* 反代到 backend:3000
+├── index.html             # SPA 入口，Vite 注入 bundle
+├── package.json           # Vite 5 + React 18 + TypeScript + TailwindCSS
+├── tsconfig.json          # TypeScript 設定（browser target）
+├── tsconfig.node.json     # Vite config 專用 tsconfig（node target）
+├── vite.config.ts         # dev server proxy：/api → http://localhost:3000
+├── tailwind.config.js     # TailwindCSS 設定
+├── postcss.config.js      # PostCSS（Tailwind 前置）
+└── src/
+    ├── main.tsx           # React 掛載入口
+    ├── App.tsx            # 目前顯示 backend health + ping 狀態
+    ├── index.css          # Tailwind base / components / utilities import
+    ├── vite-env.d.ts      # import.meta.env 型別定義
+    └── api/
+        └── client.ts      # axios 實例，baseURL 讀自 VITE_API_BASE（預設 /api）
+```
+
+**雙入口設計理由：**
+- **本機開發**：`vite.config.ts` 把 `/api` proxy 到 `http://localhost:3000`，支援 HMR，不需重新 build。
+- **容器化部署**：nginx 將 `/api/*` 反代到 `http://backend:3000/api/*`（compose service DNS），並處理 SPA fallback，不需要 browser 支援 HTML5 history 的額外設定。
+- 兩種入口共用同一份 `dist/`，axios baseURL 在 build 時 inline 進 bundle（`import.meta.env.VITE_API_BASE`），不依賴執行時環境。
+
+---
+
+## API 串接
+
+### 目前呼叫的端點
+
+| 方法 | 路徑 | 說明 |
+|------|------|------|
+| GET | `/api/health` | 顯示 backend 健康狀態 |
+| GET | `/api/ping` | 顯示 backend ping 回應 |
+
+所有請求透過 `src/api/client.ts` 的 axios 實例發出，baseURL 為 `VITE_API_BASE`（預設 `/api`）。
+
+### 計畫串接（M3 前端實作）
+
+後續前端功能將使用 backend 的完整 API，包括：
+
+| 類型 | 說明 |
+|------|------|
+| HTTP API | `POST /api/auth/login`、使用者管理、題目 CRUD、考試 session、submission |
+| WebSocket | `ws://.../api/ws?token=<JWT>` → 訂閱 sessionId，接收 `judge_result` 推播 |
+
+---
+
+## 開發設定
+
+### Scripts
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173，會 proxy /api 到 http://localhost:3000
+npm run dev        # http://localhost:5173，/api 代理到 http://localhost:3000
 npm run build      # tsc + vite build → dist/
 npm run preview    # 用 vite 內建 server 預覽 build 產物
 npm run lint       # tsc --noEmit
 ```
 
-## 本機（不靠 compose）開發
+### 本機開發方式
 
-兩種選擇：
-
-**方式 A — 起 backend 容器，frontend 跑 Vite dev server**（推薦，HMR 最爽）：
+**方式 A — backend 容器 + frontend Vite dev server**（推薦，HMR）：
 
 ```bash
 cd ..
@@ -32,48 +79,45 @@ docker compose up -d postgres backend
 cd frontend
 npm install
 npm run dev
-# → http://localhost:5173；vite.config.ts 已把 /api 代到 http://localhost:3000
+# → http://localhost:5173
 ```
 
-**方式 B — 全部跑容器**：
+**方式 B — 全部容器化**（接近 production）：
 
 ```bash
 cd ..
 docker compose up -d --build
-# → http://localhost:5173 (nginx serve build 產物)
+# → http://localhost:5173（nginx serve static）
 ```
 
-方式 A 改前端 hot reload；方式 B 接近 production 環境。
+### 環境變數
 
-## 環境變數
+| 變數 | 預設 | 說明 |
+|------|------|------|
+| `VITE_API_BASE` | `/api` | axios baseURL，Vite build 時 inline 進 bundle；容器化下 nginx 反代處理 CORS，幾乎不需要改 |
 
-| 變數              | 何時用                | 預設    | 說明                                        |
-|-------------------|-----------------------|---------|---------------------------------------------|
-| `VITE_API_BASE`   | build / dev           | `/api`  | axios baseURL，幾乎都不用改                  |
+注意：`VITE_*` 環境變數在 **build 時**確定，不是執行階段讀取。要改 API base 須重新 build image。
 
-注意 Vite 把 `import.meta.env.VITE_*` 在 build 時 inline 進 bundle，**不是**執行階段讀。要改 API base 就重新 build。容器化路徑下，nginx 反代會處理掉 cross-origin，所以 `/api` 預設就對。
+### Docker Compose 關係
 
-## 與 docker-compose 的關係
-
-- Build context = `./frontend`，build arg `VITE_API_BASE=/api`
-- 對外 port `${FRONTEND_PORT}:80`，預設 5173:80
-- 啟動依賴：`backend` 變 healthy 才啟動
-- nginx 把 `/api/*` 反代到 `http://backend:3000/api/*`（compose service DNS）
+- Build context：`./frontend`，build arg `VITE_API_BASE=/api`
+- 對外 port：`${FRONTEND_PORT}:80`（預設 5173:80）
+- 依賴：`backend` healthy 才啟動
 - Healthcheck：`wget -qO- http://localhost/`
 
-## 目錄結構
+---
 
-```
-frontend/
-├── Dockerfile
-├── nginx.conf            # SPA fallback + /api proxy
-├── index.html
-├── package.json
-├── tsconfig.json
-├── tsconfig.node.json
-├── vite.config.ts        # dev server proxy 設定
-└── src/
-    ├── main.tsx
-    ├── App.tsx           # 顯示 backend health + ping
-    └── api/client.ts     # axios + 型別
-```
+## 測試覆蓋現況
+
+目前無自動化測試。`npm run lint`（`tsc --noEmit`）提供型別檢查。功能驗證目前以手動測試為主。
+
+---
+
+## 剩餘工作
+
+- 登入頁：`POST /api/auth/login`，JWT 存入 localStorage / cookie，axios interceptor 附帶 Authorization header
+- 面試主管管理介面：建立 candidate 帳號（單一/批次）、建立 exam session（手動/隨機派題）
+- 題目清單與詳情：`GET /api/problems`，供 problem setter 管理題目
+- 考試作答頁：讀取派題清單、程式碼編輯器、提交 submission（simple/formal）
+- 結果頁：顯示 testcase 結果、分數、verdict
+- WebSocket 判題推播整合：連線 `/api/ws?token=JWT`，訂閱 sessionId，即時顯示判題進度

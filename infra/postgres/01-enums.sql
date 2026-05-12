@@ -16,6 +16,11 @@ CREATE TYPE submission_status AS ENUM (
   'system_error'
 );
 
+CREATE TYPE submission_type AS ENUM (
+  'simple',
+  'formal'
+);
+
 CREATE TYPE verdict_type AS ENUM (
   'AC', 'WA', 'TLE', 'MLE', 'RE', 'CE'
 );

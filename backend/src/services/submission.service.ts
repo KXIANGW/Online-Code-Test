@@ -9,13 +9,13 @@ import {
   submissionTestcaseResults,
   users,
 } from "../db/schema";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
+import { publishJudgeTask } from "../mq/publisher";
 
 type CurrentUser = FastifyJWT["user"];
-type Verdict = "AC" | "WA" | "TLE" | "MLE" | "RE" | "CE";
-type TestcaseVerdict = "AC" | "WA" | "TLE" | "MLE" | "RE" | "skipped";
+type SubmissionType = "simple" | "formal";
 
 function canManageExam(user: CurrentUser): boolean {
   return user.isSuperuser || user.permissions.includes("exam:manage");
@@ -44,24 +44,6 @@ function requireResultAccess(
   throw ForbiddenError();
 }
 
-function verdictForAttempt(attemptNumber: number): Verdict {
-  if (attemptNumber === 1) return "WA";
-  if (attemptNumber === 2) return "TLE";
-  return "AC";
-}
-
-function runtimeForVerdict(verdict: Verdict): number | null {
-  if (verdict === "TLE") return 5000;
-  if (verdict === "AC") return 42;
-  return 24;
-}
-
-function memoryForVerdict(verdict: Verdict): number | null {
-  if (verdict === "TLE") return 9216;
-  if (verdict === "AC") return 8192;
-  return 4096;
-}
-
 async function getSessionOrThrow(sessionId: number) {
   const [session] = await db
     .select()
@@ -73,6 +55,15 @@ async function getSessionOrThrow(sessionId: number) {
 }
 
 type ExamSession = Awaited<ReturnType<typeof getSessionOrThrow>>;
+
+export async function assertSessionResultAccess(
+  currentUser: CurrentUser,
+  sessionId: number
+): Promise<ExamSession> {
+  const session = await expireIfNeeded(await getSessionOrThrow(sessionId));
+  requireResultAccess(currentUser, session);
+  return session;
+}
 
 async function expireIfNeeded(session: ExamSession): Promise<ExamSession> {
   if (session.status === "in_progress" && session.expiresAt && session.expiresAt <= new Date()) {
@@ -94,6 +85,7 @@ async function getSubmissionRowsForSession(sessionId: number) {
       examSessionProblemId: submissions.examSessionProblemId,
       candidateId: submissions.candidateId,
       language: submissions.language,
+      submissionType: submissions.submissionType,
       status: submissions.status,
       verdict: submissions.verdict,
       runtimeMs: submissions.runtimeMs,
@@ -125,153 +117,28 @@ function mapSubmissionSummary(row: Awaited<ReturnType<typeof getSubmissionRowsFo
     problemTitle: row.title,
     orderIndex: row.orderIndex,
     language: row.language,
+    submissionType: row.submissionType,
     status: row.status,
     verdict: row.verdict,
     runtimeMs: row.runtimeMs,
     memoryKb: row.memoryKb,
     submittedAt: row.submittedAt,
     judgedAt: row.judgedAt,
-    score: row.status === "done" && row.verdict === "AC" ? row.scoreWeight : 0,
+    score: row.finalSubmissionId === row.id ? row.currentScore : 0,
     scoreWeight: row.scoreWeight,
     isFinalSubmission: row.finalSubmissionId === row.id,
   };
 }
 
-async function advanceMockJudgeForSession(sessionId: number): Promise<void> {
-  const active = await db
-    .select({
-      id: submissions.id,
-      status: submissions.status,
-      examSessionProblemId: submissions.examSessionProblemId,
-      submittedAt: submissions.submittedAt,
-    })
-    .from(submissions)
-    .innerJoin(
-      examSessionProblems,
-      eq(submissions.examSessionProblemId, examSessionProblems.id)
-    )
-    .where(
-      and(
-        eq(examSessionProblems.examSessionId, sessionId),
-        inArray(submissions.status, ["pending", "judging"])
-      )
-    )
-    .orderBy(asc(submissions.submittedAt), asc(submissions.id));
-
-  for (const submission of active) {
-    if (submission.status === "pending") {
-      await db
-        .update(submissions)
-        .set({ status: "judging" })
-        .where(eq(submissions.id, submission.id));
-    } else {
-      await completeMockJudgement(submission.id);
-    }
-  }
-}
-
-async function completeMockJudgement(submissionId: number): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [submission] = await tx
-      .select({
-        id: submissions.id,
-        status: submissions.status,
-        examSessionProblemId: submissions.examSessionProblemId,
-        problemId: examSessionProblems.problemId,
-        examSessionId: examSessionProblems.examSessionId,
-        scoreWeight: examSessionProblems.scoreWeight,
-      })
-      .from(submissions)
-      .innerJoin(
-        examSessionProblems,
-        eq(submissions.examSessionProblemId, examSessionProblems.id)
-      )
-      .where(eq(submissions.id, submissionId));
-
-    if (!submission || submission.status !== "judging") return;
-
-    const attempts = await tx
-      .select({
-        id: submissions.id,
-        submittedAt: submissions.submittedAt,
-      })
-      .from(submissions)
-      .where(eq(submissions.examSessionProblemId, submission.examSessionProblemId))
-      .orderBy(asc(submissions.submittedAt), asc(submissions.id));
-
-    const attemptNumber = attempts.findIndex((attempt) => attempt.id === submission.id) + 1;
-    const verdict = verdictForAttempt(attemptNumber);
-    const runtimeMs = runtimeForVerdict(verdict);
-    const memoryKb = memoryForVerdict(verdict);
-    const judgedAt = new Date();
-
-    await tx
-      .update(submissions)
-      .set({
-        status: "done",
-        verdict,
-        runtimeMs,
-        memoryKb,
-        judgedAt,
-      })
-      .where(eq(submissions.id, submission.id));
-
-    const testcases = await tx
-      .select({
-        id: problemTestcases.id,
-        isPublic: problemTestcases.isPublic,
-        expectedOutput: problemTestcases.expectedOutput,
-      })
-      .from(problemTestcases)
-      .where(eq(problemTestcases.problemId, submission.problemId))
-      .orderBy(asc(problemTestcases.orderIndex));
-
-    if (testcases.length > 0) {
-      await tx.insert(submissionTestcaseResults).values(
-        testcases.map((testcase) => ({
-          submissionId: submission.id,
-          testcaseId: testcase.id,
-          verdict: (verdict === "AC" ? "AC" : verdict === "TLE" ? "TLE" : "WA") as TestcaseVerdict,
-          runtimeMs,
-          memoryKb,
-          actualOutput:
-            testcase.isPublic && verdict === "AC"
-              ? testcase.expectedOutput
-              : testcase.isPublic && verdict === "WA"
-                ? "mock wrong answer"
-                : null,
-        }))
-      );
-    }
-
-    const newScore = verdict === "AC" ? submission.scoreWeight : 0;
-
-    await tx
-      .update(examSessionProblems)
-      .set({
-        finalSubmissionId: submission.id,
-        score: newScore,
-        updatedAt: judgedAt,
-      })
-      .where(eq(examSessionProblems.id, submission.examSessionProblemId));
-
-    await tx.execute(sql`
-      UPDATE exam_sessions
-      SET total_score = (
-            SELECT COALESCE(SUM(score), 0)
-            FROM exam_session_problems
-            WHERE exam_session_id = ${submission.examSessionId}
-          ),
-          updated_at = NOW()
-      WHERE id = ${submission.examSessionId}
-    `);
-  });
-}
-
 export async function createSubmission(
   currentUser: CurrentUser,
   sessionId: number,
-  data: { examSessionProblemId: number; language: string; sourceCode: string }
+  data: {
+    examSessionProblemId: number;
+    language: string;
+    sourceCode: string;
+    type: SubmissionType;
+  }
 ) {
   if (currentUser.isSuperuser || !canTakeExam(currentUser) || canManageExam(currentUser)) {
     throw ForbiddenError();
@@ -315,14 +182,18 @@ export async function createSubmission(
       candidateId: currentUser.id,
       language: data.language,
       sourceCode: data.sourceCode,
+      submissionType: data.type,
       status: "pending",
     })
     .returning();
+
+  await publishJudgeTask({ submissionId: submission!.id, type: data.type });
 
   return {
     id: submission!.id,
     examSessionProblemId: submission!.examSessionProblemId,
     language: submission!.language,
+    submissionType: submission!.submissionType,
     status: submission!.status,
     verdict: submission!.verdict,
     runtimeMs: submission!.runtimeMs,
@@ -333,13 +204,9 @@ export async function createSubmission(
 }
 
 export async function listSessionSubmissions(currentUser: CurrentUser, sessionId: number) {
-  const session = await expireIfNeeded(await getSessionOrThrow(sessionId));
-  requireResultAccess(currentUser, session);
-
+  await assertSessionResultAccess(currentUser, sessionId);
   const rows = await getSubmissionRowsForSession(sessionId);
-  const response = rows.map(mapSubmissionSummary);
-  await advanceMockJudgeForSession(sessionId);
-  return response;
+  return rows.map(mapSubmissionSummary);
 }
 
 export async function getSubmissionDetail(
@@ -347,8 +214,7 @@ export async function getSubmissionDetail(
   sessionId: number,
   submissionId: number
 ) {
-  const session = await expireIfNeeded(await getSessionOrThrow(sessionId));
-  requireResultAccess(currentUser, session);
+  await assertSessionResultAccess(currentUser, sessionId);
 
   const [submission] = await db
     .select({
@@ -357,6 +223,7 @@ export async function getSubmissionDetail(
       candidateId: submissions.candidateId,
       language: submissions.language,
       sourceCode: submissions.sourceCode,
+      submissionType: submissions.submissionType,
       status: submissions.status,
       verdict: submissions.verdict,
       runtimeMs: submissions.runtimeMs,
@@ -367,6 +234,7 @@ export async function getSubmissionDetail(
       problemTitle: problems.title,
       orderIndex: examSessionProblems.orderIndex,
       scoreWeight: examSessionProblems.scoreWeight,
+      currentScore: examSessionProblems.score,
       finalSubmissionId: examSessionProblems.finalSubmissionId,
     })
     .from(submissions)
@@ -407,6 +275,7 @@ export async function getSubmissionDetail(
     problemTitle: submission.problemTitle,
     orderIndex: submission.orderIndex,
     language: submission.language,
+    submissionType: submission.submissionType,
     sourceCode: submission.sourceCode,
     status: submission.status,
     verdict: submission.verdict,
@@ -414,7 +283,7 @@ export async function getSubmissionDetail(
     memoryKb: submission.memoryKb,
     submittedAt: submission.submittedAt,
     judgedAt: submission.judgedAt,
-    score: submission.status === "done" && submission.verdict === "AC" ? submission.scoreWeight : 0,
+    score: submission.finalSubmissionId === submission.id ? submission.currentScore : 0,
     scoreWeight: submission.scoreWeight,
     isFinalSubmission: submission.finalSubmissionId === submission.id,
     testcaseResults: testcaseResults.map((result) => ({
@@ -429,13 +298,11 @@ export async function getSubmissionDetail(
     })),
   };
 
-  await advanceMockJudgeForSession(sessionId);
   return response;
 }
 
 export async function getSessionResult(currentUser: CurrentUser, sessionId: number) {
-  const session = await expireIfNeeded(await getSessionOrThrow(sessionId));
-  requireResultAccess(currentUser, session);
+  const session = await assertSessionResultAccess(currentUser, sessionId);
 
   const sessionProblems = await db
     .select({
@@ -502,6 +369,5 @@ export async function getSessionResult(currentUser: CurrentUser, sessionId: numb
     }),
   };
 
-  await advanceMockJudgeForSession(sessionId);
   return response;
 }

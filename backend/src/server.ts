@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import sensible from "@fastify/sensible";
+import websocket from "@fastify/websocket";
 import { env } from "./env";
 import { pool } from "./db/client";
 import { healthRoutes } from "./routes/health";
@@ -11,6 +12,10 @@ import { problemRoutes } from "./routes/problems";
 import { examRoutes } from "./routes/exams";
 import { languageRoutes } from "./routes/languages";
 import { submissionRoutes } from "./routes/submissions";
+import { closeMq } from "./mq/client";
+import { startJudgeResultConsumer } from "./mq/consumer";
+import { assertSessionResultAccess } from "./services/submission.service";
+import { subscribeToSession, unsubscribeClient } from "./ws/hub";
 
 export async function buildApp() {
   const app = Fastify({
@@ -23,6 +28,7 @@ export async function buildApp() {
   });
 
   await app.register(sensible);
+  await app.register(websocket);
   await app.register(jwtPlugin);
 
   await app.register(async (api) => {
@@ -34,7 +40,67 @@ export async function buildApp() {
     await api.register(submissionRoutes, { prefix: "/exam-sessions" });
     await api.register(examRoutes, { prefix: "/exam-sessions" });
     await api.register(languageRoutes, { prefix: "/languages" });
+
+    api.get("/ws", { websocket: true }, async (connection, request) => {
+      const socket = connection.socket;
+      const { token } = request.query as { token?: string };
+
+      if (!token) {
+        socket.close();
+        return;
+      }
+
+      let currentUser: { id: number; isSuperuser: boolean; permissions: string[] };
+      try {
+        const payload = await app.jwt.verify<{
+          sub: number;
+          isSuperuser: boolean;
+          permissions: string[];
+        }>(token);
+        currentUser = {
+          id: payload.sub,
+          isSuperuser: payload.isSuperuser,
+          permissions: payload.permissions,
+        };
+      } catch {
+        socket.close();
+        return;
+      }
+
+      socket.on("message", async (raw: unknown) => {
+        try {
+          const message = JSON.parse(String(raw));
+          if (
+            message?.type !== "subscribe" ||
+            typeof message.sessionId !== "number" ||
+            !Number.isInteger(message.sessionId)
+          ) {
+            socket.send(JSON.stringify({ type: "error", message: "Invalid message" }));
+            return;
+          }
+
+          await assertSessionResultAccess(currentUser, message.sessionId);
+          subscribeToSession(message.sessionId, socket);
+          socket.send(JSON.stringify({ type: "subscribed", sessionId: message.sessionId }));
+        } catch {
+          socket.send(JSON.stringify({ type: "error", message: "Forbidden" }));
+        }
+      });
+
+      socket.on("close", () => unsubscribeClient(socket));
+      socket.on("error", () => unsubscribeClient(socket));
+    });
   }, { prefix: "/api" });
+
+  if (env.NODE_ENV !== "test") {
+    app.addHook("onReady", async () => {
+      await startJudgeResultConsumer();
+    });
+  }
+
+  app.addHook("onClose", async () => {
+    await closeMq();
+  });
 
   return app;
 }

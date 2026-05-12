@@ -95,4 +95,13 @@ describe("POST /api/auth/login", () => {
     });
     expect(res.statusCode).toBe(401);
   });
+
+  it("malformed Authorization token on protected route → 401", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/users",
+      headers: { authorization: "Bearer not-a-jwt" },
+    });
+    expect(res.statusCode).toBe(401);
+  });
 });

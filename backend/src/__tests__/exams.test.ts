@@ -146,6 +146,52 @@ describe("POST /api/exam-sessions (manual)", () => {
     });
     expect(res.statusCode).toBe(403);
   });
+
+  it("rejects duplicate problem/order assignments and missing problems", async () => {
+    const { easy } = await getProblemIds();
+
+    const duplicateProblem = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        candidateId: davidId,
+        durationMinutes: 60,
+        problems: [
+          { problemId: easy, scoreWeight: 50, orderIndex: 1 },
+          { problemId: easy, scoreWeight: 50, orderIndex: 2 },
+        ],
+      },
+    });
+    expect(duplicateProblem.statusCode).toBe(409);
+
+    const duplicateOrder = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        candidateId: davidId,
+        durationMinutes: 60,
+        problems: [
+          { problemId: easy, scoreWeight: 50, orderIndex: 1 },
+          { problemId: 999999, scoreWeight: 50, orderIndex: 1 },
+        ],
+      },
+    });
+    expect(duplicateOrder.statusCode).toBe(409);
+
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        candidateId: davidId,
+        durationMinutes: 60,
+        problems: [{ problemId: 999999, scoreWeight: 100, orderIndex: 1 }],
+      },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
 });
 
 // ── POST /api/exam-sessions (random) ──────────────────────────────────────────
@@ -196,6 +242,34 @@ describe("POST /api/exam-sessions (random)", () => {
       },
     });
     expect(res.statusCode).toBe(409);
+  });
+
+  it("rejects empty distribution and insufficient hard pool", async () => {
+    const empty = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        candidateId: davidId,
+        durationMinutes: 60,
+        distribution: {},
+        scoreWeight: 100,
+      },
+    });
+    expect(empty.statusCode).toBe(400);
+
+    const hard = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        candidateId: davidId,
+        durationMinutes: 60,
+        distribution: { hard: 1 },
+        scoreWeight: 100,
+      },
+    });
+    expect(hard.statusCode).toBe(409);
   });
 });
 
@@ -303,6 +377,22 @@ describe("GET /api/exam-sessions/:id", () => {
     });
     expect(res.statusCode).toBe(403);
   });
+
+  it("invalid id → 400 and missing session → 404", async () => {
+    const invalid = await app.inject({
+      method: "GET",
+      url: "/api/exam-sessions/not-a-number",
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const missing = await app.inject({
+      method: "GET",
+      url: "/api/exam-sessions/999999",
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
 });
 
 // ── POST /api/exam-sessions/:id/start ─────────────────────────────────────────
@@ -368,6 +458,18 @@ describe("POST /api/exam-sessions/:id/cancel", () => {
       method: "POST",
       url: `/api/exam-sessions/${sessionId}/cancel`,
       headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("interviewer cannot cancel another interviewer's session → 403", async () => {
+    const { easy } = await getProblemIds();
+    const bobSessionId = await createSession(bobToken, davidId, easy);
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${bobSessionId}/cancel`,
+      headers: { authorization: `Bearer ${aliceToken}` },
     });
     expect(res.statusCode).toBe(403);
   });

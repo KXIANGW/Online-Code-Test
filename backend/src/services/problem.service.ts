@@ -1,7 +1,7 @@
 import { db } from "../db/client";
 import { problems, problemTestcases, examSessionProblems, problemLanguageLimits } from "../db/schema";
 import { eq, isNull, sql } from "drizzle-orm";
-import { ForbiddenError, NotFoundError, ConflictError } from "../errors";
+import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 
 type CurrentUser = FastifyJWT["user"];
@@ -52,6 +52,9 @@ export async function createProblem(
 ) {
   requireProblemManage(currentUser);
 
+  assertUniqueValues(data.testcases?.map((tc) => tc.orderIndex) ?? [], "Duplicate testcase orderIndex");
+  assertUniqueValues(data.languageLimits?.map((ll) => ll.language) ?? [], "Duplicate language limit");
+
   return db.transaction(async (tx) => {
     const problemRows = await tx
       .insert(problems)
@@ -86,6 +89,10 @@ export async function createProblem(
     }
 
     return problem;
+  }).catch((err: unknown) => {
+    if (isPgErrorCode(err, "23503")) throw BadRequestError("Unknown language or user");
+    if (isPgErrorCode(err, "23505")) throw ConflictError("Duplicate problem data");
+    throw err;
   });
 }
 
@@ -200,7 +207,11 @@ export async function addTestcase(
   const [tc] = await db
     .insert(problemTestcases)
     .values({ ...data, problemId })
-    .returning();
+    .returning()
+    .catch((err: unknown) => {
+      if (isPgErrorCode(err, "23505")) throw ConflictError("Duplicate testcase orderIndex");
+      throw err;
+    });
 
   return tc;
 }
@@ -224,7 +235,11 @@ export async function updateTestcase(
     .update(problemTestcases)
     .set(data)
     .where(eq(problemTestcases.id, tcId))
-    .returning();
+    .returning()
+    .catch((err: unknown) => {
+      if (isPgErrorCode(err, "23505")) throw ConflictError("Duplicate testcase orderIndex");
+      throw err;
+    });
 
   return updated;
 }
@@ -263,6 +278,7 @@ export async function setProblemLanguageLimits(
   await db.delete(problemLanguageLimits).where(eq(problemLanguageLimits.problemId, problemId));
 
   if (limits.length > 0) {
+    assertUniqueValues(limits.map((ll) => ll.language), "Duplicate language limit");
     await db.insert(problemLanguageLimits).values(
       limits.map((ll) => ({
         problemId,
@@ -270,7 +286,10 @@ export async function setProblemLanguageLimits(
         timeMultiplier: String(ll.timeMultiplier),
         memoryMultiplier: String(ll.memoryMultiplier),
       }))
-    );
+    ).catch((err: unknown) => {
+      if (isPgErrorCode(err, "23503")) throw BadRequestError("Unknown language");
+      throw err;
+    });
   }
 
   return db
@@ -281,4 +300,14 @@ export async function setProblemLanguageLimits(
     })
     .from(problemLanguageLimits)
     .where(eq(problemLanguageLimits.problemId, problemId));
+}
+
+function assertUniqueValues<T>(values: T[], message: string): void {
+  if (new Set(values).size !== values.length) {
+    throw ConflictError(message);
+  }
+}
+
+function isPgErrorCode(err: unknown, code: string): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === code;
 }

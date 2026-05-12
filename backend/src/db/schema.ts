@@ -35,6 +35,11 @@ export const submissionStatusEnum = pgEnum("submission_status", [
   "system_error",
 ]);
 
+export const submissionTypeEnum = pgEnum("submission_type", [
+  "simple",
+  "formal",
+]);
+
 export const verdictTypeEnum = pgEnum("verdict_type", [
   "AC",
   "WA",
@@ -185,6 +190,7 @@ export const submissions = pgTable("submissions", {
   candidateId:          bigint("candidate_id", { mode: "number" }).notNull(),
   language:             varchar("language", { length: 32 }).notNull(),
   sourceCode:           text("source_code").notNull(),
+  submissionType:       submissionTypeEnum("submission_type").notNull().default("formal"),
   status:               submissionStatusEnum("status").notNull().default("pending"),
   verdict:              verdictTypeEnum("verdict"),
   runtimeMs:            integer("runtime_ms"),
