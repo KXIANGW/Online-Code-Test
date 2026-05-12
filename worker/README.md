@@ -6,6 +6,7 @@ M2 已完成：Backend Mock Judge 已移除，替換為真實非同步判題系�
 
 **已確認的設計決策：**
 - 沙箱隔離：gVisor runtime（`--runtime=runsc`），Worker 掛載 Docker socket
+- Docker/cgroups 防護：無網路、no swap、PID limit、唯讀 rootfs、tmpfs `/tmp`、drop capabilities、no-new-privileges、非 root UID 執行
 - C++ 編譯：普通 Docker container（無 gVisor），執行才用 gVisor；編譯失敗立即回傳 CE
 - Worker 並發：單一 Worker container，一次一個 task（RabbitMQ prefetch=1）
 - 提交類型：`simple`（public 測資）/ `formal`（全部測資，AC 才更新分數）
@@ -78,6 +79,7 @@ worker/
     │   ├── client.ts           # PostgreSQL Pool（node-postgres）
     │   └── queries.ts          # getSubmissionById、getTestcases、updateSubmissionJudging、writeJudgeResults
     ├── engine/
+    │   ├── sandbox.ts          # 共用 Docker sandbox 設定、log parsing、stdout 截斷
     │   ├── compiler.ts         # C++ 編譯：在普通 Docker container 執行 g++，回傳成功/CE errorLog
     │   ├── runner.ts           # 單一 testcase 執行：gVisor sandbox，監控 TLE/MLE/RE，回傳 verdict + stdout
     │   └── checker.ts          # 輸出比對：去除尾端空白/換行差異，回傳 AC 或 WA
@@ -169,7 +171,7 @@ worker/
 |------|----------|
 | 編譯失敗（CE） | 直接寫回 verdict='CE'，不執行任何 testcase |
 | 沙箱逾時（TLE） | `container.kill()` 後記錄 TLE，後續 testcase 標記 skipped |
-| OOM killed（exit 137） | 記錄 MLE |
+| OOM killed（Docker OOMKilled 或 exit 137） | 記錄 MLE |
 | Runtime Error（exit ≠ 0） | 記錄 RE |
 | Docker API 失敗 | submission status='system_error'，publish error，ACK message |
 | RabbitMQ 斷線 | Worker 指數退避重連（1s, 2s, 4s … 最大 30s） |
@@ -180,13 +182,13 @@ worker/
 
 ## 測試覆蓋現況
 
-目前共有 5 個 test files、17 筆 tests。測試分成兩層：engine / consumer 以 mock Docker、mock DB 驗證判題流程決策；`db/queries.integration.test.ts` 則連到真實 PostgreSQL，驗證 worker 寫入 submission、testcase results、score 與 final submission 的 DB 行為。
+目前共有 5 個 test files、19 筆 tests。測試分成兩層：engine / consumer 以 mock Docker、mock DB 驗證判題流程決策；`db/queries.integration.test.ts` 則連到真實 PostgreSQL，驗證 worker 寫入 submission、testcase results、score 與 final submission 的 DB 行為。
 
 | Test file | 測試數 | 覆蓋重點 |
 |-----------|--------|----------|
 | `engine/checker.test.ts` | 2 | AC/WA 比對含尾端空白/換行邊界 |
 | `engine/compiler.test.ts` | 2 | 編譯失敗 CE、Python skip compile |
-| `engine/runner.test.ts` | 4 | TLE（timeout）、MLE（exit 137）、RE（非零 exit）、output limit |
+| `engine/runner.test.ts` | 6 | TLE（timeout）、MLE（Docker OOMKilled 或 exit 137）、RE（非零 exit）、output limit、sandbox hardening |
 | `consumers/judge.consumer.test.ts` | 4 | 完整判題流程 mock（DB queries、Docker mocked）、publish/ACK、skipped |
 | `db/queries.integration.test.ts` | 5 | PostgreSQL integration：submission/testcase loading、formal/simple scoring、CE/system_error 寫入 |
 

@@ -22,6 +22,7 @@ function dockerWithStatus(statusCode: number, logs = dockerLog(1, "ok\n")) {
     start: vi.fn().mockResolvedValue(undefined),
     wait: vi.fn().mockResolvedValue({ StatusCode: statusCode }),
     logs: vi.fn().mockResolvedValue(logs),
+    inspect: vi.fn().mockResolvedValue({ State: { OOMKilled: false } }),
     remove: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn().mockResolvedValue(undefined),
   };
@@ -52,6 +53,40 @@ describe("runOneTestcase", () => {
     expect(result.verdict).toBe("MLE");
   });
 
+  it("applies hardened sandbox host config while keeping the selected runtime", async () => {
+    const { docker } = dockerWithStatus(0);
+
+    await runOneTestcase({
+      language: "python3",
+      hostWorkDir: await tempDir(),
+      inputData: "1\n",
+      timeLimitMs: 1000,
+      memoryLimitMb: 64,
+      outputLimitKb: 64,
+      sandboxRuntime: "runsc",
+      dockerClient: docker as never,
+    });
+
+    expect(docker.createContainer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        User: "1000:1000",
+        Env: ["PYTHONDONTWRITEBYTECODE=1", "PYTHONUNBUFFERED=1"],
+        HostConfig: expect.objectContaining({
+          Binds: [expect.stringMatching(/:\/code:ro$/)],
+          CapDrop: ["ALL"],
+          Memory: 64 * 1024 * 1024,
+          MemorySwap: 64 * 1024 * 1024,
+          NetworkMode: "none",
+          PidsLimit: 128,
+          ReadonlyRootfs: true,
+          Runtime: "runsc",
+          SecurityOpt: ["no-new-privileges"],
+          Tmpfs: { "/tmp": "rw,nosuid,nodev,size=64m" },
+        }),
+      })
+    );
+  });
+
   it("maps nonzero exit to RE and captures stderr", async () => {
     const { docker } = dockerWithStatus(2, Buffer.concat([
       dockerLog(1, ""),
@@ -70,6 +105,24 @@ describe("runOneTestcase", () => {
     });
 
     expect(result).toMatchObject({ verdict: "RE", stderr: "boom\n" });
+  });
+
+  it("uses Docker OOMKilled inspection for MLE detection", async () => {
+    const { docker, container } = dockerWithStatus(1);
+    container.inspect.mockResolvedValue({ State: { OOMKilled: true } });
+
+    const result = await runOneTestcase({
+      language: "python3",
+      hostWorkDir: await tempDir(),
+      inputData: "",
+      timeLimitMs: 1000,
+      memoryLimitMb: 64,
+      outputLimitKb: 64,
+      sandboxRuntime: "runc",
+      dockerClient: docker as never,
+    });
+
+    expect(result.verdict).toBe("MLE");
   });
 
   it("kills the container on timeout and returns TLE", async () => {

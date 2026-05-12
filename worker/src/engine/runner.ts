@@ -2,7 +2,13 @@ import fs from "fs-extra";
 import path from "path";
 import type Docker from "dockerode";
 import { docker as defaultDocker } from "../providers/docker";
-import { parseDockerLogs } from "./compiler";
+import {
+  parseDockerLogs,
+  prepareSandboxWorkDir,
+  sandboxHostConfig,
+  SANDBOX_USER,
+  truncateUtf8,
+} from "./sandbox";
 
 export interface RunOneOptions {
   language: "cpp17" | "python3";
@@ -25,23 +31,28 @@ export interface RunOneResult {
 
 export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResult> {
   const docker = options.dockerClient ?? defaultDocker;
+  await prepareSandboxWorkDir(options.hostWorkDir);
   await fs.writeFile(path.join(options.hostWorkDir, "input.txt"), options.inputData);
 
   const command =
     options.language === "cpp17"
-      ? "chmod +x /code/solution && /code/solution < /code/input.txt"
+      ? "/code/solution < /code/input.txt"
       : "python3 /code/solution.py < /code/input.txt";
 
   const container = await docker.createContainer({
     Image: options.language === "cpp17" ? "oj-sandbox-cpp" : "oj-sandbox-python",
     Cmd: ["sh", "-c", command],
     WorkingDir: "/code",
-    HostConfig: {
-      Binds: [`${options.hostWorkDir}:/code`],
-      Memory: options.memoryLimitMb * 1024 * 1024,
-      NetworkMode: "none",
-      Runtime: options.sandboxRuntime,
-    },
+    User: SANDBOX_USER,
+    Env: options.language === "python3" ? ["PYTHONDONTWRITEBYTECODE=1", "PYTHONUNBUFFERED=1"] : [],
+    AttachStdout: true,
+    AttachStderr: true,
+    HostConfig: sandboxHostConfig({
+      hostWorkDir: options.hostWorkDir,
+      memoryLimitMb: options.memoryLimitMb,
+      readonlyWork: true,
+      sandboxRuntime: options.sandboxRuntime,
+    }),
   });
 
   const startedAt = Date.now();
@@ -52,24 +63,27 @@ export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResu
     await container.start();
 
     const waitPromise = container.wait();
-    const timeoutPromise = new Promise<never>((_, reject) => {
+    const timeoutPromise = new Promise<{ StatusCode: number }>((resolve) => {
       timeout = setTimeout(() => {
         timedOut = true;
         container.kill().catch(() => undefined);
-        reject(new Error("TLE"));
+        resolve({ StatusCode: 137 });
       }, options.timeLimitMs);
     });
 
     const waitResult = await Promise.race([waitPromise, timeoutPromise]);
     const runtimeMs = Math.max(0, Date.now() - startedAt);
-    const logs = await container.logs({ stdout: true, stderr: true });
-    const { stdout, stderr } = parseDockerLogs(logs);
 
     if (timedOut) {
-      return { verdict: "TLE", stdout, stderr, runtimeMs: options.timeLimitMs, memoryKb: null };
+      return { verdict: "TLE", stdout: "", stderr: "", runtimeMs: options.timeLimitMs, memoryKb: null };
     }
 
-    if (waitResult.StatusCode === 137) {
+    const logs = await container.logs({ stdout: true, stderr: true });
+    const { stdout, stderr } = parseDockerLogs(logs);
+    const inspected = await container.inspect().catch(() => undefined);
+    const oomKilled = inspected?.State?.OOMKilled === true;
+
+    if (oomKilled || waitResult.StatusCode === 137) {
       return { verdict: "MLE", stdout, stderr, runtimeMs, memoryKb: null };
     }
 
@@ -77,10 +91,11 @@ export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResu
       return { verdict: "RE", stdout, stderr, runtimeMs, memoryKb: null };
     }
 
-    if (Buffer.byteLength(stdout, "utf8") > options.outputLimitKb * 1024) {
+    const outputLimitBytes = options.outputLimitKb * 1024;
+    if (Buffer.byteLength(stdout, "utf8") > outputLimitBytes) {
       return {
         verdict: "RE",
-        stdout,
+        stdout: truncateUtf8(stdout, outputLimitBytes),
         stderr: stderr || "Output limit exceeded",
         runtimeMs,
         memoryKb: null,

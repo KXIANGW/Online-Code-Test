@@ -20,6 +20,20 @@ describe("compileInSandbox", () => {
     expect(result).toEqual({ success: false, errorLog: "syntax error\n" });
     expect(docker.createContainer).toHaveBeenCalledWith(
       expect.objectContaining({
+        User: "1000:1000",
+        HostConfig: expect.objectContaining({
+          CapDrop: ["ALL"],
+          MemorySwap: 512 * 1024 * 1024,
+          NetworkMode: "none",
+          PidsLimit: 256,
+          ReadonlyRootfs: true,
+          SecurityOpt: ["no-new-privileges"],
+          Tmpfs: { "/tmp": "rw,nosuid,nodev,size=64m" },
+        }),
+      })
+    );
+    expect(docker.createContainer).toHaveBeenCalledWith(
+      expect.objectContaining({
         HostConfig: expect.not.objectContaining({ Runtime: expect.anything() }),
       })
     );
