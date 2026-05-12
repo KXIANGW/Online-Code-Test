@@ -10,7 +10,7 @@ ENV VITE_API_BASE=${VITE_API_BASE}
 COPY package.json package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-COPY tsconfig.json tsconfig.node.json vite.config.ts index.html ./
+COPY tsconfig.json tsconfig.node.json vite.config.ts postcss.config.js tailwind.config.js index.html ./
 COPY src ./src
 
 RUN npm run build

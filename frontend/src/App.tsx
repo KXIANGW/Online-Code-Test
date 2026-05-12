@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
+import DashboardPage from "./pages/DashboardPage";
 import { useAuthStore } from "./stores/authStore";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -22,7 +23,7 @@ export default function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <div className="p-8 text-slate-500">Dashboard (WIP)</div>
+              <DashboardPage />
             </ProtectedRoute>
           }
         />
