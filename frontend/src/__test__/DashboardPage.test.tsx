@@ -10,6 +10,7 @@ const mockNavigate = vi.hoisted(() => vi.fn());
 const mockLogout = vi.hoisted(() => vi.fn());
 const mockUseAuthStore = vi.hoisted(() => vi.fn());
 const mockUseExamStore = vi.hoisted(() => vi.fn());
+const mockGetExamSessions = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
@@ -18,6 +19,7 @@ vi.mock("react-router-dom", async (importOriginal) => {
 
 vi.mock("../stores/authStore", () => ({ useAuthStore: mockUseAuthStore }));
 vi.mock("../stores/examStore", () => ({ useExamStore: mockUseExamStore }));
+vi.mock("../api/client", () => ({ getExamSessions: mockGetExamSessions }));
 
 function setupAuthStore(username = "candidate01") {
   mockUseAuthStore.mockImplementation((sel: any) =>
@@ -45,6 +47,7 @@ describe("DashboardPage()", () => {
     mockLogout.mockReset();
     mockUseAuthStore.mockReset();
     mockUseExamStore.mockReset();
+    mockGetExamSessions.mockResolvedValue([]);
   });
 
   it("renders 3 section headings", () => {

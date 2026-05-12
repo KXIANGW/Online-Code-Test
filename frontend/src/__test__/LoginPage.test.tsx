@@ -8,10 +8,14 @@ import LoginPage from "../pages/LoginPage";
 const mockLogin = vi.hoisted(() => vi.fn<[], Promise<void>>());
 const mockNavigate = vi.hoisted(() => vi.fn());
 
-vi.mock("../stores/authStore", () => ({
-  useAuthStore: (selector: (s: { login: () => Promise<void> }) => unknown) =>
-    selector({ login: mockLogin }),
-}));
+vi.mock("../stores/authStore", () => {
+  function useAuthStore(selector: (s: { login: typeof mockLogin }) => unknown) {
+    return selector({ login: mockLogin });
+  }
+  // getState is called after login to read role for routing
+  useAuthStore.getState = () => ({ isSuperuser: false, permissions: [] as string[] });
+  return { useAuthStore };
+});
 
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
@@ -106,6 +110,24 @@ describe("LoginPage", () => {
       expect(mockLogin).toHaveBeenCalledWith("candidate01", "password")
     );
     expect(mockNavigate).toHaveBeenCalledWith("/dashboard");
+  });
+
+  // Role-based routing: interviewer
+  it("navigates to /interviewer when user has exam:manage permission", async () => {
+    const user = userEvent.setup();
+    mockLogin.mockResolvedValueOnce(undefined);
+    // Override getState for this test to return interviewer role
+    vi.spyOn(
+      (await import("../stores/authStore")).useAuthStore as unknown as { getState: () => object },
+      "getState"
+    ).mockReturnValueOnce({ isSuperuser: false, permissions: ["exam:manage"] });
+    renderLoginPage();
+
+    await user.type(getUsername(), "alice");
+    await user.type(getPassword(), "password");
+    await user.click(getSubmitBtn());
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/interviewer"));
   });
 
   // Negative: wrong credentials
