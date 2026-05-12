@@ -34,7 +34,7 @@ beforeEach(async () => {
     displayName: "Deleted",
   });
   // soft-delete the user
-  const { pool } = await import("../db/client");
+  const { pool } = await import("../db/client.js");
   await pool.query("UPDATE users SET deleted_at = NOW() WHERE username = 'deleted_user'");
 });
 
