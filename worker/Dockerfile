@@ -9,7 +9,7 @@ RUN npm run build
 
 FROM node:20-alpine
 
-RUN apk add --no-cache docker-cli
+RUN apk add --no-cache docker-cli curl
 WORKDIR /app
 ENV NODE_ENV=production
 
