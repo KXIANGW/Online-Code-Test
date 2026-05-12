@@ -2,7 +2,7 @@
 
 ## 目前狀態
 
-Vite 5 + React 18 + TypeScript SPA。目前畫面以 backend `/api/health` 與 `/api/ping` 狀態檢查為主；M2 的 RabbitMQ worker / WebSocket 判題流程已在 backend/worker 側完成，前端 WebSocket 整合與各功能頁面留待後續實作。
+Vite 5 + React 18 + TypeScript SPA。登入、考生儀表板、面試官儀表板與結果頁已完成；考試作答頁（Monaco Editor）進行中。
 
 ---
 
@@ -13,7 +13,7 @@ frontend/
 ├── Dockerfile             # 兩階段 build：node 編譯 → nginx:1.27-alpine serve static
 ├── nginx.conf             # SPA fallback（try_files → index.html）+ /api/* 反代到 backend:3000
 ├── index.html             # SPA 入口，Vite 注入 bundle
-├── package.json           # Vite 5 + React 18 + TypeScript + TailwindCSS
+├── package.json           # 依賴清單（固定版本號）
 ├── tsconfig.json          # TypeScript 設定（browser target）
 ├── tsconfig.node.json     # Vite config 專用 tsconfig（node target）
 ├── vite.config.ts         # dev server proxy：/api → http://localhost:3000
@@ -21,39 +21,100 @@ frontend/
 ├── postcss.config.js      # PostCSS（Tailwind 前置）
 └── src/
     ├── main.tsx           # React 掛載入口
-    ├── App.tsx            # 目前顯示 backend health + ping 狀態
+    ├── App.tsx            # 路由定義、ProtectedRoute、RoleRedirect
     ├── index.css          # Tailwind base / components / utilities import
     ├── vite-env.d.ts      # import.meta.env 型別定義
-    └── api/
-        └── client.ts      # axios 實例，baseURL 讀自 VITE_API_BASE（預設 /api）
+    ├── api/
+    │   └── client.ts      # axios 實例 + JWT interceptor（Bearer token）
+    ├── pages/
+    │   ├── LoginPage.tsx              # 登入頁
+    │   ├── DashboardPage.tsx          # 考生儀表板
+    │   ├── InterviewerDashboardPage.tsx  # 面試官儀表板
+    │   └── ExamResultPage.tsx         # 考試結果頁（面試官查看）
+    ├── stores/
+    │   ├── authStore.ts       # Zustand：token、username、isSuperuser、permissions
+    │   ├── examStore.ts       # Zustand：考生考試 session 清單
+    │   └── interviewerStore.ts  # Zustand：面試官 session result 清單
+    ├── types/
+    │   └── index.ts           # 共用型別（ExamSession、SessionResult、Submission 等）
+    └── utils/
+        └── jwt.ts             # decodeJwt()：純函式，解析 JWT payload 取 isSuperuser/permissions
 ```
 
-**雙入口設計理由：**
-- **本機開發**：`vite.config.ts` 把 `/api` proxy 到 `http://localhost:3000`，支援 HMR，不需重新 build。
-- **容器化部署**：nginx 將 `/api/*` 反代到 `http://backend:3000/api/*`（compose service DNS），並處理 SPA fallback，不需要 browser 支援 HTML5 history 的額外設定。
-- 兩種入口共用同一份 `dist/`，axios baseURL 在 build 時 inline 進 bundle（`import.meta.env.VITE_API_BASE`），不依賴執行時環境。
+---
+
+## 頁面與路由
+
+| 路由 | 頁面 | 權限 |
+|---|---|---|
+| `/login` | LoginPage | 公開；已登入自動導向 |
+| `/dashboard` | DashboardPage | 任何登入者（主要給考生） |
+| `/interviewer` | InterviewerDashboardPage | 任何登入者（主要給面試官） |
+| `/result/:id` | ExamResultPage | 任何登入者 |
+| `/exam/:id` | ExamPage（WIP） | 任何登入者 |
+
+**RoleRedirect 邏輯：** 登入後依 JWT 中的 permissions 決定導向目標：
+- `isSuperuser` 或 `permissions` 含 `exam:manage` → `/interviewer`
+- 其餘 → `/dashboard`
 
 ---
 
 ## API 串接
 
-### 目前呼叫的端點
+| 方法 | 路徑 | 使用頁面 |
+|---|---|---|
+| POST | `/api/auth/login` | LoginPage |
+| GET | `/api/exam-sessions` | DashboardPage、InterviewerDashboardPage |
+| GET | `/api/exam-sessions/:id/result` | InterviewerDashboardPage、ExamResultPage |
 
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| GET | `/api/health` | 顯示 backend 健康狀態 |
-| GET | `/api/ping` | 顯示 backend ping 回應 |
+所有請求透過 `src/api/client.ts` 的 axios 實例發出，interceptor 自動附加 `Authorization: Bearer <token>`，token 存於 `sessionStorage`（per-tab 隔離，防止跨分頁 token 污染）。
 
-所有請求透過 `src/api/client.ts` 的 axios 實例發出，baseURL 為 `VITE_API_BASE`（預設 `/api`）。
+---
 
-### 計畫串接（M3 前端實作）
+## 狀態管理
 
-後續前端功能將使用 backend 的完整 API，包括：
+| Store | 用途 |
+|---|---|
+| `authStore` | 登入狀態：token、username、isSuperuser、permissions；login/logout action |
+| `examStore` | 考生考試 session 清單（DashboardPage 快取） |
+| `interviewerStore` | 面試官 session result 清單（InterviewerDashboardPage 快取） |
 
-| 類型 | 說明 |
-|------|------|
-| HTTP API | `POST /api/auth/login`、使用者管理、題目 CRUD、考試 session、submission |
-| WebSocket | `ws://.../api/ws?token=<JWT>` → 訂閱 sessionId，接收 `judge_result` 推播 |
+**Token 儲存策略：** 使用 `sessionStorage`（非 `localStorage`），確保每個瀏覽器分頁擁有獨立的 token，避免不同角色在多分頁同時操作時發生權限污染。
+
+---
+
+## 主要依賴
+
+| 套件 | 版本 | 用途 |
+|---|---|---|
+| `react` | 18.3.1 | UI framework |
+| `react-router-dom` | 6.30.3 | SPA routing |
+| `zustand` | 4.5.4 | 狀態管理 |
+| `axios` | 1.16.0 | HTTP client |
+| `@headlessui/react` | 2.1.1 | Accessible UI components（UserMenu dropdown） |
+| `@monaco-editor/react` | 4.6.0 | 程式碼編輯器（ExamPage，WIP） |
+| `react-markdown` | 9.0.1 | 題目 Markdown 渲染（ExamPage，WIP） |
+| `tailwindcss` | 3.4.7 | CSS utility framework |
+| `vitest` | 2.1.8 | 測試 runner |
+| `@testing-library/react` | 16.0.0 | Component 測試 |
+
+---
+
+## 測試覆蓋
+
+```bash
+npm test          # 執行全部測試
+npm run coverage  # 產生覆蓋率報告
+```
+
+| 測試檔 | 涵蓋範圍 |
+|---|---|
+| `LoginPage.test.tsx` | 表單驗證、API 呼叫、登入後角色導向 |
+| `DashboardPage.test.tsx` | 考試 session 分類顯示、空狀態、導航 |
+| `InterviewerDashboardPage.test.tsx` | 候選人 card 顯示、狀態 tab 過濾、頁面刷新重取、登出 |
+| `ExamResultPage.test.tsx` | 結果載入、題目與測資結果顯示、返回導航 |
+| `authStore.test.ts` | login/logout state、sessionStorage 讀寫、跨分頁隔離驗證 |
+| `jwt.test.ts` | decodeJwt 正常與邊界條件（格式錯誤、非陣列 permissions） |
 
 ---
 
@@ -66,12 +127,13 @@ npm install
 npm run dev        # http://localhost:5173，/api 代理到 http://localhost:3000
 npm run build      # tsc + vite build → dist/
 npm run preview    # 用 vite 內建 server 預覽 build 產物
-npm run lint       # tsc --noEmit
+npm run lint       # tsc --noEmit 型別檢查
+npm test           # vitest 執行測試
 ```
 
 ### 本機開發方式
 
-**方式 A — backend 容器 + frontend Vite dev server**（推薦，HMR）：
+**方式 A — backend 容器 + frontend Vite dev server**（推薦，支援 HMR）：
 
 ```bash
 cd ..
@@ -82,7 +144,7 @@ npm run dev
 # → http://localhost:5173
 ```
 
-**方式 B — 全部容器化**（接近 production）：
+**方式 B — 全部容器化**（接近 production，無 HMR）：
 
 ```bash
 cd ..
@@ -93,10 +155,10 @@ docker compose up -d --build
 ### 環境變數
 
 | 變數 | 預設 | 說明 |
-|------|------|------|
-| `VITE_API_BASE` | `/api` | axios baseURL，Vite build 時 inline 進 bundle；容器化下 nginx 反代處理 CORS，幾乎不需要改 |
+|---|---|---|
+| `VITE_API_BASE` | `/api` | axios baseURL，build 時 inline 進 bundle |
 
-注意：`VITE_*` 環境變數在 **build 時**確定，不是執行階段讀取。要改 API base 須重新 build image。
+注意：`VITE_*` 在 **build 時**確定，不是執行階段讀取。要改 API base 須重新 build image。
 
 ### Docker Compose 關係
 
@@ -107,17 +169,13 @@ docker compose up -d --build
 
 ---
 
-## 測試覆蓋現況
-
-目前無自動化測試。`npm run lint`（`tsc --noEmit`）提供型別檢查。功能驗證目前以手動測試為主。
-
----
-
 ## 剩餘工作
 
-- 登入頁：`POST /api/auth/login`，JWT 存入 localStorage / cookie，axios interceptor 附帶 Authorization header
-- 面試主管管理介面：建立 candidate 帳號（單一/批次）、建立 exam session（手動/隨機派題）
-- 題目清單與詳情：`GET /api/problems`，供 problem setter 管理題目
-- 考試作答頁：讀取派題清單、程式碼編輯器、提交 submission（simple/formal）
-- 結果頁：顯示 testcase 結果、分數、verdict
-- WebSocket 判題推播整合：連線 `/api/ws?token=JWT`，訂閱 sessionId，即時顯示判題進度
+| 項目 | 說明 |
+|---|---|
+| **ExamPage** | Monaco Editor 整合、題目面板、提交流程、倒數計時 |
+| **editorStore / submissionStore** | 編輯器與提交狀態的 Zustand store |
+| **API 串接** | startExam、submitCode、getSubmission、getExamDetail |
+| **useExamTimer** | 考試倒數計時 hook |
+| **WebSocket** | `/api/ws?token=JWT`，訂閱 sessionId，即時顯示判題結果 |
+| **建立考試** | InterviewerDashboardPage 的「建立考試」目前為 placeholder button |
