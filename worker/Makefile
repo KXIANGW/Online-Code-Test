@@ -17,8 +17,11 @@ build-sandbox-python:
 test:
 	npm test
 
-test-integration:
+test-integration: build-sandbox-images
 	npm run test:integration
+
+test-all: build-sandbox-images
+	npm run test:all
 
 clean:
 	-docker rmi oct-sandbox-cpp:12 oct-sandbox-python:3.11 2>/dev/null || true

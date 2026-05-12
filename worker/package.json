@@ -8,6 +8,8 @@
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "test:integration": "TEST_MODE=integration vitest run",
+    "test:all": "npm test && npm run test:integration",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
