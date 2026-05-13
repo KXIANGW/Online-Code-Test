@@ -43,7 +43,7 @@ const mockResultEmptyProblems: SessionResult = {
 function setupAuthStore(username = "alice") {
   mockUseAuthStore.mockImplementation(
     (sel: (s: { username: string; logout: typeof mockLogout }) => unknown) =>
-      sel({ username, logout: mockLogout })
+      sel({ username, logout: mockLogout }),
   );
 }
 
@@ -54,7 +54,7 @@ function renderPage(id = "2") {
       <Routes>
         <Route path="/result/:id" element={<ExamResultPage />} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -65,7 +65,7 @@ function renderPageNoId() {
       <Routes>
         <Route path="/result" element={<ExamResultPage />} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -102,7 +102,7 @@ describe("ExamResultPage()", () => {
 
     // expect
     await waitFor(() =>
-      expect(screen.getByText("無法載入考試結果")).toBeInTheDocument()
+      expect(screen.getByText("無法載入考試結果")).toBeInTheDocument(),
     );
     expect(screen.queryByText("載入中...")).not.toBeInTheDocument();
   });
@@ -116,7 +116,7 @@ describe("ExamResultPage()", () => {
 
     // expect
     await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument()
+      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
     );
   });
 
@@ -150,7 +150,10 @@ describe("ExamResultPage()", () => {
 
   it("renders 進行中 badge for in_progress session", async () => {
     // given
-    mockGetSessionResult.mockResolvedValue({ ...mockSessionResult, status: "in_progress" });
+    mockGetSessionResult.mockResolvedValue({
+      ...mockSessionResult,
+      status: "in_progress",
+    });
 
     // when
     renderPage();
@@ -161,7 +164,10 @@ describe("ExamResultPage()", () => {
 
   it("renders 已交卷 badge for submitted session", async () => {
     // given
-    mockGetSessionResult.mockResolvedValue({ ...mockSessionResult, status: "submitted" });
+    mockGetSessionResult.mockResolvedValue({
+      ...mockSessionResult,
+      status: "submitted",
+    });
 
     // when
     renderPage();
@@ -172,7 +178,10 @@ describe("ExamResultPage()", () => {
 
   it("renders 待考 badge for not_started session", async () => {
     // given
-    mockGetSessionResult.mockResolvedValue({ ...mockSessionResult, status: "not_started" });
+    mockGetSessionResult.mockResolvedValue({
+      ...mockSessionResult,
+      status: "not_started",
+    });
 
     // when
     renderPage();
@@ -183,7 +192,10 @@ describe("ExamResultPage()", () => {
 
   it("renders 已逾時 badge for expired session", async () => {
     // given
-    mockGetSessionResult.mockResolvedValue({ ...mockSessionResult, status: "expired" });
+    mockGetSessionResult.mockResolvedValue({
+      ...mockSessionResult,
+      status: "expired",
+    });
 
     // when
     renderPage();
@@ -194,7 +206,10 @@ describe("ExamResultPage()", () => {
 
   it("renders 已取消 badge for cancelled session", async () => {
     // given
-    mockGetSessionResult.mockResolvedValue({ ...mockSessionResult, status: "cancelled" });
+    mockGetSessionResult.mockResolvedValue({
+      ...mockSessionResult,
+      status: "cancelled",
+    });
 
     // when
     renderPage();
@@ -218,7 +233,11 @@ describe("ExamResultPage()", () => {
 
   it("displays 0 / maxScore for a session with no earned score", async () => {
     // given
-    mockGetSessionResult.mockResolvedValue({ ...mockSessionResult, totalScore: 0, maxScore: 80 });
+    mockGetSessionResult.mockResolvedValue({
+      ...mockSessionResult,
+      totalScore: 0,
+      maxScore: 80,
+    });
 
     // when
     renderPage();
@@ -337,9 +356,7 @@ describe("ExamResultPage()", () => {
     renderPage("42");
 
     // expect
-    await waitFor(() =>
-      expect(mockGetSessionResult).toHaveBeenCalledWith(42)
-    );
+    await waitFor(() => expect(mockGetSessionResult).toHaveBeenCalledWith(42));
   });
 
   it("does not call getSessionResult when URL provides no id param", () => {
@@ -375,10 +392,9 @@ describe("ExamResultPage()", () => {
     renderPage();
 
     // expect
-    expect(screen.getByRole("link", { name: "Online Code Test" })).toHaveAttribute(
-      "href",
-      "/interviewer"
-    );
+    expect(
+      screen.getByRole("link", { name: "Online Code Test" }),
+    ).toHaveAttribute("href", "/interviewer");
   });
 
   // ── Testcase detail accordion ────────────────────────────────────────────────
@@ -393,7 +409,9 @@ describe("ExamResultPage()", () => {
       await screen.findByText(/Two Sum/);
 
       // expect: exactly 1 button (Valid Parentheses has no finalSubmissionId → no button)
-      expect(screen.getAllByRole("button", { name: "查看詳情 ▶" })).toHaveLength(1);
+      expect(
+        screen.getAllByRole("button", { name: "查看詳情 ▶" }),
+      ).toHaveLength(1);
     });
 
     it("clicking 查看詳情 ▶ calls getSubmissionDetail with correct sessionId and submissionId", async () => {
@@ -457,9 +475,9 @@ describe("ExamResultPage()", () => {
       await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
 
       // expect
-      await screen.findByText("測資 #1");
-      expect(screen.getByText("測資 #2")).toBeTruthy();
-      expect(screen.getByText("測資 #3")).toBeTruthy();
+      await screen.findByText("測資 1");
+      expect(screen.getByText("測資 2")).toBeTruthy();
+      expect(screen.getByText("測資 3")).toBeTruthy();
       expect(screen.getByText("42 ms")).toBeTruthy();
     });
 
@@ -471,13 +489,13 @@ describe("ExamResultPage()", () => {
       renderPage();
       await screen.findByText(/Two Sum/);
       await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
-      await screen.findByText("測資 #1");
+      await screen.findByText("測資 1");
 
       // when
       await user.click(screen.getByRole("button", { name: "收合 ▲" }));
 
       // expect
-      expect(screen.queryByText("測資 #1")).toBeFalsy();
+      expect(screen.queryByText("測資 1")).toBeFalsy();
     });
 
     it("re-expanding an already fetched problem does not call getSubmissionDetail again", async () => {
@@ -488,7 +506,7 @@ describe("ExamResultPage()", () => {
       renderPage();
       await screen.findByText(/Two Sum/);
       await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
-      await screen.findByText("測資 #1");
+      await screen.findByText("測資 1");
       await user.click(screen.getByRole("button", { name: "收合 ▲" }));
 
       // when
@@ -496,7 +514,68 @@ describe("ExamResultPage()", () => {
 
       // expect: fetched only once; results re-render from cache
       expect(mockGetSubmissionDetail).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("測資 #1")).toBeTruthy();
+      expect(screen.getByText("測資 1")).toBeTruthy();
+    });
+
+    it("feat: supports expanding multiple problem details simultaneously without closing others", async () => {
+      // Given
+      const user = userEvent.setup();
+      const mockResultTwoSubmissions: SessionResult = {
+        ...mockSessionResult,
+        problems: [
+          {
+            ...mockSessionResult.problems[0]!,
+            examSessionProblemId: 101,
+            finalSubmissionId: 10,
+            problemTitle: "Problem A",
+          },
+          {
+            ...mockSessionResult.problems[1]!,
+            examSessionProblemId: 102,
+            finalSubmissionId: 11,
+            problemTitle: "Problem B",
+          },
+        ],
+      };
+
+      mockGetSessionResult.mockResolvedValue(mockResultTwoSubmissions);
+
+      // 模擬 API：讓不同的 submissionId 回傳可辨識的 runtimeMs
+      mockGetSubmissionDetail.mockImplementation(
+        async (sessionId, submissionId) => ({
+          ...mockSubmissionDetail,
+          testcaseResults: [
+            {
+              ...mockSubmissionDetail.testcaseResults[0]!,
+              id: submissionId * 100,
+              runtimeMs: submissionId,
+            },
+          ],
+        }),
+      );
+
+      renderPage();
+
+      const buttons = await screen.findAllByRole("button", {
+        name: "查看詳情 ▶",
+      });
+
+      // When
+      await user.click(buttons[0]!); // 展開 Problem A (submissionId: 10)
+      await user.click(buttons[1]!); // 展開 Problem B (submissionId: 11)
+
+      // Expect
+      // 1. 驗證兩組詳情內的獨特數據是否同時存在 (10 ms 來自 A, 11 ms 來自 B)
+      await waitFor(() => {
+        expect(screen.getByText("10 ms")).toBeInTheDocument();
+        expect(screen.getByText("11 ms")).toBeInTheDocument();
+      });
+
+      // 2. 驗證收合按鈕數量
+      expect(screen.getAllByRole("button", { name: "收合 ▲" })).toHaveLength(2);
+
+      // 3. 驗證 API 呼叫
+      expect(mockGetSubmissionDetail).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -511,7 +590,9 @@ describe("ExamResultPage()", () => {
     renderPage();
 
     // expect
-    expect(screen.getByRole("button", { name: "User menu" })).toHaveTextContent("AL");
+    expect(screen.getByRole("button", { name: "User menu" })).toHaveTextContent(
+      "AL",
+    );
   });
 
   it("shows ?? as initials when username is null", () => {
@@ -519,14 +600,16 @@ describe("ExamResultPage()", () => {
     mockGetSessionResult.mockReturnValue(new Promise(() => {}));
     mockUseAuthStore.mockImplementation(
       (sel: (s: { username: null; logout: typeof mockLogout }) => unknown) =>
-        sel({ username: null, logout: mockLogout })
+        sel({ username: null, logout: mockLogout }),
     );
 
     // when
     renderPage();
 
     // expect
-    expect(screen.getByRole("button", { name: "User menu" })).toHaveTextContent("??");
+    expect(screen.getByRole("button", { name: "User menu" })).toHaveTextContent(
+      "??",
+    );
   });
 
   it("logout: opens menu → clicks Log out → calls logout and navigates to /login", async () => {

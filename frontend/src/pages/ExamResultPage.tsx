@@ -104,7 +104,7 @@ export default function ExamResultPage() {
   const [result, setResult] = useState<SessionResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [expandedEspId, setExpandedEspId] = useState<number | null>(null);
+  const [expandedEspId, setExpandedEspId] = useState<Set<number>>(new Set());
   const [tcCache, setTcCache] = useState<
     Record<number, TestcaseResult[] | "loading" | "error">
   >({});
@@ -118,20 +118,25 @@ export default function ExamResultPage() {
   }, [id]);
 
   function toggleDetail(espId: number, submissionId: number) {
-    if (expandedEspId === espId) {
-      setExpandedEspId(null);
-      return;
-    }
-    setExpandedEspId(espId);
+    setExpandedEspId((prev) => {
+      const next = new Set(prev);
+      if (next.has(espId)) {
+        next.delete(espId);
+      } else {
+        next.add(espId);
+      }
+      return next;
+    });
+
+    // 判斷是否需要抓取資料 (邏輯不變，只需確保 tcCache 內沒有資料才發請求)
     if (tcCache[espId] !== undefined) return;
+
     setTcCache((prev) => ({ ...prev, [espId]: "loading" }));
     getSubmissionDetail(Number(id), submissionId)
       .then((detail) =>
         setTcCache((prev) => ({ ...prev, [espId]: detail.testcaseResults })),
       )
-      .catch(() =>
-        setTcCache((prev) => ({ ...prev, [espId]: "error" })),
-      );
+      .catch(() => setTcCache((prev) => ({ ...prev, [espId]: "error" })));
   }
 
   return (
@@ -150,7 +155,9 @@ export default function ExamResultPage() {
         )}
 
         {error && (
-          <p className="text-sm text-red-500 text-center py-12">無法載入考試結果</p>
+          <p className="text-sm text-red-500 text-center py-12">
+            無法載入考試結果
+          </p>
         )}
 
         {result && (
@@ -161,7 +168,9 @@ export default function ExamResultPage() {
                   <p className="font-medium text-slate-800">
                     {result.candidate.displayName ?? result.candidate.username}
                   </p>
-                  <p className="text-xs text-slate-400">@{result.candidate.username}</p>
+                  <p className="text-xs text-slate-400">
+                    @{result.candidate.username}
+                  </p>
                 </div>
                 <span
                   className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLOR[result.status]}`}
@@ -191,7 +200,7 @@ export default function ExamResultPage() {
               </div>
               <div className="divide-y divide-slate-100">
                 {result.problems.map((p) => {
-                  const isExpanded = expandedEspId === p.examSessionProblemId;
+                  const isExpanded = expandedEspId.has(p.examSessionProblemId);
                   const tcState = tcCache[p.examSessionProblemId];
                   return (
                     <div key={p.examSessionProblemId}>
@@ -205,7 +214,9 @@ export default function ExamResultPage() {
                               VERDICT_COLOR[p.latestStatus] ?? "text-slate-400"
                             }`}
                           >
-                            {p.latestStatus === "no_submission" ? "未作答" : p.latestStatus}
+                            {p.latestStatus === "no_submission"
+                              ? "未作答"
+                              : p.latestStatus}
                           </p>
                         </div>
                         <div className="flex items-center gap-3">
@@ -215,7 +226,12 @@ export default function ExamResultPage() {
                           {p.finalSubmissionId !== null && (
                             <button
                               type="button"
-                              onClick={() => toggleDetail(p.examSessionProblemId, p.finalSubmissionId!)}
+                              onClick={() =>
+                                toggleDetail(
+                                  p.examSessionProblemId,
+                                  p.finalSubmissionId!,
+                                )
+                              }
                               className="text-xs text-blue-600 hover:text-blue-800 transition-colors whitespace-nowrap"
                             >
                               {isExpanded ? "收合 ▲" : "查看詳情 ▶"}
@@ -240,18 +256,28 @@ export default function ExamResultPage() {
                             <table className="mt-3 w-full text-xs">
                               <thead>
                                 <tr className="border-b border-slate-200 text-slate-400">
-                                  <th className="py-2 text-left font-medium">#</th>
-                                  <th className="py-2 text-left font-medium">可見性</th>
-                                  <th className="py-2 text-left font-medium">判決</th>
-                                  <th className="py-2 text-left font-medium">執行時間</th>
-                                  <th className="py-2 text-left font-medium">記憶體</th>
+                                  <th className="py-2 text-left font-medium">
+                                    #
+                                  </th>
+                                  <th className="py-2 text-left font-medium">
+                                    可見性
+                                  </th>
+                                  <th className="py-2 text-left font-medium">
+                                    判決
+                                  </th>
+                                  <th className="py-2 text-left font-medium">
+                                    執行時間
+                                  </th>
+                                  <th className="py-2 text-left font-medium">
+                                    記憶體
+                                  </th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
                                 {tcState.map((tc) => (
                                   <tr key={tc.id}>
                                     <td className="py-2 text-slate-600">
-                                      測資 #{tc.orderIndex}
+                                      測資 {tc.orderIndex}
                                     </td>
                                     <td className="py-2">
                                       <span
@@ -266,18 +292,21 @@ export default function ExamResultPage() {
                                     </td>
                                     <td
                                       className={`py-2 font-medium ${
-                                        TC_VERDICT_COLOR[tc.verdict] ?? "text-slate-600"
+                                        TC_VERDICT_COLOR[tc.verdict] ??
+                                        "text-slate-600"
                                       }`}
                                     >
                                       {tc.verdict}
                                     </td>
                                     <td className="py-2 text-slate-600">
-                                      {tc.verdict === "skipped" || tc.runtimeMs === null
+                                      {tc.verdict === "skipped" ||
+                                      tc.runtimeMs === null
                                         ? "—"
                                         : `${tc.runtimeMs} ms`}
                                     </td>
                                     <td className="py-2 text-slate-600">
-                                      {tc.verdict === "skipped" || tc.memoryKb === null
+                                      {tc.verdict === "skipped" ||
+                                      tc.memoryKb === null
                                         ? "—"
                                         : `${tc.memoryKb} KB`}
                                     </td>
