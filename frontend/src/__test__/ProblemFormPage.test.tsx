@@ -133,7 +133,7 @@ describe("ProblemFormPage()", () => {
       ).toBeInTheDocument();
     });
 
-    it("preview renders `inline code` as a <code> element", async () => {
+    it("preview renders `inline code` as a <code> element without literal backticks", async () => {
       // given
       const user = userEvent.setup();
       setupAuthStore();
@@ -146,7 +146,8 @@ describe("ProblemFormPage()", () => {
       );
       await user.click(screen.getByRole("button", { name: "預覽" }));
 
-      // expect
+      // expect — backtick syntax is stripped; only the content text appears in the DOM
+      expect(screen.queryByText("`abc`")).toBeFalsy();
       expect(screen.getByText("abc").tagName.toLowerCase()).toBe("code");
     });
 
