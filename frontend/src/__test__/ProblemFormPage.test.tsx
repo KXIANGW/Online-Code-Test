@@ -360,9 +360,11 @@ describe("ProblemFormPage()", () => {
       );
       await user.click(screen.getByRole("button", { name: "儲存題目" }));
 
-      // expect
+      // expect — alert starts with "儲存失敗：" and includes the error detail
       await waitFor(() =>
-        expect(window.alert).toHaveBeenCalledWith("儲存失敗，請稍後再試。"),
+        expect(window.alert).toHaveBeenCalledWith(
+          expect.stringContaining("儲存失敗："),
+        ),
       );
       expect(mockNavigate).not.toHaveBeenCalledWith("/problem-setter");
     });

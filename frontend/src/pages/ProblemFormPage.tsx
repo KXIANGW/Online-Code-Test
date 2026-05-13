@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { useAuthStore } from "../stores/authStore";
+import axios from "axios";
 import {
   createProblem,
   getProblemById,
@@ -362,8 +363,11 @@ export default function ProblemFormPage() {
       }
 
       navigate("/problem-setter");
-    } catch {
-      alert("儲存失敗，請稍後再試。");
+    } catch (err) {
+      const detail = axios.isAxiosError(err)
+        ? ((err.response?.data as { message?: string })?.message ?? err.message)
+        : String(err);
+      alert(`儲存失敗：${detail}`);
     } finally {
       setSaving(false);
     }
