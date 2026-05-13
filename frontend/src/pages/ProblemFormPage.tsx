@@ -361,6 +361,7 @@ export default function ProblemFormPage() {
         });
       }
 
+      alert("儲存成功！");
       navigate("/problem-setter");
     } catch (err) {
       const detail = axios.isAxiosError(err)

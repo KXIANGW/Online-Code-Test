@@ -271,11 +271,12 @@ describe("ProblemFormPage()", () => {
     });
 
     // Happy path: create problem
-    it("calls createProblem with correct data and navigates on success", async () => {
+    it("calls createProblem with correct data, shows success alert and navigates", async () => {
       // given
       const user = userEvent.setup();
       setupAuthStore();
       mockCreateProblem.mockResolvedValue({ ...mockProblemDetail, id: 99 });
+      vi.spyOn(window, "alert").mockImplementation(() => {});
       renderCreate();
 
       // when
@@ -298,6 +299,7 @@ describe("ProblemFormPage()", () => {
           }),
         ),
       );
+      expect(window.alert).toHaveBeenCalledWith("儲存成功！");
       expect(mockNavigate).toHaveBeenCalledWith("/problem-setter");
     });
 
@@ -415,12 +417,13 @@ describe("ProblemFormPage()", () => {
       expect(screen.getByText("測資 #2")).toBeInTheDocument();
     });
 
-    it("calls updateProblem on submit and navigates on success", async () => {
+    it("calls updateProblem on submit, shows success alert and navigates", async () => {
       // given
       const user = userEvent.setup();
       setupAuthStore();
       mockGetProblemById.mockResolvedValue(mockProblemDetail);
       mockUpdateProblem.mockResolvedValue(mockProblemDetail);
+      vi.spyOn(window, "alert").mockImplementation(() => {});
       renderEdit(1);
       await screen.findByDisplayValue("Two Sum");
 
@@ -437,6 +440,7 @@ describe("ProblemFormPage()", () => {
           expect.objectContaining({ title: "Two Sum Updated" }),
         ),
       );
+      expect(window.alert).toHaveBeenCalledWith("儲存成功！");
       expect(mockNavigate).toHaveBeenCalledWith("/problem-setter");
     });
 
