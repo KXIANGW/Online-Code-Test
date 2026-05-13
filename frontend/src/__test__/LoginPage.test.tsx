@@ -118,7 +118,7 @@ describe("LoginPage", () => {
   });
 
   // Happy path
-  it("calls login with trimmed username and navigates to /dashboard on success", async () => {
+  it("calls login with trimmed username and navigates to / on success", async () => {
     // given
     const user = userEvent.setup();
     mockLogin.mockResolvedValueOnce(undefined);
@@ -130,22 +130,20 @@ describe("LoginPage", () => {
     await user.click(getSubmitBtn());
 
     // expect
+    // LoginPage always navigates to "/" with replace:true after login.
+    // Role-based redirection (/ → /interviewer, /admin, etc.) is handled by
+    // RoleRedirect in App.tsx, not by LoginPage itself.
     await waitFor(() =>
       expect(mockLogin).toHaveBeenCalledWith("candidate01", "password")
     );
-    expect(mockNavigate).toHaveBeenCalledWith("/dashboard");
+    expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true });
   });
 
-  // Role-based routing: interviewer
-  it("navigates to /interviewer when user has exam:manage permission", async () => {
+  // LoginPage always goes to "/" regardless of role; RoleRedirect owns routing
+  it("navigates to / regardless of role after successful login", async () => {
     // given
     const user = userEvent.setup();
     mockLogin.mockResolvedValueOnce(undefined);
-    // Override getState for this test to return interviewer role
-    vi.spyOn(
-      (await import("../stores/authStore")).useAuthStore as unknown as { getState: () => object },
-      "getState"
-    ).mockReturnValueOnce({ isSuperuser: false, permissions: ["exam:manage"] });
     renderLoginPage();
 
     // when
@@ -154,7 +152,35 @@ describe("LoginPage", () => {
     await user.click(getSubmitBtn());
 
     // expect
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/interviewer"));
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true })
+    );
+  });
+
+  // Edge case: double-click during loading must not fire a second API call
+  it("does not call login again when submit is clicked while loading", async () => {
+    // given
+    const user = userEvent.setup();
+    let resolveLogin!: () => void;
+    mockLogin.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveLogin = resolve;
+      })
+    );
+    renderLoginPage();
+
+    // when
+    await user.type(getUsername(), "candidate01");
+    await user.type(getPassword(), "password");
+    await user.click(getSubmitBtn()); // first submit — starts loading, button becomes "登入中..."
+    // Button is now disabled ("登入中..."); attempt a second click — should be a no-op
+    await user.click(screen.getByRole("button", { name: "登入中..." }));
+
+    // expect
+    expect(mockLogin).toHaveBeenCalledTimes(1);
+
+    resolveLogin();
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
   });
 
   // Negative: wrong credentials
