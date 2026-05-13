@@ -6,13 +6,13 @@ import ProblemFormPage from "../pages/ProblemFormPage";
 import { mockProblemDetail } from "./mock-data";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
-const mockNavigate      = vi.hoisted(() => vi.fn());
-const mockLogout        = vi.hoisted(() => vi.fn());
-const mockUseAuthStore  = vi.hoisted(() => vi.fn());
+const mockNavigate = vi.hoisted(() => vi.fn());
+const mockLogout = vi.hoisted(() => vi.fn());
+const mockUseAuthStore = vi.hoisted(() => vi.fn());
 const mockCreateProblem = vi.hoisted(() => vi.fn());
 const mockGetProblemById = vi.hoisted(() => vi.fn());
 const mockUpdateProblem = vi.hoisted(() => vi.fn());
-const mockAddTestcase   = vi.hoisted(() => vi.fn());
+const mockAddTestcase = vi.hoisted(() => vi.fn());
 const mockDeleteTestcase = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -21,18 +21,24 @@ vi.mock("react-router-dom", async (importOriginal) => {
 });
 vi.mock("../stores/authStore", () => ({ useAuthStore: mockUseAuthStore }));
 vi.mock("../api/client", () => ({
-  createProblem:   mockCreateProblem,
-  getProblemById:  mockGetProblemById,
-  updateProblem:   mockUpdateProblem,
-  addTestcase:     mockAddTestcase,
-  deleteTestcase:  mockDeleteTestcase,
+  createProblem: mockCreateProblem,
+  getProblemById: mockGetProblemById,
+  updateProblem: mockUpdateProblem,
+  addTestcase: mockAddTestcase,
+  deleteTestcase: mockDeleteTestcase,
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function setupAuthStore(username = "setter01") {
   mockUseAuthStore.mockImplementation((sel: (s: object) => unknown) =>
-    sel({ token: "tok", username, login: vi.fn(), logout: mockLogout,
-          isSuperuser: false, permissions: ["problem:manage"] })
+    sel({
+      token: "tok",
+      username,
+      login: vi.fn(),
+      logout: mockLogout,
+      isSuperuser: false,
+      permissions: ["problem:manage"],
+    }),
   );
 }
 
@@ -43,7 +49,7 @@ function renderCreate() {
       <Routes>
         <Route path="/problem-setter/new" element={<ProblemFormPage />} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -54,7 +60,7 @@ function renderEdit(id = 1) {
       <Routes>
         <Route path="/problem-setter/:id/edit" element={<ProblemFormPage />} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -123,13 +129,13 @@ describe("ProblemFormPage()", () => {
       // when
       await user.type(
         screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
-        "## Hello World"
+        "## Hello World",
       );
       await user.click(screen.getByRole("button", { name: "預覽" }));
 
       // expect
       expect(
-        screen.getByRole("heading", { level: 2, name: "Hello World" })
+        screen.getByRole("heading", { level: 2, name: "Hello World" }),
       ).toBeInTheDocument();
     });
 
@@ -142,13 +148,15 @@ describe("ProblemFormPage()", () => {
       // when
       await user.type(
         screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
-        "`abc`"
+        "`abc`",
       );
       await user.click(screen.getByRole("button", { name: "預覽" }));
 
       // expect — backtick syntax is stripped; only the content text appears in the DOM
       expect(screen.queryByText("`abc`")).toBeFalsy();
       expect(screen.getByText("abc").tagName.toLowerCase()).toBe("code");
+      expect(screen.getByText("abc").textContent).toBe("abc");
+      expect(screen.getByText("abc").innerHTML).not.toContain(" ");
     });
 
     it("preview renders **bold** as a <strong> element", async () => {
@@ -160,12 +168,14 @@ describe("ProblemFormPage()", () => {
       // when
       await user.type(
         screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
-        "**bold text**"
+        "**bold text**",
       );
       await user.click(screen.getByRole("button", { name: "預覽" }));
 
       // expect
-      expect(screen.getByText("bold text").tagName.toLowerCase()).toBe("strong");
+      expect(screen.getByText("bold text").tagName.toLowerCase()).toBe(
+        "strong",
+      );
     });
 
     it("preview shows placeholder text when description is empty", async () => {
@@ -188,7 +198,9 @@ describe("ProblemFormPage()", () => {
       renderCreate();
 
       // when — single Enter between two lines (no blank line)
-      const textarea = screen.getByPlaceholderText("以 Markdown 撰寫題目描述...");
+      const textarea = screen.getByPlaceholderText(
+        "以 Markdown 撰寫題目描述...",
+      );
       await user.type(textarea, "Input: 1 2 3{Enter}Output: 0 1");
       await user.click(screen.getByRole("button", { name: "預覽" }));
 
@@ -203,7 +215,7 @@ describe("ProblemFormPage()", () => {
       renderCreate();
       await user.click(screen.getByRole("button", { name: "預覽" }));
       expect(
-        screen.queryByPlaceholderText("以 Markdown 撰寫題目描述...")
+        screen.queryByPlaceholderText("以 Markdown 撰寫題目描述..."),
       ).not.toBeInTheDocument();
 
       // when
@@ -211,7 +223,7 @@ describe("ProblemFormPage()", () => {
 
       // expect
       expect(
-        screen.getByPlaceholderText("以 Markdown 撰寫題目描述...")
+        screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
       ).toBeInTheDocument();
     });
 
@@ -224,7 +236,9 @@ describe("ProblemFormPage()", () => {
 
       // expect
       expect(screen.getByText("測試資料")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "+ 新增測資" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "+ 新增測資" }),
+      ).toBeInTheDocument();
     });
 
     it("cancel button navigates to /problem-setter", async () => {
@@ -265,7 +279,10 @@ describe("ProblemFormPage()", () => {
       renderCreate();
 
       // when
-      await user.type(screen.getByPlaceholderText("輸入題目名稱"), "New Problem");
+      await user.type(
+        screen.getByPlaceholderText("輸入題目名稱"),
+        "New Problem",
+      );
       await user.click(screen.getByRole("radio", { name: "困難" }));
       await user.click(screen.getByRole("button", { name: "儲存題目" }));
 
@@ -278,8 +295,8 @@ describe("ProblemFormPage()", () => {
             timeLimitMs: 1000,
             memoryLimitMb: 256,
             testcases: [],
-          })
-        )
+          }),
+        ),
       );
       expect(mockNavigate).toHaveBeenCalledWith("/problem-setter");
     });
@@ -337,12 +354,15 @@ describe("ProblemFormPage()", () => {
       renderCreate();
 
       // when
-      await user.type(screen.getByPlaceholderText("輸入題目名稱"), "Fail Problem");
+      await user.type(
+        screen.getByPlaceholderText("輸入題目名稱"),
+        "Fail Problem",
+      );
       await user.click(screen.getByRole("button", { name: "儲存題目" }));
 
       // expect
       await waitFor(() =>
-        expect(window.alert).toHaveBeenCalledWith("儲存失敗，請稍後再試。")
+        expect(window.alert).toHaveBeenCalledWith("儲存失敗，請稍後再試。"),
       );
       expect(mockNavigate).not.toHaveBeenCalledWith("/problem-setter");
     });
@@ -360,7 +380,7 @@ describe("ProblemFormPage()", () => {
 
       // expect
       await waitFor(() =>
-        expect(screen.getByText("編輯題目")).toBeInTheDocument()
+        expect(screen.getByText("編輯題目")).toBeInTheDocument(),
       );
     });
 
@@ -412,8 +432,8 @@ describe("ProblemFormPage()", () => {
       await waitFor(() =>
         expect(mockUpdateProblem).toHaveBeenCalledWith(
           1,
-          expect.objectContaining({ title: "Two Sum Updated" })
-        )
+          expect.objectContaining({ title: "Two Sum Updated" }),
+        ),
       );
       expect(mockNavigate).toHaveBeenCalledWith("/problem-setter");
     });
@@ -430,8 +450,8 @@ describe("ProblemFormPage()", () => {
       // expect
       await waitFor(() =>
         expect(
-          screen.getByText("無法載入題目，請稍後再試。")
-        ).toBeInTheDocument()
+          screen.getByText("無法載入題目，請稍後再試。"),
+        ).toBeInTheDocument(),
       );
     });
   });
