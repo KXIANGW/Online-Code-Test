@@ -263,15 +263,14 @@ export default function ProblemFormPage() {
   }, [id, isEdit]);
 
   function addTestcaseRow() {
-    setTestcases((prev) => [
-      ...prev,
-      {
-        orderIndex: prev.length,
-        isPublic: false,
-        inputData: "",
-        outputData: "",
-      },
-    ]);
+    setTestcases((prev) => {
+      const nextOrder =
+        prev.length === 0 ? 0 : Math.max(...prev.map((tc) => tc.orderIndex)) + 1;
+      return [
+        ...prev,
+        { orderIndex: nextOrder, isPublic: false, inputData: "", outputData: "" },
+      ];
+    });
   }
 
   function togglePublic(index: number) {
