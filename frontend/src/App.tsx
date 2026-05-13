@@ -4,6 +4,9 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage"; // 考生: exam:take
 import InterviewerDashboardPage from "./pages/InterviewerDashboardPage"; // 面試官: exam:manage
 import AdminDashboardPage from "./pages/AdminDashboardPage"; // Root: is_superuser
+import ExamResultPage from "./pages/ExamResultPage";
+import ProblemSetterDashboardPage from "./pages/ProblemSetterDashboardPage";
+import ProblemFormPage from "./pages/ProblemFormPage";
 import { useAuthStore } from "./stores/authStore";
 
 /**
@@ -85,7 +88,11 @@ function RoleRedirect() {
   if (permissions.includes("exam:manage"))
     return <Navigate to="/interviewer" replace />;
 
-  // 優先級 3: 題目管理員 (Problem Setter) -> /candidate (或您自訂的 /problems)
+  // 優先級 3: 出題主管 (Problem Setter) -> /problem-setter
+  if (permissions.includes("problem:manage"))
+    return <Navigate to="/problem-setter" replace />;
+
+  // 優先級 4: 考生 -> /candidate
   if (permissions.includes("exam:take"))
     return <Navigate to="/candidate" replace />;
 
@@ -130,6 +137,46 @@ export default function App() {
           element={
             <RoleBasedRoute requiredPermission="exam:take">
               <DashboardPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 出題主管：題目列表 */}
+        <Route
+          path="/problem-setter"
+          element={
+            <RoleBasedRoute requiredPermission="problem:manage">
+              <ProblemSetterDashboardPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 出題主管：新增題目 */}
+        <Route
+          path="/problem-setter/new"
+          element={
+            <RoleBasedRoute requiredPermission="problem:manage">
+              <ProblemFormPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 出題主管：編輯題目 */}
+        <Route
+          path="/problem-setter/:id/edit"
+          element={
+            <RoleBasedRoute requiredPermission="problem:manage">
+              <ProblemFormPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 面試官：考試結果頁 */}
+        <Route
+          path="/result/:id"
+          element={
+            <RoleBasedRoute requiredPermission="exam:manage">
+              <ExamResultPage />
             </RoleBasedRoute>
           }
         />
