@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { useAuthStore } from "../stores/authStore";
-import { getSessionResult } from "../api/client";
-import type { ExamStatus, SessionResult } from "../types";
+import { getSessionResult, getSubmissionDetail } from "../api/client";
+import type { ExamStatus, SessionResult, TestcaseResult } from "../types";
 
 const STATUS_LABEL: Record<ExamStatus, string> = {
   not_started: "待考",
@@ -19,6 +19,15 @@ const STATUS_COLOR: Record<ExamStatus, string> = {
   submitted: "bg-green-50 text-green-600",
   expired: "bg-slate-100 text-slate-500",
   cancelled: "bg-slate-100 text-slate-400",
+};
+
+const TC_VERDICT_COLOR: Record<string, string> = {
+  AC: "text-green-600",
+  WA: "text-red-500",
+  TLE: "text-amber-500",
+  MLE: "text-amber-500",
+  RE: "text-orange-500",
+  skipped: "text-slate-400",
 };
 
 const VERDICT_COLOR: Record<string, string> = {
@@ -95,6 +104,10 @@ export default function ExamResultPage() {
   const [result, setResult] = useState<SessionResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [expandedEspId, setExpandedEspId] = useState<number | null>(null);
+  const [tcCache, setTcCache] = useState<
+    Record<number, TestcaseResult[] | "loading" | "error">
+  >({});
 
   useEffect(() => {
     if (!id) return;
@@ -103,6 +116,23 @@ export default function ExamResultPage() {
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [id]);
+
+  function toggleDetail(espId: number, submissionId: number) {
+    if (expandedEspId === espId) {
+      setExpandedEspId(null);
+      return;
+    }
+    setExpandedEspId(espId);
+    if (tcCache[espId] !== undefined) return;
+    setTcCache((prev) => ({ ...prev, [espId]: "loading" }));
+    getSubmissionDetail(Number(id), submissionId)
+      .then((detail) =>
+        setTcCache((prev) => ({ ...prev, [espId]: detail.testcaseResults })),
+      )
+      .catch(() =>
+        setTcCache((prev) => ({ ...prev, [espId]: "error" })),
+      );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -160,28 +190,107 @@ export default function ExamResultPage() {
                 <h2 className="font-medium text-slate-800">題目結果</h2>
               </div>
               <div className="divide-y divide-slate-100">
-                {result.problems.map((p) => (
-                  <div
-                    key={p.examSessionProblemId}
-                    className="px-5 py-4 flex items-center justify-between"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-slate-800">
-                        {p.orderIndex}. {p.problemTitle}
-                      </p>
-                      <p
-                        className={`text-xs mt-0.5 ${
-                          VERDICT_COLOR[p.latestStatus] ?? "text-slate-400"
-                        }`}
-                      >
-                        {p.latestStatus === "no_submission" ? "未作答" : p.latestStatus}
-                      </p>
+                {result.problems.map((p) => {
+                  const isExpanded = expandedEspId === p.examSessionProblemId;
+                  const tcState = tcCache[p.examSessionProblemId];
+                  return (
+                    <div key={p.examSessionProblemId}>
+                      <div className="px-5 py-4 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">
+                            {p.orderIndex}. {p.problemTitle}
+                          </p>
+                          <p
+                            className={`text-xs mt-0.5 ${
+                              VERDICT_COLOR[p.latestStatus] ?? "text-slate-400"
+                            }`}
+                          >
+                            {p.latestStatus === "no_submission" ? "未作答" : p.latestStatus}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <p className="text-sm text-slate-600">
+                            {p.score} / {p.scoreWeight} 分
+                          </p>
+                          {p.finalSubmissionId !== null && (
+                            <button
+                              type="button"
+                              onClick={() => toggleDetail(p.examSessionProblemId, p.finalSubmissionId!)}
+                              className="text-xs text-blue-600 hover:text-blue-800 transition-colors whitespace-nowrap"
+                            >
+                              {isExpanded ? "收合 ▲" : "查看詳情 ▶"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="border-t border-slate-100 bg-slate-50 px-5 pb-4">
+                          {tcState === "loading" && (
+                            <p className="py-3 text-center text-xs text-slate-400">
+                              載入測資中...
+                            </p>
+                          )}
+                          {tcState === "error" && (
+                            <p className="py-3 text-center text-xs text-red-500">
+                              無法載入測資結果
+                            </p>
+                          )}
+                          {Array.isArray(tcState) && (
+                            <table className="mt-3 w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-slate-200 text-slate-400">
+                                  <th className="py-2 text-left font-medium">#</th>
+                                  <th className="py-2 text-left font-medium">可見性</th>
+                                  <th className="py-2 text-left font-medium">判決</th>
+                                  <th className="py-2 text-left font-medium">執行時間</th>
+                                  <th className="py-2 text-left font-medium">記憶體</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {tcState.map((tc) => (
+                                  <tr key={tc.id}>
+                                    <td className="py-2 text-slate-600">
+                                      測資 #{tc.orderIndex}
+                                    </td>
+                                    <td className="py-2">
+                                      <span
+                                        className={`rounded px-1.5 py-0.5 text-xs ${
+                                          tc.isPublic
+                                            ? "bg-green-50 text-green-600"
+                                            : "bg-slate-100 text-slate-500"
+                                        }`}
+                                      >
+                                        {tc.isPublic ? "公開" : "隱藏"}
+                                      </span>
+                                    </td>
+                                    <td
+                                      className={`py-2 font-medium ${
+                                        TC_VERDICT_COLOR[tc.verdict] ?? "text-slate-600"
+                                      }`}
+                                    >
+                                      {tc.verdict}
+                                    </td>
+                                    <td className="py-2 text-slate-600">
+                                      {tc.verdict === "skipped" || tc.runtimeMs === null
+                                        ? "—"
+                                        : `${tc.runtimeMs} ms`}
+                                    </td>
+                                    <td className="py-2 text-slate-600">
+                                      {tc.verdict === "skipped" || tc.memoryKb === null
+                                        ? "—"
+                                        : `${tc.memoryKb} KB`}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <p className="text-sm text-slate-600">
-                      {p.score} / {p.scoreWeight} 分
-                    </p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           </div>

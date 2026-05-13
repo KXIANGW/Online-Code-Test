@@ -4,6 +4,7 @@ import type {
   LoginResponse,
   ExamSession,
   SessionResult,
+  SubmissionDetail,
   CreateUserRequest,
   CreateUserResponse,
   UserSummary,
@@ -125,4 +126,14 @@ export async function updateTestcase(
 
 export async function deleteTestcase(problemId: number, tcId: number): Promise<void> {
   await api.delete(`/problems/${problemId}/testcases/${tcId}`);
+}
+
+export async function getSubmissionDetail(
+  sessionId: number,
+  submissionId: number,
+): Promise<SubmissionDetail> {
+  const { data } = await api.get<SubmissionDetail>(
+    `/exam-sessions/${sessionId}/submissions/${submissionId}`,
+  );
+  return data;
 }

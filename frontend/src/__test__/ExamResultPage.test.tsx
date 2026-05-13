@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import ExamResultPage from "../pages/ExamResultPage";
-import { mockSessionResult } from "./mock-data";
+import { mockSessionResult, mockSubmissionDetail } from "./mock-data";
 import type { SessionResult } from "../types";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
@@ -11,13 +11,17 @@ const mockNavigate = vi.hoisted(() => vi.fn());
 const mockLogout = vi.hoisted(() => vi.fn());
 const mockUseAuthStore = vi.hoisted(() => vi.fn());
 const mockGetSessionResult = vi.hoisted(() => vi.fn());
+const mockGetSubmissionDetail = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
   return { ...actual, useNavigate: () => mockNavigate };
 });
 vi.mock("../stores/authStore", () => ({ useAuthStore: mockUseAuthStore }));
-vi.mock("../api/client", () => ({ getSessionResult: mockGetSessionResult }));
+vi.mock("../api/client", () => ({
+  getSessionResult: mockGetSessionResult,
+  getSubmissionDetail: mockGetSubmissionDetail,
+}));
 
 // ── Extra fixture data ────────────────────────────────────────────────────────
 const mockResultNoDisplayName: SessionResult = {
@@ -72,6 +76,7 @@ describe("ExamResultPage()", () => {
     mockLogout.mockReset();
     mockUseAuthStore.mockReset();
     mockGetSessionResult.mockReset();
+    mockGetSubmissionDetail.mockReset();
     setupAuthStore();
   });
 
@@ -374,6 +379,125 @@ describe("ExamResultPage()", () => {
       "href",
       "/interviewer"
     );
+  });
+
+  // ── Testcase detail accordion ────────────────────────────────────────────────
+
+  describe("testcase detail accordion", () => {
+    it("renders 查看詳情 button only for problems that have a final submission", async () => {
+      // given: Two Sum has finalSubmissionId=2, Valid Parentheses has finalSubmissionId=null
+      mockGetSessionResult.mockResolvedValue(mockSessionResult);
+
+      // when
+      renderPage();
+      await screen.findByText(/Two Sum/);
+
+      // expect: exactly 1 button (Valid Parentheses has no finalSubmissionId → no button)
+      expect(screen.getAllByRole("button", { name: "查看詳情 ▶" })).toHaveLength(1);
+    });
+
+    it("clicking 查看詳情 ▶ calls getSubmissionDetail with correct sessionId and submissionId", async () => {
+      // given
+      const user = userEvent.setup();
+      mockGetSessionResult.mockResolvedValue(mockSessionResult);
+      mockGetSubmissionDetail.mockResolvedValue(mockSubmissionDetail);
+      renderPage();
+      await screen.findByText(/Two Sum/);
+
+      // when
+      await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
+
+      // expect: sessionId=2 (from URL /result/2), finalSubmissionId=2
+      await waitFor(() =>
+        expect(mockGetSubmissionDetail).toHaveBeenCalledWith(2, 2),
+      );
+    });
+
+    it("shows 載入測資中... while getSubmissionDetail is in flight", async () => {
+      // given
+      const user = userEvent.setup();
+      mockGetSessionResult.mockResolvedValue(mockSessionResult);
+      mockGetSubmissionDetail.mockReturnValue(new Promise(() => {})); // never resolves
+      renderPage();
+      await screen.findByText(/Two Sum/);
+
+      // when
+      await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
+
+      // expect
+      expect(screen.getByText("載入測資中...")).toBeTruthy();
+    });
+
+    it("shows 無法載入測資結果 when getSubmissionDetail rejects", async () => {
+      // given
+      const user = userEvent.setup();
+      mockGetSessionResult.mockResolvedValue(mockSessionResult);
+      mockGetSubmissionDetail.mockRejectedValue(new Error("Server error"));
+      renderPage();
+      await screen.findByText(/Two Sum/);
+
+      // when
+      await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
+
+      // expect
+      await waitFor(() =>
+        expect(screen.getByText("無法載入測資結果")).toBeTruthy(),
+      );
+    });
+
+    it("renders testcase rows with verdict and runtime after successful fetch", async () => {
+      // given: mockSubmissionDetail has 3 testcaseResults (orderIndex 1, 2, 3)
+      const user = userEvent.setup();
+      mockGetSessionResult.mockResolvedValue(mockSessionResult);
+      mockGetSubmissionDetail.mockResolvedValue(mockSubmissionDetail);
+      renderPage();
+      await screen.findByText(/Two Sum/);
+
+      // when
+      await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
+
+      // expect
+      await screen.findByText("測資 #1");
+      expect(screen.getByText("測資 #2")).toBeTruthy();
+      expect(screen.getByText("測資 #3")).toBeTruthy();
+      expect(screen.getByText("42 ms")).toBeTruthy();
+    });
+
+    it("clicking 收合 ▲ hides the testcase detail panel", async () => {
+      // given
+      const user = userEvent.setup();
+      mockGetSessionResult.mockResolvedValue(mockSessionResult);
+      mockGetSubmissionDetail.mockResolvedValue(mockSubmissionDetail);
+      renderPage();
+      await screen.findByText(/Two Sum/);
+      await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
+      await screen.findByText("測資 #1");
+
+      // when
+      await user.click(screen.getByRole("button", { name: "收合 ▲" }));
+
+      // expect
+      expect(screen.queryByText("測資 #1")).toBeFalsy();
+    });
+
+    it("re-expanding an already fetched problem does not call getSubmissionDetail again", async () => {
+      // given
+      const user = userEvent.setup();
+      mockGetSessionResult.mockResolvedValue(mockSessionResult);
+      mockGetSubmissionDetail.mockResolvedValue(mockSubmissionDetail);
+      renderPage();
+      await screen.findByText(/Two Sum/);
+      await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
+      await screen.findByText("測資 #1");
+      await user.click(screen.getByRole("button", { name: "收合 ▲" }));
+
+      // when
+      await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
+
+      // expect: fetched only once; results re-render from cache
+      expect(mockGetSubmissionDetail).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("測資 #1")).toBeTruthy();
+    });
   });
 
   // ── User menu ─────────────────────────────────────────────────────────────
