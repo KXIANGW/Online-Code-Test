@@ -6,9 +6,9 @@ import { getProblems, deleteProblem } from "../api/client";
 import type { Difficulty, ProblemSummary } from "../types";
 
 const DIFFICULTY_LABEL: Record<Difficulty, string> = {
-  easy: "簡單",
-  medium: "中等",
-  hard: "困難",
+  easy: "easy",
+  medium: "medium",
+  hard: "hard",
 };
 
 const DIFFICULTY_COLOR: Record<Difficulty, string> = {
@@ -161,9 +161,9 @@ export default function ProblemSetterDashboardPage() {
                 {(
                   [
                     { key: "all", label: "全部" },
-                    { key: "easy", label: "簡單" },
-                    { key: "medium", label: "中等" },
-                    { key: "hard", label: "困難" },
+                    { key: "easy", label: "easy" },
+                    { key: "medium", label: "medium" },
+                    { key: "hard", label: "hard" },
                   ] as { key: DifficultyFilter; label: string }[]
                 ).map((f) => (
                   <button
