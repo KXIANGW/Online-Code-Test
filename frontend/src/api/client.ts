@@ -7,6 +7,12 @@ import type {
   CreateUserRequest,
   CreateUserResponse,
   UserSummary,
+  ProblemSummary,
+  Problem,
+  CreateProblemRequest,
+  UpdateProblemRequest,
+  Testcase,
+  CreateTestcaseRequest,
 } from "../types";
 
 const baseURL = import.meta.env.VITE_API_BASE ?? "/api";
@@ -77,4 +83,46 @@ export async function createUser(
 
 export async function deleteUser(id: number): Promise<void> {
   await api.delete(`/users/${id}`);
+}
+
+export async function getProblems(): Promise<ProblemSummary[]> {
+  const { data } = await api.get<ProblemSummary[]>("/problems");
+  return data;
+}
+
+export async function getProblemById(id: number): Promise<Problem> {
+  const { data } = await api.get<Problem>(`/problems/${id}`);
+  return data;
+}
+
+export async function createProblem(req: CreateProblemRequest): Promise<Problem> {
+  const { data } = await api.post<Problem>("/problems", req);
+  return data;
+}
+
+export async function updateProblem(id: number, req: UpdateProblemRequest): Promise<Problem> {
+  const { data } = await api.put<Problem>(`/problems/${id}`, req);
+  return data;
+}
+
+export async function deleteProblem(id: number): Promise<void> {
+  await api.delete(`/problems/${id}`);
+}
+
+export async function addTestcase(problemId: number, req: CreateTestcaseRequest): Promise<Testcase> {
+  const { data } = await api.post<Testcase>(`/problems/${problemId}/testcases`, req);
+  return data;
+}
+
+export async function updateTestcase(
+  problemId: number,
+  tcId: number,
+  req: Partial<CreateTestcaseRequest>,
+): Promise<Testcase> {
+  const { data } = await api.put<Testcase>(`/problems/${problemId}/testcases/${tcId}`, req);
+  return data;
+}
+
+export async function deleteTestcase(problemId: number, tcId: number): Promise<void> {
+  await api.delete(`/problems/${problemId}/testcases/${tcId}`);
 }

@@ -49,6 +49,70 @@ export interface LanguageLimit {
   memoryMultiplier: string;
 }
 
+export interface ProblemSummary {
+  id: number;
+  title: string;
+  difficulty: Difficulty;
+  timeLimitMs: number;
+  memoryLimitMb: number;
+  createdAt: string;
+}
+
+export interface Testcase {
+  id: number;
+  orderIndex: number;
+  isPublic: boolean;
+  inputData?: string;
+  expectedOutput?: string;
+}
+
+export interface Problem {
+  id: number;
+  title: string;
+  descriptionMd: string;
+  difficulty: Difficulty;
+  timeLimitMs: number;
+  memoryLimitMb: number;
+  outputLimitKb: number;
+  createdBy: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  testcases: Testcase[];
+  languageLimits: LanguageLimit[];
+}
+
+export interface CreateProblemRequest {
+  title: string;
+  descriptionMd: string;
+  difficulty: Difficulty;
+  timeLimitMs: number;
+  memoryLimitMb: number;
+  outputLimitKb?: number;
+  testcases?: {
+    orderIndex: number;
+    isPublic: boolean;
+    inputData: string;
+    expectedOutput: string;
+  }[];
+}
+
+export interface UpdateProblemRequest {
+  title?: string;
+  descriptionMd?: string;
+  difficulty?: Difficulty;
+  timeLimitMs?: number;
+  memoryLimitMb?: number;
+  outputLimitKb?: number;
+}
+
+export interface CreateTestcaseRequest {
+  orderIndex: number;
+  isPublic: boolean;
+  inputData: string;
+  expectedOutput: string;
+}
+
 // ── Exam Session ──────────────────────────────────────────────────────────────
 export type ExamStatus =
   | "not_started"
