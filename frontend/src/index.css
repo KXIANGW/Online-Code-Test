@@ -7,3 +7,10 @@ body,
 #root {
   height: 100%;
 }
+
+/* Remove the backtick pseudo-elements that @tailwindcss/typography
+   injects around inline <code> elements by default. */
+.prose code::before,
+.prose code::after {
+  content: none !important;
+}

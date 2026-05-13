@@ -4,16 +4,7 @@ import typography from "@tailwindcss/typography";
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
-    extend: {
-      typography: {
-        DEFAULT: {
-          css: {
-            "code::before": { content: "none" },
-            "code::after": { content: "none" },
-          },
-        },
-      },
-    },
+    extend: {},
   },
   plugins: [typography],
 }
