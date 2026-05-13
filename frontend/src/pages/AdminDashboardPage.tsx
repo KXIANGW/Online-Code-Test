@@ -5,7 +5,6 @@ import { useAuthStore } from "../stores/authStore";
 import { createUser, deleteUser, getUsers } from "../api/client";
 import { CreateUserRequest } from "../types";
 
-type UserStatus = "active" | "disabled";
 type UserRole = "interviewer" | "problem_setter" | "root";
 
 interface UserRow {
@@ -14,7 +13,6 @@ interface UserRow {
   displayName: string;
   isSuperuser: boolean;
   roles: UserRole[];
-  status: UserStatus;
 }
 
 const initialUsers: UserRow[] = [];
@@ -75,17 +73,6 @@ function NavBar() {
   );
 }
 
-function StatusBadge({ status }: { status: UserStatus }) {
-  const color =
-    status === "active"
-      ? "bg-green-50 text-green-700"
-      : "bg-slate-100 text-slate-500";
-  return (
-    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${color}`}>
-      {status === "active" ? "啟用中" : "已停用"}
-    </span>
-  );
-}
 
 function RolePill({ role }: { role: UserRole }) {
   const label =
@@ -118,9 +105,8 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState<"all" | "role" | "status">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "role">("all");
   const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
-  const [statusFilter, setStatusFilter] = useState<UserStatus | "all">("all");
 
   const filteredUsers = users.filter((user) => {
     const nameMatch = user.username
@@ -130,10 +116,6 @@ export default function AdminDashboardPage() {
 
     if (activeTab === "role" && roleFilter !== "all") {
       return user.roles.includes(roleFilter);
-    }
-
-    if (activeTab === "status" && statusFilter !== "all") {
-      return user.status === statusFilter;
     }
 
     return true;
@@ -151,7 +133,6 @@ export default function AdminDashboardPage() {
             displayName: item.displayName ?? item.username,
             isSuperuser: item.isSuperuser,
             roles: item.isSuperuser ? ["root"] : [],
-            status: "active",
           })),
         );
       })
@@ -196,7 +177,6 @@ export default function AdminDashboardPage() {
             displayName: response.displayName ?? response.username,
             isSuperuser: false,
             roles: roleNames,
-            status: "active",
           },
           ...current,
         ]);
@@ -208,19 +188,6 @@ export default function AdminDashboardPage() {
       .catch(() => {
         alert("建立使用者失敗，請稍後再試。");
       });
-  }
-
-  function handleToggleStatus(id: number) {
-    setUsers((current) =>
-      current.map((user) =>
-        user.id === id
-          ? {
-              ...user,
-              status: user.status === "active" ? "disabled" : "active",
-            }
-          : user,
-      ),
-    );
   }
 
   function handleDeleteUser(id: number) {
@@ -273,13 +240,12 @@ export default function AdminDashboardPage() {
                 {[
                   { key: "all", label: "全部使用者" },
                   { key: "role", label: "依角色" },
-                  { key: "status", label: "依狀態" },
                 ].map((tab) => (
                   <button
                     key={tab.key}
                     type="button"
                     onClick={() =>
-                      setActiveTab(tab.key as "all" | "role" | "status")
+                      setActiveTab(tab.key as "all" | "role")
                     }
                     className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
                       activeTab === tab.key
@@ -329,94 +295,62 @@ export default function AdminDashboardPage() {
                   </button>
                 ))}
               </div>
-            ) : activeTab === "status" ? (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {[
-                  { key: "all", label: "全部狀態" },
-                  { key: "active", label: "啟用中" },
-                  { key: "disabled", label: "已停用" },
-                ].map((filter) => (
-                  <button
-                    key={filter.key}
-                    type="button"
-                    onClick={() =>
-                      setStatusFilter(filter.key as UserStatus | "all")
-                    }
-                    className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                      statusFilter === filter.key
-                        ? "bg-slate-900 text-white"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    }`}
-                  >
-                    {filter.label}
-                  </button>
-                ))}
-              </div>
             ) : null}
           </div>
 
-          <div className="max-h-[520px] overflow-hidden px-6 pb-6">
-            <div className="h-full min-h-[280px] overflow-y-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600">
-                  <tr>
-                    <th className="px-6 py-3">帳號</th>
-                    <th className="px-6 py-3">顯示名稱</th>
-                    <th className="px-6 py-3">角色</th>
-                    <th className="px-6 py-3">狀態</th>
-                    <th className="px-6 py-3">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 text-slate-700">
-                  {filteredUsers.map((user) => (
-                    <tr key={user.id}>
-                      <td className="px-6 py-4 font-medium text-slate-900">
+          <div className="max-h-[480px] overflow-y-auto divide-y divide-slate-100">
+            {filteredUsers.length === 0 ? (
+              <p className="px-6 py-12 text-center text-sm text-slate-400">
+                無符合條件的使用者
+              </p>
+            ) : (
+              filteredUsers.map((user) => (
+                <div
+                  key={user.id}
+                  className="flex items-center justify-between gap-4 px-6 py-4 hover:bg-slate-50 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-slate-900">
                         {user.username}
-                      </td>
-                      <td className="px-6 py-4">{user.displayName}</td>
-                      <td className="px-6 py-4 flex flex-wrap gap-2">
-                        {user.roles.length > 0 ? (
-                          user.roles.map((role) => (
-                            <RolePill key={role} role={role} />
-                          ))
-                        ) : (
-                          <span className="text-xs text-slate-400">
-                            尚未取得角色
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        <StatusBadge status={user.status} />
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap"
-                          >
-                            編輯角色
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleStatus(user.id)}
-                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap"
-                          >
-                            {user.status === "active" ? "停用" : "啟用"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteUser(user.id)}
-                            className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 whitespace-nowrap"
-                          >
-                            刪除
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </p>
+                      <p className="truncate text-xs text-slate-500">
+                        {user.displayName}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <div className="hidden sm:flex flex-wrap gap-1">
+                      {user.roles.length > 0 ? (
+                        user.roles.map((role) => (
+                          <RolePill key={role} role={role} />
+                        ))
+                      ) : (
+                        <span className="text-xs text-slate-400">
+                          尚未取得角色
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap"
+                      >
+                        編輯角色
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteUser(user.id)}
+                        disabled={user.isSuperuser}
+                        className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                      >
+                        刪除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </section>
 
