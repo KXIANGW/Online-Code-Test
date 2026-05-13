@@ -102,7 +102,7 @@ describe("ProblemFormPage()", () => {
       expect(screen.getByDisplayValue("1000")).toBeInTheDocument();
       expect(screen.getByDisplayValue("256")).toBeInTheDocument();
       // default difficulty: medium
-      const mediumRadio = screen.getByRole("radio", { name: "中等" });
+      const mediumRadio = screen.getByRole("radio", { name: "medium" });
       expect(mediumRadio).toBeChecked();
     });
 
@@ -283,7 +283,7 @@ describe("ProblemFormPage()", () => {
         screen.getByPlaceholderText("輸入題目名稱"),
         "New Problem",
       );
-      await user.click(screen.getByRole("radio", { name: "困難" }));
+      await user.click(screen.getByRole("radio", { name: "hard" }));
       await user.click(screen.getByRole("button", { name: "儲存題目" }));
 
       // expect
@@ -394,7 +394,7 @@ describe("ProblemFormPage()", () => {
 
       // expect
       expect(await screen.findByDisplayValue("Two Sum")).toBeInTheDocument();
-      const easyRadio = await screen.findByRole("radio", { name: "簡單" });
+      const easyRadio = await screen.findByRole("radio", { name: "easy" });
       expect(easyRadio).toBeChecked();
       expect(screen.getByDisplayValue("1000")).toBeInTheDocument();
       expect(screen.getByDisplayValue("256")).toBeInTheDocument();

@@ -161,7 +161,9 @@ function TestcaseCard({
             className="w-full rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-500 hover:border-blue-400 hover:text-blue-600 transition"
           >
             {row.inputFileName ? (
-              <span className="text-slate-700 font-medium">{row.inputFileName}</span>
+              <span className="text-slate-700 font-medium">
+                {row.inputFileName}
+              </span>
             ) : (
               "點擊上傳 .in 檔"
             )}
@@ -193,7 +195,9 @@ function TestcaseCard({
             className="w-full rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-500 hover:border-blue-400 hover:text-blue-600 transition"
           >
             {row.outputFileName ? (
-              <span className="text-slate-700 font-medium">{row.outputFileName}</span>
+              <span className="text-slate-700 font-medium">
+                {row.outputFileName}
+              </span>
             ) : (
               "點擊上傳 .out 檔"
             )}
@@ -240,15 +244,19 @@ export default function ProblemFormPage() {
         setTimeLimitMs(problem.timeLimitMs);
         setMemoryLimitMb(problem.memoryLimitMb);
         setDescriptionMd(problem.descriptionMd);
-        const rows: TestcaseRow[] = (problem.testcases as Testcase[]).map((tc) => ({
-          id: tc.id,
-          orderIndex: tc.orderIndex,
-          isPublic: tc.isPublic,
-          inputData: tc.inputData ?? "",
-          outputData: tc.expectedOutput ?? "",
-        }));
+        const rows: TestcaseRow[] = (problem.testcases as Testcase[]).map(
+          (tc) => ({
+            id: tc.id,
+            orderIndex: tc.orderIndex,
+            isPublic: tc.isPublic,
+            inputData: tc.inputData ?? "",
+            outputData: tc.expectedOutput ?? "",
+          }),
+        );
         setTestcases(rows);
-        setOriginalTcIds(new Set(rows.filter((r) => r.id !== undefined).map((r) => r.id!)));
+        setOriginalTcIds(
+          new Set(rows.filter((r) => r.id !== undefined).map((r) => r.id!)),
+        );
       })
       .catch(() => setLoadError(true));
   }, [id, isEdit]);
@@ -267,14 +275,16 @@ export default function ProblemFormPage() {
 
   function togglePublic(index: number) {
     setTestcases((prev) =>
-      prev.map((tc, i) => (i === index ? { ...tc, isPublic: !tc.isPublic } : tc))
+      prev.map((tc, i) =>
+        i === index ? { ...tc, isPublic: !tc.isPublic } : tc,
+      ),
     );
   }
 
   async function handleFileUpload(
     index: number,
     field: "input" | "output",
-    file: File
+    file: File,
   ) {
     const text = await readFileAsText(file);
     setTestcases((prev) =>
@@ -283,7 +293,7 @@ export default function ProblemFormPage() {
         return field === "input"
           ? { ...tc, inputData: text, inputFileName: file.name }
           : { ...tc, outputData: text, outputFileName: file.name };
-      })
+      }),
     );
   }
 
@@ -316,7 +326,7 @@ export default function ProblemFormPage() {
 
         // Delete removed testcases
         const currentIds = new Set(
-          testcases.filter((tc) => tc.id !== undefined).map((tc) => tc.id!)
+          testcases.filter((tc) => tc.id !== undefined).map((tc) => tc.id!),
         );
         for (const oid of originalTcIds) {
           if (!currentIds.has(oid)) {
@@ -364,7 +374,9 @@ export default function ProblemFormPage() {
       <div className="min-h-screen bg-slate-50">
         <NavBar />
         <main className="max-w-3xl mx-auto px-4 py-8">
-          <p className="text-sm text-red-500 text-center py-12">無法載入題目，請稍後再試。</p>
+          <p className="text-sm text-red-500 text-center py-12">
+            無法載入題目，請稍後再試。
+          </p>
         </main>
       </div>
     );
@@ -407,7 +419,10 @@ export default function ProblemFormPage() {
               <p className="text-sm font-medium text-slate-700 mb-2">難度</p>
               <div className="flex gap-4">
                 {(["easy", "medium", "hard"] as Difficulty[]).map((d) => (
-                  <label key={d} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                  <label
+                    key={d}
+                    className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer"
+                  >
                     <input
                       type="radio"
                       name="difficulty"
@@ -416,7 +431,7 @@ export default function ProblemFormPage() {
                       onChange={() => setDifficulty(d)}
                       className="accent-blue-600"
                     />
-                    {d === "easy" ? "簡單" : d === "medium" ? "中等" : "困難"}
+                    {d}
                   </label>
                 ))}
               </div>
@@ -453,7 +468,9 @@ export default function ProblemFormPage() {
           {/* ── 題目描述 ── */}
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-800">題目描述</h2>
+              <h2 className="text-base font-semibold text-slate-800">
+                題目描述
+              </h2>
               <div className="flex rounded-xl border border-slate-200 overflow-hidden text-sm">
                 <button
                   type="button"
@@ -504,12 +521,18 @@ export default function ProblemFormPage() {
           {/* ── 測試資料 ── */}
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-800">測試資料</h2>
-              <span className="text-sm text-slate-500">{testcases.length} 筆</span>
+              <h2 className="text-base font-semibold text-slate-800">
+                測試資料
+              </h2>
+              <span className="text-sm text-slate-500">
+                {testcases.length} 筆
+              </span>
             </div>
 
             {testcases.length === 0 && (
-              <p className="text-sm text-slate-400 text-center py-4">尚未新增測資</p>
+              <p className="text-sm text-slate-400 text-center py-4">
+                尚未新增測資
+              </p>
             )}
 
             <div className="space-y-3">
@@ -518,7 +541,9 @@ export default function ProblemFormPage() {
                   key={i}
                   row={tc}
                   onTogglePublic={() => togglePublic(i)}
-                  onFileUpload={(field, file) => handleFileUpload(i, field, file)}
+                  onFileUpload={(field, file) =>
+                    handleFileUpload(i, field, file)
+                  }
                   onDelete={() => removeTestcase(i)}
                 />
               ))}
