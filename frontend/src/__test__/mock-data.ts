@@ -5,7 +5,56 @@ import type {
   SubmissionSummary,
   SubmissionDetail,
   SessionResult,
+  ProblemSummary,
+  Problem,
 } from "../types";
+
+// ── Problems ──────────────────────────────────────────────────────────────────
+export const mockProblemSummaries: ProblemSummary[] = [
+  {
+    id: 1,
+    title: "Two Sum",
+    difficulty: "easy",
+    timeLimitMs: 1000,
+    memoryLimitMb: 256,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: 2,
+    title: "Binary Search",
+    difficulty: "medium",
+    timeLimitMs: 2000,
+    memoryLimitMb: 128,
+    createdAt: "2026-01-02T00:00:00.000Z",
+  },
+  {
+    id: 3,
+    title: "Merge Sort",
+    difficulty: "hard",
+    timeLimitMs: 3000,
+    memoryLimitMb: 512,
+    createdAt: "2026-01-03T00:00:00.000Z",
+  },
+];
+
+export const mockProblemDetail: Problem = {
+  id: 1,
+  title: "Two Sum",
+  descriptionMd: "## Two Sum\n\nGiven an array of integers...",
+  difficulty: "easy",
+  timeLimitMs: 1000,
+  memoryLimitMb: 256,
+  outputLimitKb: 64,
+  createdBy: 2,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  deletedAt: null,
+  testcases: [
+    { id: 10, orderIndex: 0, isPublic: true,  inputData: "2 7 11 15\n9", expectedOutput: "0 1" },
+    { id: 11, orderIndex: 1, isPublic: false, inputData: "3 2 4\n6",    expectedOutput: "1 2" },
+  ],
+  languageLimits: [],
+};
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 export const mockUsers = {
