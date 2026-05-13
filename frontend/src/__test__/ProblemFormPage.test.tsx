@@ -133,6 +133,23 @@ describe("ProblemFormPage()", () => {
       ).toBeInTheDocument();
     });
 
+    it("preview renders `inline code` as a <code> element", async () => {
+      // given
+      const user = userEvent.setup();
+      setupAuthStore();
+      renderCreate();
+
+      // when
+      await user.type(
+        screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
+        "`abc`"
+      );
+      await user.click(screen.getByRole("button", { name: "預覽" }));
+
+      // expect
+      expect(screen.getByText("abc").tagName.toLowerCase()).toBe("code");
+    });
+
     it("preview renders **bold** as a <strong> element", async () => {
       // given
       const user = userEvent.setup();
