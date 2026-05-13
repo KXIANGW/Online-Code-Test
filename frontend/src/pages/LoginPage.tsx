@@ -27,9 +27,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(username.trim(), password);
-      const { isSuperuser, permissions } = useAuthStore.getState();
-      const isInterviewer = isSuperuser || permissions.includes("exam:manage");
-      navigate(isInterviewer ? "/interviewer" : "/dashboard");
+      navigate("/", { replace: true });
     } catch {
       setError("帳號或密碼錯誤");
     } finally {

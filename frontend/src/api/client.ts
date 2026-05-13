@@ -1,5 +1,13 @@
 import axios from "axios";
-import type { LoginRequest, LoginResponse, ExamSession, SessionResult } from "../types";
+import type {
+  LoginRequest,
+  LoginResponse,
+  ExamSession,
+  SessionResult,
+  CreateUserRequest,
+  CreateUserResponse,
+  UserSummary,
+} from "../types";
 
 const baseURL = import.meta.env.VITE_API_BASE ?? "/api";
 
@@ -52,4 +60,21 @@ export async function getExamSessions(): Promise<ExamSession[]> {
 export async function getSessionResult(id: number): Promise<SessionResult> {
   const { data } = await api.get<SessionResult>(`/exam-sessions/${id}/result`);
   return data;
+}
+
+export async function getUsers(): Promise<UserSummary[]> {
+  const { data } = await api.get<UserSummary[]>("/users");
+  return data;
+}
+
+export async function createUser(
+  req: CreateUserRequest,
+): Promise<CreateUserResponse> {
+  const { data } = await api.post<CreateUserResponse>("/users", req);
+
+  return data;
+}
+
+export async function deleteUser(id: number): Promise<void> {
+  await api.delete(`/users/${id}`);
 }

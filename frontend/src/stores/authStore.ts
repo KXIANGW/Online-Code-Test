@@ -13,7 +13,7 @@ const decoded = storedToken
 interface AuthState {
   token: string | null;
   username: string | null;
-  isSuperuser: boolean;
+  isSuperuser: boolean | null;
   permissions: string[];
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;

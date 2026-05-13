@@ -1,3 +1,25 @@
+// ── User ──────────────────────────────────────────────────────────────────────
+export interface UserSummary {
+  id: number;
+  username: string;
+  displayName: string | null;
+  isSuperuser: boolean;
+  createdAt: string;
+}
+
+export interface CreateUserRequest {
+  username: string;
+  password: string;
+  displayName?: string;
+  roleNames?: string[];
+}
+
+export interface CreateUserResponse {
+  id: number;
+  username: string;
+  displayName: string | null;
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export interface LoginRequest {
   username: string;
