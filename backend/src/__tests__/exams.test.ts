@@ -13,8 +13,11 @@ let candToken: string;   // david
 let eveToken: string;
 let rootToken: string;
 let carolId: number;
+let aliceId: number;
+let bobId: number;
 let davidId: number;
 let eveId: number;
+let graceId: number;
 
 beforeAll(async () => {
   app = await buildApp();
@@ -30,10 +33,11 @@ beforeEach(async () => {
 
   await seedUser({ username: "root", password: "Root@1234", displayName: "Root", isSuperuser: true });
   carolId = await seedUser({ username: "carol", password: "Test@1234", displayName: "Carol", roleNames: ["problem_setter"] });
-  await seedUser({ username: "alice", password: "Test@1234", displayName: "Alice", roleNames: ["interviewer"] });
-  await seedUser({ username: "bob", password: "Bob@1234", displayName: "Bob", roleNames: ["interviewer"] });
-  davidId = await seedUser({ username: "david", password: "Cand@1234", displayName: "David", roleNames: ["candidate"] });
-  eveId = await seedUser({ username: "eve", password: "Eve@1234", displayName: "Eve", roleNames: ["candidate"] });
+  aliceId = await seedUser({ username: "alice", password: "Test@1234", displayName: "Alice", roleNames: ["interviewer"] });
+  bobId = await seedUser({ username: "bob", password: "Bob@1234", displayName: "Bob", roleNames: ["interviewer"] });
+  davidId = await seedUser({ username: "david", password: "Cand@1234", displayName: "David", roleNames: ["candidate"], createdBy: aliceId });
+  eveId = await seedUser({ username: "eve", password: "Eve@1234", displayName: "Eve", roleNames: ["candidate"], createdBy: bobId });
+  graceId = await seedUser({ username: "grace", password: "Grace@1234", displayName: "Grace", roleNames: ["candidate"], createdBy: aliceId });
 
   carolToken = await loginAs(app, "carol", "Test@1234");
   aliceToken = await loginAs(app, "alice", "Test@1234");
@@ -147,6 +151,42 @@ describe("POST /api/exam-sessions (manual)", () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it("interviewer cannot create session for another interviewer's candidate → 403", async () => {
+    // Given: eveId is owned by bob, aliceToken is alice
+    const { easy } = await getProblemIds();
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        candidateId: eveId,
+        durationMinutes: 60,
+        problems: [{ problemId: easy, scoreWeight: 100, orderIndex: 1 }],
+      },
+    });
+    // When: alice tries to assign bob's candidate
+    // Expect: 403
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("superuser can create session for any candidate regardless of ownership", async () => {
+    // Given: eveId is owned by bob, rootToken is superuser
+    const { easy } = await getProblemIds();
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions",
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: {
+        candidateId: eveId,
+        durationMinutes: 60,
+        problems: [{ problemId: easy, scoreWeight: 100, orderIndex: 1 }],
+      },
+    });
+    // When: superuser creates session for bob's candidate
+    // Expect: 201
+    expect(res.statusCode).toBe(201);
+  });
+
   it("rejects duplicate problem/order assignments and missing problems", async () => {
     const { easy } = await getProblemIds();
 
@@ -244,6 +284,24 @@ describe("POST /api/exam-sessions (random)", () => {
     expect(res.statusCode).toBe(409);
   });
 
+  it("interviewer cannot create random session for another interviewer's candidate → 403", async () => {
+    // Given: eveId is owned by bob, aliceToken is alice
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        candidateId: eveId,
+        durationMinutes: 60,
+        distribution: { easy: 1 },
+        scoreWeight: 100,
+      },
+    });
+    // When: alice tries to assign bob's candidate via random
+    // Expect: 403
+    expect(res.statusCode).toBe(403);
+  });
+
   it("rejects empty distribution and insufficient hard pool", async () => {
     const empty = await app.inject({
       method: "POST",
@@ -280,9 +338,9 @@ describe("GET /api/exam-sessions", () => {
     const { easy } = await getProblemIds();
     // alice creates 2 sessions
     await createSession(aliceToken, davidId, easy);
-    await createSession(aliceToken, eveId, easy);
+    await createSession(aliceToken, graceId, easy);
     // bob creates 1 session
-    await createSession(bobToken, davidId, easy);
+    await createSession(bobToken, eveId, easy);
 
     const res = await app.inject({
       method: "GET",
@@ -296,8 +354,8 @@ describe("GET /api/exam-sessions", () => {
   it("interviewer sees only sessions they created", async () => {
     const { easy } = await getProblemIds();
     await createSession(aliceToken, davidId, easy);
-    await createSession(aliceToken, eveId, easy);
-    await createSession(bobToken, davidId, easy);
+    await createSession(aliceToken, graceId, easy);
+    await createSession(bobToken, eveId, easy);
 
     const res = await app.inject({
       method: "GET",
@@ -312,7 +370,7 @@ describe("GET /api/exam-sessions", () => {
   it("candidate sees only sessions where they are the candidate", async () => {
     const { easy } = await getProblemIds();
     await createSession(aliceToken, davidId, easy); // david's session
-    await createSession(aliceToken, eveId, easy);  // eve's session
+    await createSession(aliceToken, graceId, easy);  // grace's session
 
     const res = await app.inject({
       method: "GET",
@@ -343,7 +401,7 @@ describe("GET /api/exam-sessions/:id", () => {
 
   it("interviewer cannot get a session created by another interviewer → 403", async () => {
     const { easy } = await getProblemIds();
-    const bobSessionId = await createSession(bobToken, davidId, easy);
+    const bobSessionId = await createSession(bobToken, eveId, easy);
 
     const res = await app.inject({
       method: "GET",
@@ -368,12 +426,12 @@ describe("GET /api/exam-sessions/:id", () => {
 
   it("candidate cannot get another candidate's session → 403", async () => {
     const { easy } = await getProblemIds();
-    const eveSessionId = await createSession(aliceToken, eveId, easy);
+    const graceSessionId = await createSession(aliceToken, graceId, easy);
 
     const res = await app.inject({
       method: "GET",
-      url: `/api/exam-sessions/${eveSessionId}`,
-      headers: { authorization: `Bearer ${candToken}` }, // david trying to see eve's
+      url: `/api/exam-sessions/${graceSessionId}`,
+      headers: { authorization: `Bearer ${candToken}` }, // david trying to see grace's
     });
     expect(res.statusCode).toBe(403);
   });
@@ -464,7 +522,7 @@ describe("POST /api/exam-sessions/:id/cancel", () => {
 
   it("interviewer cannot cancel another interviewer's session → 403", async () => {
     const { easy } = await getProblemIds();
-    const bobSessionId = await createSession(bobToken, davidId, easy);
+    const bobSessionId = await createSession(bobToken, eveId, easy);
 
     const res = await app.inject({
       method: "POST",
@@ -524,7 +582,7 @@ describe("GET /api/exam-sessions/:id/problems", () => {
 
   it("interviewer cannot view problems of another interviewer's session → 403", async () => {
     const { easy } = await getProblemIds();
-    const bobSessionId = await createSession(bobToken, davidId, easy);
+    const bobSessionId = await createSession(bobToken, eveId, easy);
 
     const res = await app.inject({
       method: "GET",
@@ -536,12 +594,12 @@ describe("GET /api/exam-sessions/:id/problems", () => {
 
   it("candidate cannot view problems of another candidate's session → 403", async () => {
     const { easy } = await getProblemIds();
-    const eveSessionId = await createSession(aliceToken, eveId, easy);
+    const graceSessionId = await createSession(aliceToken, graceId, easy);
 
     const res = await app.inject({
       method: "GET",
-      url: `/api/exam-sessions/${eveSessionId}/problems`,
-      headers: { authorization: `Bearer ${candToken}` }, // david trying to see eve's
+      url: `/api/exam-sessions/${graceSessionId}/problems`,
+      headers: { authorization: `Bearer ${candToken}` }, // david trying to see grace's
     });
     expect(res.statusCode).toBe(403);
   });

@@ -28,7 +28,8 @@ export async function createExamSession(
   assertNoDuplicates(data.problems.map((p) => p.problemId), "Duplicate problem assignment");
   assertNoDuplicates(data.problems.map((p) => p.orderIndex), "Duplicate problem orderIndex");
 
-  await assertCandidateExists(data.candidateId);
+  const { createdBy: candidateCreatedBy } = await assertCandidateExists(data.candidateId);
+  if (!currentUser.isSuperuser && candidateCreatedBy !== currentUser.id) throw ForbiddenError();
   await assertProblemsAreActive(data.problems.map((p) => p.problemId));
 
   return db.transaction(async (tx) => {
@@ -68,7 +69,8 @@ export async function createExamSessionRandom(
   }
 ) {
   if (!canManageExam(currentUser)) throw ForbiddenError();
-  await assertCandidateExists(data.candidateId);
+  const { createdBy: candidateCreatedBy } = await assertCandidateExists(data.candidateId);
+  if (!currentUser.isSuperuser && candidateCreatedBy !== currentUser.id) throw ForbiddenError();
 
   const difficulties: { level: Difficulty; count: number }[] = (
     [
@@ -303,15 +305,16 @@ function assertNoDuplicates<T>(values: T[], message: string): void {
   }
 }
 
-async function assertCandidateExists(candidateId: number): Promise<void> {
+async function assertCandidateExists(candidateId: number): Promise<{ createdBy: number | null }> {
   const [candidate] = await db
-    .select({ id: users.id, deletedAt: users.deletedAt })
+    .select({ id: users.id, deletedAt: users.deletedAt, createdBy: users.createdBy })
     .from(users)
     .where(eq(users.id, candidateId));
 
   if (!candidate || candidate.deletedAt !== null) {
     throw NotFoundError("candidate");
   }
+  return { createdBy: candidate.createdBy };
 }
 
 async function assertProblemsAreActive(problemIds: number[]): Promise<void> {

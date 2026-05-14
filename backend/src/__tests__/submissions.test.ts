@@ -30,8 +30,11 @@ let candToken: string;
 let eveToken: string;
 let rootToken: string;
 let carolId: number;
+let aliceId: number;
+let bobId: number;
 let davidId: number;
 let eveId: number;
+let frankId: number;
 let easyProblemId: number;
 let mediumProblemId: number;
 
@@ -50,10 +53,11 @@ beforeEach(async () => {
 
   await seedUser({ username: "root", password: "Root@1234", displayName: "Root", isSuperuser: true });
   carolId = await seedUser({ username: "carol", password: "Test@1234", displayName: "Carol", roleNames: ["problem_setter"] });
-  await seedUser({ username: "alice", password: "Test@1234", displayName: "Alice", roleNames: ["interviewer"] });
-  await seedUser({ username: "bob", password: "Bob@1234", displayName: "Bob", roleNames: ["interviewer"] });
-  davidId = await seedUser({ username: "david", password: "Cand@1234", displayName: "David", roleNames: ["candidate"] });
-  eveId = await seedUser({ username: "eve", password: "Eve@1234", displayName: "Eve", roleNames: ["candidate"] });
+  aliceId = await seedUser({ username: "alice", password: "Test@1234", displayName: "Alice", roleNames: ["interviewer"] });
+  bobId = await seedUser({ username: "bob", password: "Bob@1234", displayName: "Bob", roleNames: ["interviewer"] });
+  davidId = await seedUser({ username: "david", password: "Cand@1234", displayName: "David", roleNames: ["candidate"], createdBy: aliceId });
+  eveId = await seedUser({ username: "eve", password: "Eve@1234", displayName: "Eve", roleNames: ["candidate"], createdBy: aliceId });
+  frankId = await seedUser({ username: "frank", password: "Frank@1234", displayName: "Frank", roleNames: ["candidate"], createdBy: bobId });
 
   aliceToken = await loginAs(app, "alice", "Test@1234");
   bobToken = await loginAs(app, "bob", "Bob@1234");
@@ -407,7 +411,7 @@ describe("Submission API permissions", () => {
   it("protects result and history by role and ownership", async () => {
     const { sessionId } = await createSession(aliceToken, davidId);
     const { sessionId: eveSessionId } = await createSession(aliceToken, eveId);
-    const { sessionId: bobSessionId } = await createSession(bobToken, davidId);
+    const { sessionId: bobSessionId } = await createSession(bobToken, frankId);
 
     const noAuth = await app.inject({ method: "GET", url: `/api/exam-sessions/${sessionId}/result` });
     expect(noAuth.statusCode).toBe(401);

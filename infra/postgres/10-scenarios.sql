@@ -319,7 +319,7 @@ BEGIN
     candidate_id, created_by, status, duration_minutes,
     actual_start_at, expires_at, max_score, created_at, updated_at
   ) VALUES (
-    v_c5_id, v_alice_id, 'submitted', 90,
+    v_c5_id, v_bob_id, 'submitted', 90,
     NOW() - INTERVAL '1 hour',
     NOW() + INTERVAL '30 minutes',
     100,
