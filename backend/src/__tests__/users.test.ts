@@ -37,8 +37,24 @@ describe("GET /api/users", () => {
     expect(body.length).toBe(3);
   });
 
-  it("interviewer → 403", async () => {
+  it("interviewer can list users (200) and only sees non-superuser accounts", async () => {
     const token = await loginAs(app, "alice", "Test@1234");
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ username: string; isSuperuser: boolean }[]>();
+    expect(Array.isArray(body)).toBe(true);
+    // alice and candidate1 visible; root (superuser) must be absent
+    expect(body.some((u) => u.username === "alice")).toBe(true);
+    expect(body.some((u) => u.username === "candidate1")).toBe(true);
+    expect(body.some((u) => u.isSuperuser === true)).toBe(false);
+  });
+
+  it("candidate → 403", async () => {
+    const token = await loginAs(app, "candidate1", "Cand@1234");
     const res = await app.inject({
       method: "GET",
       url: "/api/users",
@@ -226,7 +242,7 @@ describe("POST /api/users/batch", () => {
 // ── GET /api/users/:id ─────────────────────────────────────────────────────────
 
 describe("GET /api/users/:id", () => {
-  async function getUserIds(rootToken: string) {
+  async function getUserIds(rootToken: string): Promise<{ id: number; username: string }[]> {
     const listRes = await app.inject({
       method: "GET",
       url: "/api/users",
@@ -337,7 +353,7 @@ describe("GET /api/users/:id", () => {
 // ── DELETE /api/users/:id ──────────────────────────────────────────────────────
 
 describe("DELETE /api/users/:id", () => {
-  async function getUserIds(rootToken: string) {
+  async function getUserIds(rootToken: string): Promise<{ id: number; username: string }[]> {
     const listRes = await app.inject({
       method: "GET",
       url: "/api/users",
@@ -380,16 +396,183 @@ describe("DELETE /api/users/:id", () => {
     expect(getRes.statusCode).toBe(404);
   });
 
-  it("interviewer → 403 (cannot delete users)", async () => {
+  it("interviewer can soft-delete a non-superuser → 204", async () => {
     const aliceToken = await loginAs(app, "alice", "Test@1234");
     const rootToken = await loginAs(app, "root", "Root@1234");
-    const users = await getUserIds(rootToken);
-    const cand = users.find((u) => u.username === "candidate1")!;
+    const allUsers = await getUserIds(rootToken);
+    const cand = allUsers.find((u) => u.username === "candidate1")!;
+
     const res = await app.inject({
       method: "DELETE",
       url: `/api/users/${cand.id}`,
       headers: { authorization: `Bearer ${aliceToken}` },
     });
+    expect(res.statusCode).toBe(204);
+
+    // deleted user can no longer log in
+    const loginRes = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "candidate1", password: "Cand@1234" },
+    });
+    expect(loginRes.statusCode).toBe(401);
+  });
+
+  it("interviewer cannot delete a superuser → 403", async () => {
+    const aliceToken = await loginAs(app, "alice", "Test@1234");
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const root = allUsers.find((u) => u.username === "root")!;
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/api/users/${root.id}`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
     expect(res.statusCode).toBe(403);
+  });
+
+  it("candidate cannot delete users → 403", async () => {
+    const candToken = await loginAs(app, "candidate1", "Cand@1234");
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const alice = allUsers.find((u) => u.username === "alice")!;
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/api/users/${alice.id}`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});
+
+// ── PUT /api/users/:id ─────────────────────────────────────────────────────────
+
+describe("PUT /api/users/:id", () => {
+  async function getUserIds(rootToken: string): Promise<{ id: number; username: string }[]> {
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${rootToken}` },
+    });
+    return listRes.json<{ id: number; username: string }[]>();
+  }
+
+  it("superuser can update displayName of any user → 200", async () => {
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const cand = allUsers.find((u) => u.username === "candidate1")!;
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${cand.id}`,
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: { displayName: "Updated Candidate" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ displayName: string }>().displayName).toBe("Updated Candidate");
+  });
+
+  it("interviewer can update displayName of a non-superuser → 200", async () => {
+    const aliceToken = await loginAs(app, "alice", "Test@1234");
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const cand = allUsers.find((u) => u.username === "candidate1")!;
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${cand.id}`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { displayName: "New Name" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ displayName: string }>().displayName).toBe("New Name");
+  });
+
+  it("interviewer can reset password; updated password allows login", async () => {
+    const aliceToken = await loginAs(app, "alice", "Test@1234");
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const cand = allUsers.find((u) => u.username === "candidate1")!;
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${cand.id}`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { password: "NewPass@999" },
+    });
+    expect(res.statusCode).toBe(200);
+
+    // old password no longer works
+    const oldLogin = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "candidate1", password: "Cand@1234" },
+    });
+    expect(oldLogin.statusCode).toBe(401);
+
+    // new password works
+    const newLogin = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "candidate1", password: "NewPass@999" },
+    });
+    expect(newLogin.statusCode).toBe(200);
+  });
+
+  it("interviewer cannot update a superuser → 403", async () => {
+    const aliceToken = await loginAs(app, "alice", "Test@1234");
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const root = allUsers.find((u) => u.username === "root")!;
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${root.id}`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { displayName: "Hacked" },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("candidate cannot update any user → 403", async () => {
+    const candToken = await loginAs(app, "candidate1", "Cand@1234");
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const alice = allUsers.find((u) => u.username === "alice")!;
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${alice.id}`,
+      headers: { authorization: `Bearer ${candToken}` },
+      payload: { displayName: "Hacked" },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("password shorter than 6 chars → 400", async () => {
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const cand = allUsers.find((u) => u.username === "candidate1")!;
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${cand.id}`,
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: { password: "123" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("update non-existent user → 404", async () => {
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/users/999999",
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: { displayName: "Ghost" },
+    });
+    expect(res.statusCode).toBe(404);
   });
 });

@@ -1,7 +1,7 @@
 import bcrypt from "bcrypt";
 import { db } from "../db/client";
 import { users, userRoles, roles } from "../db/schema";
-import { eq, isNull, inArray, sql } from "drizzle-orm";
+import { and, eq, isNull, inArray, sql } from "drizzle-orm";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 
@@ -16,17 +16,24 @@ export function requirePermissionOrSuperuser(user: CurrentUser, perm: string): v
 }
 
 export async function listUsers(currentUser: CurrentUser) {
-  requireSuperuser(currentUser);
+  requirePermissionOrSuperuser(currentUser, "exam:manage");
+
+  const cols = {
+    id: users.id,
+    username: users.username,
+    displayName: users.displayName,
+    isSuperuser: users.isSuperuser,
+    createdAt: users.createdAt,
+  };
+
+  // superuser sees all users; exam:manage sees only non-superuser accounts
+  if (currentUser.isSuperuser) {
+    return db.select(cols).from(users).where(isNull(users.deletedAt));
+  }
   return db
-    .select({
-      id: users.id,
-      username: users.username,
-      displayName: users.displayName,
-      isSuperuser: users.isSuperuser,
-      createdAt: users.createdAt,
-    })
+    .select(cols)
     .from(users)
-    .where(isNull(users.deletedAt));
+    .where(and(isNull(users.deletedAt), eq(users.isSuperuser, false)));
 }
 
 export async function createUser(
@@ -155,15 +162,51 @@ export async function getUser(currentUser: CurrentUser, targetId: number) {
   return response;
 }
 
-export async function deleteUser(currentUser: CurrentUser, targetId: number) {
-  requireSuperuser(currentUser);
+export async function updateUser(
+  currentUser: CurrentUser,
+  targetId: number,
+  data: { displayName?: string; password?: string },
+) {
+  requirePermissionOrSuperuser(currentUser, "exam:manage");
 
   const [existing] = await db
-    .select({ id: users.id, deletedAt: users.deletedAt })
+    .select({ id: users.id, deletedAt: users.deletedAt, isSuperuser: users.isSuperuser })
     .from(users)
     .where(eq(users.id, targetId));
 
   if (!existing || existing.deletedAt !== null) throw NotFoundError("user");
+  if (!currentUser.isSuperuser && existing.isSuperuser) throw ForbiddenError();
+
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (data.displayName !== undefined) updates.displayName = data.displayName;
+  if (data.password !== undefined) updates.passwordHash = await bcrypt.hash(data.password, 10);
+
+  await db.update(users).set(updates).where(eq(users.id, targetId));
+
+  const [updated] = await db
+    .select({
+      id: users.id,
+      username: users.username,
+      displayName: users.displayName,
+      isSuperuser: users.isSuperuser,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .where(eq(users.id, targetId));
+
+  return updated!;
+}
+
+export async function deleteUser(currentUser: CurrentUser, targetId: number) {
+  requirePermissionOrSuperuser(currentUser, "exam:manage");
+
+  const [existing] = await db
+    .select({ id: users.id, deletedAt: users.deletedAt, isSuperuser: users.isSuperuser })
+    .from(users)
+    .where(eq(users.id, targetId));
+
+  if (!existing || existing.deletedAt !== null) throw NotFoundError("user");
+  if (!currentUser.isSuperuser && existing.isSuperuser) throw ForbiddenError();
 
   await db
     .update(users)
