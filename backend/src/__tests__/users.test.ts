@@ -37,20 +37,51 @@ describe("GET /api/users", () => {
     expect(body.length).toBe(3);
   });
 
-  it("interviewer can list users (200) and only sees non-superuser accounts", async () => {
-    const token = await loginAs(app, "alice", "Test@1234");
+  it("interviewer sees only candidates they personally created", async () => {
+    // given: alice creates one candidate
+    const aliceToken = await loginAs(app, "alice", "Test@1234");
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { username: "alice_cand", password: "Password123", displayName: "Alice's Candidate" },
+    });
+    expect(createRes.statusCode).toBe(201);
+
+    // when
     const res = await app.inject({
       method: "GET",
       url: "/api/users",
-      headers: { authorization: `Bearer ${token}` },
+      headers: { authorization: `Bearer ${aliceToken}` },
     });
+
+    // expect: only alice's own candidate is visible
     expect(res.statusCode).toBe(200);
     const body = res.json<{ username: string; isSuperuser: boolean }[]>();
-    expect(Array.isArray(body)).toBe(true);
-    // alice and candidate1 visible; root (superuser) must be absent
-    expect(body.some((u) => u.username === "alice")).toBe(true);
-    expect(body.some((u) => u.username === "candidate1")).toBe(true);
+    expect(body.some((u) => u.username === "alice_cand")).toBe(true);
+    // seeded candidate1 (not created by alice) is not visible
+    expect(body.some((u) => u.username === "candidate1")).toBe(false);
+    // superusers are never included
     expect(body.some((u) => u.isSuperuser === true)).toBe(false);
+    // alice herself is not in the list (she's an interviewer, not a candidate she owns)
+    expect(body.some((u) => u.username === "alice")).toBe(false);
+  });
+
+  it("interviewer with no created candidates sees an empty list", async () => {
+    // given: alice has not created any candidate yet
+
+    // when
+    const aliceToken = await loginAs(app, "alice", "Test@1234");
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ username: string }[]>();
+    expect(body).toHaveLength(0);
   });
 
   it("candidate → 403", async () => {
@@ -111,7 +142,6 @@ describe("POST /api/users", () => {
   });
 
   it("interviewer creating candidate without explicit roleNames gets candidate role by default", async () => {
-    const rootToken = await loginAs(app, "root", "Root@1234");
     const aliceToken = await loginAs(app, "alice", "Test@1234");
 
     const createRes = await app.inject({
@@ -396,26 +426,51 @@ describe("DELETE /api/users/:id", () => {
     expect(getRes.statusCode).toBe(404);
   });
 
-  it("interviewer can soft-delete a non-superuser → 204", async () => {
+  it("interviewer can soft-delete a candidate they created → 204", async () => {
+    // given: alice creates a candidate
+    const aliceToken = await loginAs(app, "alice", "Test@1234");
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { username: "alice_del_cand", password: "Password123" },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const created = createRes.json<{ id: number }>();
+
+    // when
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/api/users/${created.id}`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(204);
+    const loginRes = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "alice_del_cand", password: "Password123" },
+    });
+    expect(loginRes.statusCode).toBe(401);
+  });
+
+  it("interviewer cannot delete a candidate they didn't create → 403", async () => {
+    // given: candidate1 was seeded directly (no createdBy = alice)
     const aliceToken = await loginAs(app, "alice", "Test@1234");
     const rootToken = await loginAs(app, "root", "Root@1234");
     const allUsers = await getUserIds(rootToken);
     const cand = allUsers.find((u) => u.username === "candidate1")!;
 
+    // when
     const res = await app.inject({
       method: "DELETE",
       url: `/api/users/${cand.id}`,
       headers: { authorization: `Bearer ${aliceToken}` },
     });
-    expect(res.statusCode).toBe(204);
 
-    // deleted user can no longer log in
-    const loginRes = await app.inject({
-      method: "POST",
-      url: "/api/auth/login",
-      payload: { username: "candidate1", password: "Cand@1234" },
-    });
-    expect(loginRes.statusCode).toBe(401);
+    // expect
+    expect(res.statusCode).toBe(403);
   });
 
   it("interviewer cannot delete a superuser → 403", async () => {
@@ -474,31 +529,47 @@ describe("PUT /api/users/:id", () => {
     expect(res.json<{ displayName: string }>().displayName).toBe("Updated Candidate");
   });
 
-  it("interviewer can update displayName of a non-superuser → 200", async () => {
+  it("interviewer can update displayName of a candidate they created → 200", async () => {
+    // given: alice creates a candidate
     const aliceToken = await loginAs(app, "alice", "Test@1234");
-    const rootToken = await loginAs(app, "root", "Root@1234");
-    const allUsers = await getUserIds(rootToken);
-    const cand = allUsers.find((u) => u.username === "candidate1")!;
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { username: "alice_upd_cand", password: "Password123", displayName: "Old Name" },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const created = createRes.json<{ id: number }>();
 
+    // when
     const res = await app.inject({
       method: "PUT",
-      url: `/api/users/${cand.id}`,
+      url: `/api/users/${created.id}`,
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: { displayName: "New Name" },
     });
+
+    // expect
     expect(res.statusCode).toBe(200);
     expect(res.json<{ displayName: string }>().displayName).toBe("New Name");
   });
 
-  it("interviewer can reset password; updated password allows login", async () => {
+  it("interviewer can reset password of a candidate they created; updated password allows login", async () => {
+    // given: alice creates a candidate
     const aliceToken = await loginAs(app, "alice", "Test@1234");
-    const rootToken = await loginAs(app, "root", "Root@1234");
-    const allUsers = await getUserIds(rootToken);
-    const cand = allUsers.find((u) => u.username === "candidate1")!;
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { username: "alice_pwd_cand", password: "OldPass@123" },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const created = createRes.json<{ id: number }>();
 
+    // when
     const res = await app.inject({
       method: "PUT",
-      url: `/api/users/${cand.id}`,
+      url: `/api/users/${created.id}`,
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: { password: "NewPass@999" },
     });
@@ -508,7 +579,7 @@ describe("PUT /api/users/:id", () => {
     const oldLogin = await app.inject({
       method: "POST",
       url: "/api/auth/login",
-      payload: { username: "candidate1", password: "Cand@1234" },
+      payload: { username: "alice_pwd_cand", password: "OldPass@123" },
     });
     expect(oldLogin.statusCode).toBe(401);
 
@@ -516,9 +587,28 @@ describe("PUT /api/users/:id", () => {
     const newLogin = await app.inject({
       method: "POST",
       url: "/api/auth/login",
-      payload: { username: "candidate1", password: "NewPass@999" },
+      payload: { username: "alice_pwd_cand", password: "NewPass@999" },
     });
     expect(newLogin.statusCode).toBe(200);
+  });
+
+  it("interviewer cannot update a candidate they didn't create → 403", async () => {
+    // given: candidate1 was seeded directly (no createdBy = alice)
+    const aliceToken = await loginAs(app, "alice", "Test@1234");
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const cand = allUsers.find((u) => u.username === "candidate1")!;
+
+    // when
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${cand.id}`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { displayName: "Hacked" },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(403);
   });
 
   it("interviewer cannot update a superuser → 403", async () => {

@@ -13,6 +13,7 @@ export default defineConfig({
   test: {
     globals: false,
     exclude: ["node_modules/**", "dist/**", "src/__e2e__/**"],
+    globalSetup: ["src/__tests__/helpers/global-setup.ts"],
     pool: "forks",
     poolOptions: { forks: { singleFork: true } },
     testTimeout: 15000,

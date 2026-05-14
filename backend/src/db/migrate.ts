@@ -26,6 +26,10 @@ async function main() {
         END IF;
       END $$;
     `);
+    await pool.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES users(id);
+    `);
     console.log("[migrate] done.");
   } finally {
     await pool.end();

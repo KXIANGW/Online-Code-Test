@@ -5,6 +5,13 @@ import { users, userRoles, roles } from "../../db/schema";
 import { eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
+export async function setupSchema(): Promise<void> {
+  await pool.query(`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES users(id);
+  `);
+}
+
 export async function truncateTestTables(): Promise<void> {
   await pool.query(`
     TRUNCATE submission_testcase_results, submissions,
@@ -21,6 +28,7 @@ interface SeedUser {
   displayName: string;
   isSuperuser?: boolean;
   roleNames?: string[];
+  createdBy?: number;
 }
 
 export async function seedUser(data: SeedUser): Promise<number> {
@@ -33,6 +41,7 @@ export async function seedUser(data: SeedUser): Promise<number> {
       passwordHash,
       displayName: data.displayName,
       isSuperuser: data.isSuperuser ?? false,
+      createdBy: data.createdBy,
     })
     .returning({ id: users.id });
 

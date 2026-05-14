@@ -26,14 +26,14 @@ export async function listUsers(currentUser: CurrentUser) {
     createdAt: users.createdAt,
   };
 
-  // superuser sees all users; exam:manage sees only non-superuser accounts
+  // superuser sees all users; exam:manage sees only candidates they personally created
   if (currentUser.isSuperuser) {
     return db.select(cols).from(users).where(isNull(users.deletedAt));
   }
   return db
     .select(cols)
     .from(users)
-    .where(and(isNull(users.deletedAt), eq(users.isSuperuser, false)));
+    .where(and(isNull(users.deletedAt), eq(users.isSuperuser, false), eq(users.createdBy, currentUser.id)));
 }
 
 export async function createUser(
@@ -72,6 +72,7 @@ export async function createUser(
         passwordHash,
         displayName: data.displayName,
         isSuperuser: false,
+        createdBy: currentUser.isSuperuser ? undefined : currentUser.id,
       })
       .returning();
 
@@ -125,7 +126,7 @@ export async function batchCreateCandidates(
     await db.transaction(async (tx) => {
       const insertedRows = await tx
         .insert(users)
-        .values({ username, passwordHash, displayName: username, isSuperuser: false })
+        .values({ username, passwordHash, displayName: username, isSuperuser: false, createdBy: currentUser.isSuperuser ? undefined : currentUser.id })
         .returning({ id: users.id });
 
       const newUser = insertedRows[0]!;
@@ -170,12 +171,13 @@ export async function updateUser(
   requirePermissionOrSuperuser(currentUser, "exam:manage");
 
   const [existing] = await db
-    .select({ id: users.id, deletedAt: users.deletedAt, isSuperuser: users.isSuperuser })
+    .select({ id: users.id, deletedAt: users.deletedAt, isSuperuser: users.isSuperuser, createdBy: users.createdBy })
     .from(users)
     .where(eq(users.id, targetId));
 
   if (!existing || existing.deletedAt !== null) throw NotFoundError("user");
   if (!currentUser.isSuperuser && existing.isSuperuser) throw ForbiddenError();
+  if (!currentUser.isSuperuser && existing.createdBy !== currentUser.id) throw ForbiddenError();
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (data.displayName !== undefined) updates.displayName = data.displayName;
@@ -201,12 +203,13 @@ export async function deleteUser(currentUser: CurrentUser, targetId: number) {
   requirePermissionOrSuperuser(currentUser, "exam:manage");
 
   const [existing] = await db
-    .select({ id: users.id, deletedAt: users.deletedAt, isSuperuser: users.isSuperuser })
+    .select({ id: users.id, deletedAt: users.deletedAt, isSuperuser: users.isSuperuser, createdBy: users.createdBy })
     .from(users)
     .where(eq(users.id, targetId));
 
   if (!existing || existing.deletedAt !== null) throw NotFoundError("user");
   if (!currentUser.isSuperuser && existing.isSuperuser) throw ForbiddenError();
+  if (!currentUser.isSuperuser && existing.createdBy !== currentUser.id) throw ForbiddenError();
 
   await db
     .update(users)
