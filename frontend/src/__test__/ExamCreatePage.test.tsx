@@ -120,19 +120,48 @@ describe("ExamCreatePage()", () => {
     expect(screen.queryByText(/Prof. Wang/)).not.toBeInTheDocument();
   });
 
-  it("shows error message when getUsers rejects", async () => {
+  it("shows fallback ID input when getUsers rejects (403)", async () => {
     // given
     mockGetUsers.mockRejectedValue(new Error("403 Forbidden"));
 
     // when
     renderPage();
 
-    // expect
+    // expect: warning message + manual ID number input visible; no select dropdown
     await waitFor(() =>
       expect(
-        screen.getByText("無法載入候選人清單，請確認帳號權限"),
+        screen.getByText(/無法取得候選人清單/),
       ).toBeInTheDocument(),
     );
+    expect(screen.getByRole("spinbutton", { name: "候選人 ID" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "候選人" })).not.toBeInTheDocument();
+  });
+
+  it("can submit via manual candidateId input when getUsers rejects", async () => {
+    // given
+    const user = userEvent.setup();
+    mockGetUsers.mockRejectedValue(new Error("403 Forbidden"));
+    mockCreateExamSession.mockResolvedValue(mockCreatedSession);
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByRole("spinbutton", { name: "候選人 ID" })).toBeInTheDocument(),
+    );
+    // type candidateId = 5
+    const idInput = screen.getByRole("spinbutton", { name: "候選人 ID" });
+    await user.clear(idInput);
+    await user.type(idInput, "5");
+    await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
+
+    // when
+    await user.click(screen.getByRole("button", { name: "建立考試" }));
+
+    // expect: called with candidateId = 5
+    await waitFor(() =>
+      expect(mockCreateExamSession).toHaveBeenCalledWith(
+        expect.objectContaining({ candidateId: 5 }),
+      ),
+    );
+    expect(mockNavigate).toHaveBeenCalledWith("/interviewer");
   });
 
   // ── Problem list (manual mode) ────────────────────────────────────────────

@@ -245,9 +245,24 @@ export default function ExamCreatePage() {
                   候選人
                 </label>
                 {usersError ? (
-                  <p className="text-xs text-red-500">
-                    無法載入候選人清單，請確認帳號權限
-                  </p>
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-amber-600">
+                      無法取得候選人清單（權限不足），請直接輸入候選人 ID
+                    </p>
+                    <input
+                      type="number"
+                      aria-label="候選人 ID"
+                      min={1}
+                      value={candidateId === "" ? "" : candidateId}
+                      onChange={(e) =>
+                        setCandidateId(
+                          e.target.value === "" ? "" : Number(e.target.value),
+                        )
+                      }
+                      placeholder="例：1"
+                      className="w-32 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
                 ) : (
                   <select
                     aria-label="候選人"
