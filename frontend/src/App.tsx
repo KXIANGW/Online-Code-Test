@@ -8,6 +8,7 @@ import ExamResultPage from "./pages/ExamResultPage";
 import ProblemSetterDashboardPage from "./pages/ProblemSetterDashboardPage";
 import ProblemFormPage from "./pages/ProblemFormPage";
 import ExamCreatePage from "./pages/ExamCreatePage";
+import ExamPage from "./pages/ExamPage";
 import { useAuthStore } from "./stores/authStore";
 
 /**
@@ -178,6 +179,16 @@ export default function App() {
           element={
             <RoleBasedRoute requiredPermission="exam:manage">
               <ExamCreatePage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 考生：考試頁 */}
+        <Route
+          path="/exam/:id"
+          element={
+            <RoleBasedRoute requiredPermission="exam:take">
+              <ExamPage />
             </RoleBasedRoute>
           }
         />

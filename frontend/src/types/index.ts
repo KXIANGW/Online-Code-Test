@@ -232,6 +232,16 @@ export type CreateExamSessionRequest =
   | CreateExamSessionManualRequest
   | CreateExamSessionRandomRequest;
 
+// ── Submission Request ────────────────────────────────────────────────────────
+export type SubmissionType = "simple" | "formal";
+
+export interface CreateSubmissionRequest {
+  examSessionProblemId: number;
+  language: string;
+  sourceCode: string;
+  submissionType: SubmissionType;
+}
+
 // ── Session Result ────────────────────────────────────────────────────────────
 export interface SessionResultProblem {
   examSessionProblemId: number;
