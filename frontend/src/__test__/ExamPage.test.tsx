@@ -251,4 +251,60 @@ describe("ExamPage", () => {
     // expect
     expect(screen.queryByLabelText("考試時間已到")).not.toBeInTheDocument();
   });
+
+  // ── Resizable divider ─────────────────────────────────────────────────────
+
+  it("renders a drag divider separator between the two panels", () => {
+    // given
+    renderExamPage();
+    // expect
+    expect(screen.getByRole("separator", { name: "調整面板寬度" })).toBeInTheDocument();
+  });
+
+  it("dragging the divider updates the left panel width", () => {
+    // given
+    renderExamPage();
+    const divider = screen.getByRole("separator", { name: "調整面板寬度" });
+    const panel = screen.getByLabelText("題目描述") as HTMLElement;
+    const initialWidth = parseInt(panel.style.width);
+
+    // when: simulate drag 100px to the right
+    fireEvent.mouseDown(divider, { clientX: 400 });
+    fireEvent.mouseMove(document, { clientX: 500 });
+    fireEvent.mouseUp(document);
+
+    // expect
+    const newWidth = parseInt(panel.style.width);
+    expect(newWidth).toBe(initialWidth + 100);
+  });
+
+  it("clamps left panel width to minimum 240px", () => {
+    // given
+    renderExamPage();
+    const divider = screen.getByRole("separator", { name: "調整面板寬度" });
+    const panel = screen.getByLabelText("題目描述") as HTMLElement;
+
+    // when: drag far to the left
+    fireEvent.mouseDown(divider, { clientX: 420 });
+    fireEvent.mouseMove(document, { clientX: 0 });
+    fireEvent.mouseUp(document);
+
+    // expect
+    expect(parseInt(panel.style.width)).toBe(240);
+  });
+
+  it("clamps left panel width to maximum 700px", () => {
+    // given
+    renderExamPage();
+    const divider = screen.getByRole("separator", { name: "調整面板寬度" });
+    const panel = screen.getByLabelText("題目描述") as HTMLElement;
+
+    // when: drag far to the right
+    fireEvent.mouseDown(divider, { clientX: 420 });
+    fireEvent.mouseMove(document, { clientX: 2000 });
+    fireEvent.mouseUp(document);
+
+    // expect
+    expect(parseInt(panel.style.width)).toBe(700);
+  });
 });

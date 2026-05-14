@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import ReactMarkdown from "react-markdown";
@@ -91,6 +91,28 @@ export default function ExamPage() {
   const [bottomTab, setBottomTab] = useState<BottomTab>("testcases");
   const [expiresAt] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [leftWidth, setLeftWidth] = useState(420);
+  const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  function handleDividerMouseDown(e: React.MouseEvent) {
+    e.preventDefault();
+    dragState.current = { startX: e.clientX, startWidth: leftWidth };
+
+    function onMouseMove(ev: MouseEvent) {
+      if (!dragState.current) return;
+      const delta = ev.clientX - dragState.current.startX;
+      setLeftWidth(Math.min(700, Math.max(240, dragState.current.startWidth + delta)));
+    }
+
+    function onMouseUp() {
+      dragState.current = null;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    }
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }
 
   useEffect(() => {
     if (!expiresAt) {
@@ -168,7 +190,8 @@ export default function ExamPage() {
       <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Left: Problem description */}
         <aside
-          className="w-[420px] shrink-0 overflow-y-auto border-r border-slate-200 bg-white"
+          className="shrink-0 overflow-y-auto bg-white"
+          style={{ width: leftWidth }}
           aria-label="題目描述"
         >
           {activeProblem && (
@@ -190,6 +213,14 @@ export default function ExamPage() {
             </div>
           )}
         </aside>
+
+        {/* Drag divider */}
+        <div
+          onMouseDown={handleDividerMouseDown}
+          className="w-1 shrink-0 bg-slate-200 hover:bg-blue-400 active:bg-blue-500 cursor-col-resize transition-colors select-none"
+          role="separator"
+          aria-label="調整面板寬度"
+        />
 
         {/* Right: Editor + Bottom panel */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -268,14 +299,14 @@ export default function ExamPage() {
                 <button
                   type="button"
                   onClick={handleRun}
-                  className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 transition-colors"
+                  className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 transition-colors"
                 >
                   Run
                 </button>
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+                  className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-black transition-colors"
                 >
                   Submit
                 </button>
