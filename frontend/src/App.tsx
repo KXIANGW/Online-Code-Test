@@ -7,6 +7,7 @@ import AdminDashboardPage from "./pages/AdminDashboardPage"; // Root: is_superus
 import ExamResultPage from "./pages/ExamResultPage";
 import ProblemSetterDashboardPage from "./pages/ProblemSetterDashboardPage";
 import ProblemFormPage from "./pages/ProblemFormPage";
+import ExamCreatePage from "./pages/ExamCreatePage";
 import { useAuthStore } from "./stores/authStore";
 
 /**
@@ -167,6 +168,16 @@ export default function App() {
           element={
             <RoleBasedRoute requiredPermission="problem:manage">
               <ProblemFormPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 面試官：建立考試 */}
+        <Route
+          path="/interviewer/new"
+          element={
+            <RoleBasedRoute requiredPermission="exam:manage">
+              <ExamCreatePage />
             </RoleBasedRoute>
           }
         />

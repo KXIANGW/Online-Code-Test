@@ -93,7 +93,7 @@ describe("InterviewerDashboardPage()", () => {
 
     // expect
     expect(screen.getByText("考試管理")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "建立考試" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "建立考試" })).toBeEnabled();
   });
 
   it("shows all 4 status tabs", () => {

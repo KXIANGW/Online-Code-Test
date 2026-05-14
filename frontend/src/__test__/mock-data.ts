@@ -7,6 +7,7 @@ import type {
   SessionResult,
   ProblemSummary,
   Problem,
+  UserSummary,
 } from "../types";
 
 // ── Problems ──────────────────────────────────────────────────────────────────
@@ -57,6 +58,30 @@ export const mockProblemDetail: Problem = {
 };
 
 // ── Users ─────────────────────────────────────────────────────────────────────
+export const mockUserSummaries: UserSummary[] = [
+  {
+    id: 1,
+    username: "candidate01",
+    displayName: "Alice Chen",
+    isSuperuser: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: 2,
+    username: "candidate02",
+    displayName: "Bob Li",
+    isSuperuser: false,
+    createdAt: "2026-01-02T00:00:00.000Z",
+  },
+  {
+    id: 3,
+    username: "root",
+    displayName: "Prof. Wang",
+    isSuperuser: true,
+    createdAt: "2025-01-01T00:00:00.000Z",
+  },
+];
+
 export const mockUsers = {
   candidate: {
     id: 1,

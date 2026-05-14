@@ -14,6 +14,7 @@ import type {
   UpdateProblemRequest,
   Testcase,
   CreateTestcaseRequest,
+  CreateExamSessionRequest,
 } from "../types";
 
 const baseURL = import.meta.env.VITE_API_BASE ?? "/api";
@@ -126,6 +127,13 @@ export async function updateTestcase(
 
 export async function deleteTestcase(problemId: number, tcId: number): Promise<void> {
   await api.delete(`/problems/${problemId}/testcases/${tcId}`);
+}
+
+export async function createExamSession(
+  req: CreateExamSessionRequest,
+): Promise<ExamSession> {
+  const { data } = await api.post<ExamSession>("/exam-sessions", req);
+  return data;
 }
 
 export async function getSubmissionDetail(

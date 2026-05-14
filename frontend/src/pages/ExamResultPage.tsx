@@ -260,9 +260,6 @@ export default function ExamResultPage() {
                                     #
                                   </th>
                                   <th className="py-2 text-left font-medium">
-                                    可見性
-                                  </th>
-                                  <th className="py-2 text-left font-medium">
                                     判決
                                   </th>
                                   <th className="py-2 text-left font-medium">
@@ -274,44 +271,35 @@ export default function ExamResultPage() {
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                {tcState.map((tc) => (
-                                  <tr key={tc.id}>
-                                    <td className="py-2 text-slate-600">
-                                      測資 {tc.orderIndex}
-                                    </td>
-                                    <td className="py-2">
-                                      <span
-                                        className={`rounded px-1.5 py-0.5 text-xs ${
-                                          tc.isPublic
-                                            ? "bg-green-50 text-green-600"
-                                            : "bg-slate-100 text-slate-500"
+                                {tcState
+                                  .filter((tc) => !tc.isPublic)
+                                  .map((tc) => (
+                                    <tr key={tc.id}>
+                                      <td className="py-2 text-slate-600">
+                                        測資 {tc.orderIndex}
+                                      </td>
+                                      <td
+                                        className={`py-2 font-medium ${
+                                          TC_VERDICT_COLOR[tc.verdict] ??
+                                          "text-slate-600"
                                         }`}
                                       >
-                                        {tc.isPublic ? "公開" : "隱藏"}
-                                      </span>
-                                    </td>
-                                    <td
-                                      className={`py-2 font-medium ${
-                                        TC_VERDICT_COLOR[tc.verdict] ??
-                                        "text-slate-600"
-                                      }`}
-                                    >
-                                      {tc.verdict}
-                                    </td>
-                                    <td className="py-2 text-slate-600">
-                                      {tc.verdict === "skipped" ||
-                                      tc.runtimeMs === null
-                                        ? "—"
-                                        : `${tc.runtimeMs} ms`}
-                                    </td>
-                                    <td className="py-2 text-slate-600">
-                                      {tc.verdict === "skipped" ||
-                                      tc.memoryKb === null
-                                        ? "—"
-                                        : `${tc.memoryKb} KB`}
-                                    </td>
-                                  </tr>
-                                ))}
+                                        {tc.verdict}
+                                      </td>
+                                      <td className="py-2 text-slate-600">
+                                        {tc.verdict === "skipped" ||
+                                        tc.runtimeMs === null
+                                          ? "—"
+                                          : `${tc.runtimeMs} ms`}
+                                      </td>
+                                      <td className="py-2 text-slate-600">
+                                        {tc.verdict === "skipped" ||
+                                        tc.memoryKb === null
+                                          ? "—"
+                                          : `${tc.memoryKb} KB`}
+                                      </td>
+                                    </tr>
+                                  ))}
                               </tbody>
                             </table>
                           )}

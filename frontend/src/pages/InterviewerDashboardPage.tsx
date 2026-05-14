@@ -128,6 +128,7 @@ function SessionCard({ result }: { result: SessionResult }) {
 }
 
 export default function InterviewerDashboardPage() {
+  const navigate = useNavigate();
   const results = useInterviewerStore((s) => s.results);
   const setResults = useInterviewerStore((s) => s.setResults);
   const [activeTab, setActiveTab] = useState<Tab>("all");
@@ -157,9 +158,8 @@ export default function InterviewerDashboardPage() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-semibold text-slate-800">考試管理</h1>
           <button
-            disabled
-            title="建立考試功能即將推出"
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg opacity-50 cursor-not-allowed"
+            onClick={() => navigate("/interviewer/new")}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
           >
             建立考試
           </button>

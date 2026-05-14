@@ -201,6 +201,37 @@ export interface SubmissionDetail extends SubmissionSummary {
   testcaseResults: TestcaseResult[];
 }
 
+// ── Create Exam Session ───────────────────────────────────────────────────────
+
+export interface ManualProblemEntry {
+  problemId: number;
+  scoreWeight: number;
+  orderIndex: number;
+}
+
+export interface RandomDistribution {
+  easy?: number;
+  medium?: number;
+  hard?: number;
+}
+
+export interface CreateExamSessionManualRequest {
+  candidateId: number;
+  durationMinutes: number;
+  problems: ManualProblemEntry[];
+}
+
+export interface CreateExamSessionRandomRequest {
+  candidateId: number;
+  durationMinutes: number;
+  distribution: RandomDistribution;
+  scoreWeight: number;
+}
+
+export type CreateExamSessionRequest =
+  | CreateExamSessionManualRequest
+  | CreateExamSessionRandomRequest;
+
 // ── Session Result ────────────────────────────────────────────────────────────
 export interface SessionResultProblem {
   examSessionProblemId: number;

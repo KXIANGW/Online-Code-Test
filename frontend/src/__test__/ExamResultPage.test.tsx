@@ -463,8 +463,8 @@ describe("ExamResultPage()", () => {
       );
     });
 
-    it("renders testcase rows with verdict and runtime after successful fetch", async () => {
-      // given: mockSubmissionDetail has 3 testcaseResults (orderIndex 1, 2, 3)
+    it("renders only hidden testcase rows with verdict and runtime after successful fetch", async () => {
+      // given: mockSubmissionDetail has 3 testcaseResults; only orderIndex 3 is hidden (isPublic=false)
       const user = userEvent.setup();
       mockGetSessionResult.mockResolvedValue(mockSessionResult);
       mockGetSubmissionDetail.mockResolvedValue(mockSubmissionDetail);
@@ -474,11 +474,11 @@ describe("ExamResultPage()", () => {
       // when
       await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
 
-      // expect
-      await screen.findByText("測資 1");
-      expect(screen.getByText("測資 2")).toBeTruthy();
-      expect(screen.getByText("測資 3")).toBeTruthy();
-      expect(screen.getByText("42 ms")).toBeTruthy();
+      // expect: only the hidden testcase (orderIndex 3, runtimeMs 45) is rendered
+      await screen.findByText("測資 3");
+      expect(screen.queryByText("測資 1")).toBeFalsy();
+      expect(screen.queryByText("測資 2")).toBeFalsy();
+      expect(screen.getByText("45 ms")).toBeTruthy();
     });
 
     it("clicking 收合 ▲ hides the testcase detail panel", async () => {
@@ -489,13 +489,13 @@ describe("ExamResultPage()", () => {
       renderPage();
       await screen.findByText(/Two Sum/);
       await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
-      await screen.findByText("測資 1");
+      await screen.findByText("測資 3");
 
       // when
       await user.click(screen.getByRole("button", { name: "收合 ▲" }));
 
       // expect
-      expect(screen.queryByText("測資 1")).toBeFalsy();
+      expect(screen.queryByText("測資 3")).toBeFalsy();
     });
 
     it("re-expanding an already fetched problem does not call getSubmissionDetail again", async () => {
@@ -506,7 +506,7 @@ describe("ExamResultPage()", () => {
       renderPage();
       await screen.findByText(/Two Sum/);
       await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
-      await screen.findByText("測資 1");
+      await screen.findByText("測資 3");
       await user.click(screen.getByRole("button", { name: "收合 ▲" }));
 
       // when
@@ -514,7 +514,7 @@ describe("ExamResultPage()", () => {
 
       // expect: fetched only once; results re-render from cache
       expect(mockGetSubmissionDetail).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("測資 1")).toBeTruthy();
+      expect(screen.getByText("測資 3")).toBeTruthy();
     });
 
     it("feat: supports expanding multiple problem details simultaneously without closing others", async () => {
@@ -541,12 +541,14 @@ describe("ExamResultPage()", () => {
       mockGetSessionResult.mockResolvedValue(mockResultTwoSubmissions);
 
       // 模擬 API：讓不同的 submissionId 回傳可辨識的 runtimeMs
+      // isPublic: false 確保隱藏測資 filter 不會過濾掉這筆測試資料
       mockGetSubmissionDetail.mockImplementation(
         async (sessionId, submissionId) => ({
           ...mockSubmissionDetail,
           testcaseResults: [
             {
               ...mockSubmissionDetail.testcaseResults[0]!,
+              isPublic: false,
               id: submissionId * 100,
               runtimeMs: submissionId,
             },
