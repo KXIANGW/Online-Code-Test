@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images help
+.PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images test help
 
 help:
 	@echo "Online Code Test — M2 async judge"
@@ -14,6 +14,7 @@ help:
 	@echo "  make rebuild     clean + up (full reset)"
 	@echo "  make psql        Open psql shell inside the postgres container"
 	@echo "  make sandbox-images Build judge sandbox images"
+	@echo "  make test        Run backend then frontend test suites"
 
 bootstrap:
 	@if [ ! -f .env ]; then \
@@ -44,6 +45,10 @@ rebuild: clean up
 
 psql:
 	docker compose exec -it postgres psql -U $${POSTGRES_USER:-oct} -d $${POSTGRES_DB:-oct}
+
+test:
+	cd backend && npm test
+	cd frontend && npm test
 
 sandbox-images:
 	docker build -t oj-sandbox-cpp ./worker/sandbox/cpp
