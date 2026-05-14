@@ -1,12 +1,12 @@
 import { beforeEach, afterAll, describe, expect, it } from "vitest";
-import { pool } from "./client";
+import { pool } from "../../db/client";
 import {
   getSubmissionById,
   getTestcases,
   markSubmissionSystemError,
   updateSubmissionJudging,
   writeJudgeResults,
-} from "./queries";
+} from "../../db/queries";
 
 let candidateId: number;
 let setterId: number;

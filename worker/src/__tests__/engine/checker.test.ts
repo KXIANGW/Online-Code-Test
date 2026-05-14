@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkOutput } from "./checker";
+import { checkOutput } from "../../engine/checker";
 
 describe("checkOutput", () => {
   it("accepts equivalent trailing whitespace and newline differences", () => {

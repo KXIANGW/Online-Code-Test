@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../db/queries", () => ({
+vi.mock("../../db/queries", () => ({
   getSubmissionById: vi.fn(),
   getTestcases: vi.fn(),
   markSubmissionSystemError: vi.fn(),
@@ -8,15 +8,15 @@ vi.mock("../db/queries", () => ({
   writeJudgeResults: vi.fn(),
 }));
 
-vi.mock("../engine/compiler", () => ({
+vi.mock("../../engine/compiler", () => ({
   compileInSandbox: vi.fn(),
 }));
 
-vi.mock("../engine/runner", () => ({
+vi.mock("../../engine/runner", () => ({
   runOneTestcase: vi.fn(),
 }));
 
-vi.mock("../engine/checker", () => ({
+vi.mock("../../engine/checker", () => ({
   checkOutput: vi.fn(),
 }));
 
@@ -26,11 +26,22 @@ import {
   markSubmissionSystemError,
   updateSubmissionJudging,
   writeJudgeResults,
-} from "../db/queries";
-import { compileInSandbox } from "../engine/compiler";
-import { runOneTestcase } from "../engine/runner";
-import { checkOutput } from "../engine/checker";
-import { handleJudgeMessage, startJudgeConsumer } from "./judge.consumer";
+} from "../../db/queries";
+import { compileInSandbox } from "../../engine/compiler";
+import { runOneTestcase } from "../../engine/runner";
+import { checkOutput } from "../../engine/checker";
+import { handleJudgeMessage, startJudgeConsumer } from "../../consumers/judge.consumer";
+
+// Minimal LanguageSpec for python3 used by the mock submission
+const mockLanguages = [
+  {
+    id: "python3",
+    image: "oct-sandbox-python:3.11",
+    source: { filename: "solution.py" },
+    run: { cmd: ["python3", "/code/solution.py"] },
+    enabled: true,
+  },
+];
 
 const submission = {
   id: 123,
@@ -78,7 +89,7 @@ describe("judge consumer", () => {
       consume: vi.fn().mockResolvedValue(undefined),
     };
 
-    await startJudgeConsumer(channel as never);
+    await startJudgeConsumer(channel as never, mockLanguages as never);
 
     expect(channel.prefetch).toHaveBeenCalledWith(1);
     expect(channel.consume).toHaveBeenCalledWith("judge.tasks", expect.any(Function), { noAck: false });
@@ -90,7 +101,8 @@ describe("judge consumer", () => {
 
     await handleJudgeMessage(
       { ack, publish },
-      { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "simple" })) } as never
+      { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "simple" })) } as never,
+      mockLanguages as never
     );
 
     expect(updateSubmissionJudging).toHaveBeenCalledWith(123);
@@ -129,7 +141,8 @@ describe("judge consumer", () => {
 
     await handleJudgeMessage(
       { ack, publish: vi.fn().mockReturnValue(true) },
-      { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "formal" })) } as never
+      { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "formal" })) } as never,
+      mockLanguages as never
     );
 
     expect(getTestcases).toHaveBeenCalledWith(40, false);
@@ -152,7 +165,8 @@ describe("judge consumer", () => {
 
     await handleJudgeMessage(
       { ack, publish: vi.fn().mockReturnValue(true) },
-      { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "simple" })) } as never
+      { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "simple" })) } as never,
+      mockLanguages as never
     );
 
     expect(markSubmissionSystemError).toHaveBeenCalledWith(123);

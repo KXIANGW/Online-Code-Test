@@ -2,6 +2,8 @@ import amqp, { type Channel, type ChannelModel } from "amqplib";
 import { config } from "./config";
 import { pool } from "./db/client";
 import { startJudgeConsumer } from "./consumers/judge.consumer";
+import { loadLanguages } from "./engine/languages";
+import { createHealthServer, type HealthState } from "./healthcheck";
 
 const JUDGE_TASKS_QUEUE = "judge.tasks";
 const JUDGE_RESULTS_EXCHANGE = "judge.results";
@@ -12,7 +14,15 @@ let connection: ChannelModel | null = null;
 let channel: Channel | null = null;
 let shuttingDown = false;
 
+const healthState: HealthState = { rabbitConnected: false };
+
 async function main(): Promise<void> {
+  const healthPort = parseInt(process.env["HEALTH_PORT"] ?? "8080", 10);
+  const healthServer = createHealthServer(healthState, healthPort);
+
+  process.on("SIGTERM", () => void shutdown("SIGTERM", healthServer));
+  process.on("SIGINT", () => void shutdown("SIGINT", healthServer));
+
   await connectWithRetry();
 }
 
@@ -36,6 +46,7 @@ async function connectOnce(): Promise<void> {
   const nextConnection = await amqp.connect(config.rabbitmqUrl);
   connection = nextConnection;
   nextConnection.on("close", () => {
+    healthState.rabbitConnected = false;
     channel = null;
     connection = null;
     if (!shuttingDown) {
@@ -46,10 +57,12 @@ async function connectOnce(): Promise<void> {
     console.error("[worker] rabbitmq connection error", err);
   });
 
+  const languages = loadLanguages();
   const nextChannel = await nextConnection.createChannel();
   channel = nextChannel;
   await assertTopology(nextChannel);
-  await startJudgeConsumer(nextChannel);
+  await startJudgeConsumer(nextChannel, languages);
+  healthState.rabbitConnected = true;
 }
 
 async function assertTopology(ch: Channel): Promise<void> {
@@ -64,17 +77,15 @@ async function assertTopology(ch: Channel): Promise<void> {
   await ch.bindQueue(JUDGE_RESULTS_BACKEND_QUEUE, JUDGE_RESULTS_EXCHANGE, "");
 }
 
-async function shutdown(signal: string): Promise<void> {
+async function shutdown(signal: string, healthServer: import("node:http").Server): Promise<void> {
   shuttingDown = true;
   console.log(`[worker] received ${signal}; shutting down`);
+  healthServer.close();
   await channel?.close().catch(() => undefined);
   await connection?.close().catch(() => undefined);
   await pool.end().catch(() => undefined);
   process.exit(0);
 }
-
-process.on("SIGTERM", () => void shutdown("SIGTERM"));
-process.on("SIGINT", () => void shutdown("SIGINT"));
 
 if (require.main === module) {
   main().catch((err) => {

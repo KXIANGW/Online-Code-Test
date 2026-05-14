@@ -4,6 +4,7 @@ import path from "path";
 import { config } from "../config";
 import { checkOutput } from "../engine/checker";
 import { compileInSandbox } from "../engine/compiler";
+import { findLanguage, type LanguageSpec } from "../engine/languages";
 import { runOneTestcase } from "../engine/runner";
 import {
   getSubmissionById,
@@ -41,13 +42,16 @@ function parseTask(message: ConsumeMessage): JudgeTask | null {
   }
 }
 
-export async function startJudgeConsumer(channel: Channel): Promise<void> {
+export async function startJudgeConsumer(
+  channel: Channel,
+  languages: LanguageSpec[]
+): Promise<void> {
   await channel.prefetch(1);
   await channel.consume(
     JUDGE_TASKS_QUEUE,
     (message) => {
       if (!message) return;
-      handleJudgeMessage(channel, message).catch((err) => {
+      handleJudgeMessage(channel, message, languages).catch((err) => {
         console.error("[worker] unhandled judge message error", err);
         channel.ack(message);
       });
@@ -58,7 +62,8 @@ export async function startJudgeConsumer(channel: Channel): Promise<void> {
 
 export async function handleJudgeMessage(
   channel: Pick<Channel, "ack" | "publish">,
-  message: ConsumeMessage
+  message: ConsumeMessage,
+  languages: LanguageSpec[]
 ): Promise<void> {
   const task = parseTask(message);
   if (!task) {
@@ -67,7 +72,7 @@ export async function handleJudgeMessage(
   }
 
   try {
-    await judgeSubmission(task, channel);
+    await judgeSubmission(task, channel, languages);
   } catch (err) {
     console.error("[worker] system error", err);
     await markSubmissionSystemError(task.submissionId).catch(() => undefined);
@@ -85,10 +90,13 @@ export async function handleJudgeMessage(
 
 async function judgeSubmission(
   task: JudgeTask,
-  channel: Pick<Channel, "publish">
+  channel: Pick<Channel, "publish">,
+  languages: LanguageSpec[]
 ): Promise<void> {
   const submission = await getSubmissionById(task.submissionId);
   if (!submission) throw new Error(`Submission not found: ${task.submissionId}`);
+
+  const spec = findLanguage(languages, submission.language);
 
   await updateSubmissionJudging(submission.id);
 
@@ -96,13 +104,12 @@ async function judgeSubmission(
   await fs.emptyDir(hostWorkDir);
 
   try {
-    await writeSourceFile(hostWorkDir, submission);
+    await fs.writeFile(
+      path.join(hostWorkDir, spec.source.filename),
+      submission.sourceCode
+    );
 
-    const compileResult = await compileInSandbox({
-      language: submission.language,
-      hostWorkDir,
-    });
-
+    const compileResult = await compileInSandbox({ spec, hostWorkDir });
     const testcases = await getTestcases(submission.problemId, task.type === "simple");
 
     if (!compileResult.success) {
@@ -129,7 +136,7 @@ async function judgeSubmission(
       return;
     }
 
-    const judged = await judgeTestcases(submission, testcases);
+    const judged = await judgeTestcases(submission, spec, testcases);
     await writeJudgeResults({
       submissionId: submission.id,
       examSessionProblemId: submission.examSessionProblemId,
@@ -155,16 +162,9 @@ async function judgeSubmission(
   }
 }
 
-async function writeSourceFile(
-  hostWorkDir: string,
-  submission: SubmissionForJudge
-): Promise<void> {
-  const fileName = submission.language === "cpp17" ? "solution.cpp" : "solution.py";
-  await fs.writeFile(path.join(hostWorkDir, fileName), submission.sourceCode);
-}
-
 async function judgeTestcases(
   submission: SubmissionForJudge,
+  spec: LanguageSpec,
   testcases: TestcaseForJudge[]
 ): Promise<{
   verdict: Verdict;
@@ -191,7 +191,7 @@ async function judgeTestcases(
     }
 
     const run = await runOneTestcase({
-      language: submission.language,
+      spec,
       hostWorkDir: path.join(config.hostWorkDir, String(submission.id)),
       inputData: testcase.inputData,
       timeLimitMs: submission.timeLimitMs,
