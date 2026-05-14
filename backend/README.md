@@ -2,9 +2,9 @@
 
 ## 目前狀態
 
-目前專案已完成 PostgreSQL schema/seed/scenario data 與 Backend API M1，包括 JWT auth、IAM、Problem、Exam、Language、RBAC 與 99 筆 integration tests；M2 已完成 RabbitMQ 非同步判題整合（移除 mock judge）與 WebSocket 即時推播，前端仍維持健康狀態頁，正式前端功能留待後續實作。
+目前專案已完成 PostgreSQL schema/seed/scenario data 與 Backend API M1，包括 JWT auth、IAM、Problem、Exam、Language、RBAC 與 112 筆 integration tests；M2 已完成 RabbitMQ 非同步判題整合（移除 mock judge）與 WebSocket 即時推播，前端仍維持健康狀態頁，正式前端功能留待後續實作。M3 新增 `users.created_by` 欄位，interviewer 僅能管理自己建立的 candidate，並補上 `PUT /api/users/:id` 端點。
 
-Database schema 已完整建置（見 `infra/postgres/` 下的 00-11 SQL 腳本，以及對應的 Drizzle ORM schema `backend/src/db/schema.ts`）。Backend 以 Routes（HTTP 薄層）+ Services（業務邏輯、RBAC）分層實作，M2 新增 MQ 發布/消費與 WebSocket hub。
+Database schema 已完整建置（見 `infra/postgres/` 下的 00-11 SQL 腳本，以及對應的 Drizzle ORM schema `backend/src/db/schema.ts`）。Backend 以 Routes（HTTP 薄層）+ Services（業務邏輯、RBAC）分層實作，M2 新增 MQ 發布/消費與 WebSocket hub；M3 新增 ownership 欄位與 idempotent migration。
 
 ---
 
@@ -56,8 +56,9 @@ backend/src/
 │
 └── __tests__/
     ├── helpers/
-    │   ├── app.ts         # 建立測試用 Fastify app，seed 9 位使用者 / 8 題 / 6 場考試
-    │   └── db.ts          # DB truncate / 重新 seed 工具函式
+    │   ├── app.ts            # 建立測試用 Fastify app，seed 9 位使用者 / 8 題 / 6 場考試
+    │   ├── db.ts             # DB truncate / 重新 seed 工具函式（含 setupSchema、seedUser 支援 createdBy）
+    │   └── global-setup.ts   # Vitest globalSetup：執行 ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by
     ├── auth.test.ts        # 7 tests
     ├── users.test.ts       # 24 tests
     ├── problems.test.ts    # 30 tests
@@ -81,11 +82,12 @@ backend/src/
 | Method | Path | 權限 | 說明 |
 |--------|------|------|------|
 | POST | `/api/auth/login` | public | 登入，回傳 JWT |
-| GET | `/api/users` | superuser | 列所有未軟刪除使用者 |
-| POST | `/api/users` | superuser 或 `exam:manage` | superuser 可建任意角色；interviewer 只能建 candidate |
-| POST | `/api/users/batch` | `exam:manage` / superuser | 批次建 candidate，回傳一次性明文密碼 |
+| GET | `/api/users` | superuser / `exam:manage` | superuser 看所有未刪除使用者；interviewer 只看自己建立（`created_by`）的 candidate |
+| POST | `/api/users` | superuser 或 `exam:manage` | superuser 可建任意角色；interviewer 只能建 candidate（自動設 `created_by`）|
+| POST | `/api/users/batch` | `exam:manage` / superuser | 批次建 candidate，回傳一次性明文密碼；非 superuser 自動設 `created_by` |
 | GET | `/api/users/:id` | 本人或 superuser | 查使用者資料 |
-| DELETE | `/api/users/:id` | superuser | 軟刪除（`deleted_at`）|
+| PUT | `/api/users/:id` | superuser / `exam:manage`（ownership）| 更新 `displayName` 或重設密碼；interviewer 只能更新自己建立的 candidate |
+| DELETE | `/api/users/:id` | superuser / `exam:manage`（ownership）| 軟刪除（`deleted_at`）；interviewer 只能刪除自己建立的 candidate，不可刪 superuser |
 
 ### Problem
 
@@ -134,12 +136,12 @@ backend/src/
 
 ## 測試覆蓋現況
 
-目前共有 6 個 test files、99 筆 integration tests。這些測試不是只驗證「happy path」，而是刻意依角色覆蓋 RBAC、ownership、資料隔離、錯誤狀態與關鍵業務規則。
+目前共有 6 個 test files、112 筆 integration tests。這些測試不是只驗證「happy path」，而是刻意依角色覆蓋 RBAC、ownership、資料隔離、錯誤狀態與關鍵業務規則。
 
 | Test file | 測試數 | 覆蓋重點 |
 |-----------|--------|----------|
 | `auth.test.ts` | 7 | 登入成功/失敗、軟刪除帳號、body validation、未認證與 malformed JWT 401 |
-| `users.test.ts` | 24 | superuser / interviewer / candidate 的 IAM 權限、重複 username、未知 role、batch bounds 與軟刪除 |
+| `users.test.ts` | 37 | superuser / interviewer / candidate 的 IAM 權限、`created_by` ownership（只看/改/刪自己建立的 candidate）、重複 username、未知 role、batch bounds 與軟刪除 |
 | `problems.test.ts` | 30 | 題目 CRUD、測資 CRUD、hidden testcase sanitization、Language API、languageLimits、deleted problem guards、constraint conflicts |
 | `exams.test.ts` | 24 | 手動/隨機派題、歷史題目排除、session visibility、start/cancel ownership、session problems、random pool conflicts |
 | `submissions.test.ts` | 11 | async judge 狀態、submission history/result、source code visibility、RBAC/ownership、session 狀態 guard、final formal scoring |
@@ -179,15 +181,20 @@ Interviewer 具備 `exam:manage`，測試重點是「可建立候選人與考試
 
 | 模組 | 測試目標 |
 |------|----------|
-| IAM | 不可列出所有使用者，`GET /api/users` 回 403 |
-| IAM | 可建立單一 candidate 帳號 |
+| IAM | `GET /api/users` 回 200，只看到自己建立（`created_by`）的 candidate；無建立紀錄時回空陣列 |
+| IAM | 可建立單一 candidate 帳號（自動設 `created_by = interviewer.id`）|
 | IAM | 建立使用者時省略 `roleNames` 會預設為 candidate |
 | IAM | 嘗試建立 interviewer 角色帳號回 403 |
 | IAM | 嘗試建立 problem_setter 角色帳號回 403 |
 | IAM | 可批次建立 candidate 帳號 |
 | IAM | 可查詢自己的 profile |
 | IAM | 查詢他人 profile 回 403 |
-| IAM | 嘗試刪除使用者回 403 |
+| IAM | 可更新自己建立的 candidate 的 displayName 或密碼 → 200 |
+| IAM | 更新非自己建立的 candidate → 403 |
+| IAM | 更新 superuser → 403 |
+| IAM | 可軟刪除自己建立的 candidate → 204 |
+| IAM | 刪除非自己建立的 candidate → 403 |
+| IAM | 刪除 superuser → 403 |
 | Problem | 可列出題目，供派題選用 |
 | Problem | 可查詢單一題目，但 hidden testcase 不回傳 `inputData` / `expectedOutput` |
 | Problem | 嘗試建立、更新、刪除題目皆回 403 |

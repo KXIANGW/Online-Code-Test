@@ -2,7 +2,7 @@
 
 ## 目前狀態
 
-所有資料統一存於單一 PostgreSQL 實例，依模組邏輯切分 table，未來拆微服務時邊界清楚。M1 已完成 init SQL（00–10）、Drizzle ORM schema 對齊、seed data 與 scenario data；M2 新增 `submission_type` 欄位（11）。`backend/src/db/schema.ts` 已對應所有 tables 與 enums。
+所有資料統一存於單一 PostgreSQL 實例，依模組邏輯切分 table，未來拆微服務時邊界清楚。M1 已完成 init SQL（00–10）、Drizzle ORM schema 對齊、seed data 與 scenario data；M2 新增 `submission_type` 欄位（11）；M3 於 `02-iam.sql` 新增 `users.created_by` 欄位（self-referential FK），並在 `backend/src/db/migrate.ts` 補上 idempotent `ALTER TABLE` 供現有資料庫升級。`backend/src/db/schema.ts` 已對應所有 tables 與 enums。
 
 ---
 
@@ -58,6 +58,7 @@ infra/postgres/
 | `username`      | 登入帳號；批次匯入時由系統產生（如 `candidate_20260509_001`） |
 | `password_hash` | bcrypt hash；明文密碼僅在建立當下回傳給面試主管，不儲存       |
 | `is_superuser`  | Root 標記；service 層 RBAC 直接 short-circuit 放行            |
+| `created_by`    | 建立者 FK（self-referential，nullable）；superuser 建立時為 NULL，interviewer 建立 candidate 時自動填入自身 id；`GET /api/users`、`PUT`、`DELETE` 均依此做 ownership 過濾 |
 | `deleted_at`    | 軟刪除；查詢時 `WHERE deleted_at IS NULL`                     |
 
 **角色與權限預設綁定：**
@@ -163,7 +164,7 @@ in_progress ──[面試主管取消]──────────> cancelled
 
 | 類型   | 內容                                                                                                                                | 可驗證的功能              |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| 使用者 | 9 位：`root`（superuser）、`alice`（interviewer）、`bob`（interviewer + problem_setter）、`carol`（problem_setter）、5 位 candidate | RBAC / 多角色             |
+| 使用者 | 9 位：`root`（superuser）、`alice`（interviewer）、`bob`（interviewer + problem_setter）、`carol`（problem_setter）、5 位 candidate；`alice`/`bob`/`carol` 的 `created_by = root.id`，5 位 candidate 的 `created_by` 依 id 輪流分配給三位 interviewer | RBAC / 多角色 / ownership |
 | 題庫   | 8 題，涵蓋 easy / medium / hard，含 public / hidden testcases                                                                       | 難度篩選、hidden 過濾     |
 | 考試   | 6 場，涵蓋 `not_started`、`in_progress`、`submitted`、`cancelled`                                                                   | 狀態機覆蓋                |
 | 提交   | 多次提交，含 AC / WA / TLE / CE 等 verdict 與 per-testcase results                                                                  | Mock judge 推進、分數計算 |
@@ -189,7 +190,7 @@ in_progress ──[面試主管取消]──────────> cancelled
 
 ## 剩餘工作
 
-- **版本化 migration 策略**：目前 00–11 SQL 是 init scripts（`docker-entrypoint-initdb.d/` 風格），生產環境需要可回滾的版本化 migration（如 Flyway、golang-migrate）。
+- **版本化 migration 策略**：目前 00–11 SQL 是 init scripts（`docker-entrypoint-initdb.d/` 風格），生產環境需要可回滾的版本化 migration（如 Flyway、golang-migrate）。M3 的 `created_by` 欄位已同步更新至 `02-iam.sql`（fresh DB）與 `backend/src/db/migrate.ts`（`ALTER TABLE ... IF NOT EXISTS`，現有 DB）。
 - **考試過期處理**：`expired` 狀態目前保留但未啟用；需要 cron job 或 lazy update 將到期的 `in_progress` session 標記為 `submitted`。
 - **未來 schema 演進**（視需求觸發）：
   - 測資搬到 MinIO/S3（`input_data` → object_key）
