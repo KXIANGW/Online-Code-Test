@@ -65,20 +65,22 @@ BEGIN
   SELECT id INTO v_role_setter      FROM roles WHERE name = 'problem_setter';
   SELECT id INTO v_role_candidate   FROM roles WHERE name = 'candidate';
 
+  -- root: superuser, created_by = NULL
   INSERT INTO users (username, password_hash, display_name, is_superuser)
   VALUES ('root', crypt('Root@1234', gen_salt('bf', 10)), 'System Root', TRUE)
   RETURNING id INTO v_root_id;
 
-  INSERT INTO users (username, password_hash, display_name)
-  VALUES ('alice', crypt('Test@1234', gen_salt('bf', 10)), 'Alice Chen')
+  -- staff: created by root
+  INSERT INTO users (username, password_hash, display_name, created_by)
+  VALUES ('alice', crypt('Test@1234', gen_salt('bf', 10)), 'Alice Chen', v_root_id)
   RETURNING id INTO v_alice_id;
 
-  INSERT INTO users (username, password_hash, display_name)
-  VALUES ('bob', crypt('Test@1234', gen_salt('bf', 10)), 'Bob Wang')
+  INSERT INTO users (username, password_hash, display_name, created_by)
+  VALUES ('bob', crypt('Test@1234', gen_salt('bf', 10)), 'Bob Wang', v_root_id)
   RETURNING id INTO v_bob_id;
 
-  INSERT INTO users (username, password_hash, display_name)
-  VALUES ('carol', crypt('Test@1234', gen_salt('bf', 10)), 'Carol Liu')
+  INSERT INTO users (username, password_hash, display_name, created_by)
+  VALUES ('carol', crypt('Test@1234', gen_salt('bf', 10)), 'Carol Liu', v_root_id)
   RETURNING id INTO v_carol_id;
 
   INSERT INTO user_roles (user_id, role_id) VALUES
@@ -87,24 +89,25 @@ BEGIN
     (v_bob_id,   v_role_setter),
     (v_carol_id, v_role_setter);
 
-  INSERT INTO users (username, password_hash, display_name)
-  VALUES ('candidate_20260509_001', crypt('Cand@1234', gen_salt('bf', 10)), 'David Chang')
+  -- candidates: distributed between alice and bob
+  INSERT INTO users (username, password_hash, display_name, created_by)
+  VALUES ('candidate_20260509_001', crypt('Cand@1234', gen_salt('bf', 10)), 'David Chang', v_alice_id)
   RETURNING id INTO v_c1_id;
 
-  INSERT INTO users (username, password_hash, display_name)
-  VALUES ('candidate_20260509_002', crypt('Cand@1234', gen_salt('bf', 10)), 'Emma Lin')
+  INSERT INTO users (username, password_hash, display_name, created_by)
+  VALUES ('candidate_20260509_002', crypt('Cand@1234', gen_salt('bf', 10)), 'Emma Lin', v_alice_id)
   RETURNING id INTO v_c2_id;
 
-  INSERT INTO users (username, password_hash, display_name)
-  VALUES ('candidate_20260509_003', crypt('Cand@1234', gen_salt('bf', 10)), 'Frank Wu')
+  INSERT INTO users (username, password_hash, display_name, created_by)
+  VALUES ('candidate_20260509_003', crypt('Cand@1234', gen_salt('bf', 10)), 'Frank Wu', v_bob_id)
   RETURNING id INTO v_c3_id;
 
-  INSERT INTO users (username, password_hash, display_name)
-  VALUES ('candidate_20260509_004', crypt('Cand@1234', gen_salt('bf', 10)), 'Grace Lee')
+  INSERT INTO users (username, password_hash, display_name, created_by)
+  VALUES ('candidate_20260509_004', crypt('Cand@1234', gen_salt('bf', 10)), 'Grace Lee', v_alice_id)
   RETURNING id INTO v_c4_id;
 
-  INSERT INTO users (username, password_hash, display_name)
-  VALUES ('candidate_20260509_005', crypt('Cand@1234', gen_salt('bf', 10)), 'Henry Huang')
+  INSERT INTO users (username, password_hash, display_name, created_by)
+  VALUES ('candidate_20260509_005', crypt('Cand@1234', gen_salt('bf', 10)), 'Henry Huang', v_bob_id)
   RETURNING id INTO v_c5_id;
 
   INSERT INTO user_roles (user_id, role_id) VALUES
