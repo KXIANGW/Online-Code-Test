@@ -9,13 +9,11 @@ import type {
   Difficulty,
   CreateExamSessionRequest,
   CreateUserRequest,
-  ManualProblemEntry,
   RandomDistribution,
 } from "../types";
 
 type ExamMode = "manual" | "random";
 type DiffTab = Difficulty;
-
 
 const DIFF_TABS: { value: DiffTab; label: string }[] = [
   { value: "easy", label: "簡單" },

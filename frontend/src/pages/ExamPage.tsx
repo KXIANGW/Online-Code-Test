@@ -75,9 +75,6 @@ function formatTimeLeft(seconds: number): string {
 }
 
 export default function ExamPage() {
-  const { id } = useParams<{ id: string }>();
-  const _examId = id;
-
   const problems = PLACEHOLDER_PROBLEMS;
   const languages = PLACEHOLDER_LANGUAGES;
 
@@ -101,7 +98,9 @@ export default function ExamPage() {
     function onMouseMove(ev: MouseEvent) {
       if (!dragState.current) return;
       const delta = ev.clientX - dragState.current.startX;
-      setLeftWidth(Math.min(700, Math.max(240, dragState.current.startWidth + delta)));
+      setLeftWidth(
+        Math.min(700, Math.max(240, dragState.current.startWidth + delta)),
+      );
     }
 
     function onMouseUp() {
