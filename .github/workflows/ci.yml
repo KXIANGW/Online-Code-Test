@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+
+jobs:
+  frontend:
+    name: Frontend — lint / test / build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  backend:
+    name: Backend — lint / test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: oct
+          POSTGRES_PASSWORD: oct_dev_password_change_me
+          POSTGRES_DB: oct
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+
+      # Apply schema in order before running tests
+      - name: Apply database schema
+        env:
+          PGPASSWORD: oct_dev_password_change_me
+        run: |
+          for f in $(ls ../infra/postgres/[0-9]*.sql | sort); do
+            psql -h localhost -U oct -d oct -f "$f"
+          done
+
+      - run: npm run lint
+
+      - name: Run unit tests
+        env:
+          TEST_DATABASE_URL: postgres://oct:oct_dev_password_change_me@localhost:5432/oct
+          JWT_SECRET: test-secret-minimum-32-chars-for-jwt-signing
+        run: npm test
