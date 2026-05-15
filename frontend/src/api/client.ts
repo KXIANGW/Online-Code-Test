@@ -8,6 +8,7 @@ import type {
   CreateUserRequest,
   CreateUserResponse,
   UserSummary,
+  Language,
   ProblemSummary,
   Problem,
   CreateProblemRequest,
@@ -67,6 +68,11 @@ export async function getExamSessions(): Promise<ExamSession[]> {
 
 export async function getSessionResult(id: number): Promise<SessionResult> {
   const { data } = await api.get<SessionResult>(`/exam-sessions/${id}/result`);
+  return data;
+}
+
+export async function getLanguages(): Promise<Language[]> {
+  const { data } = await api.get<Language[]>("/languages");
   return data;
 }
 

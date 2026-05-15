@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { NavBar } from "../components/NavBar";
 import type { ExamSessionProblem, Language } from "../types";
+import { getLanguages } from "../api/client";
 import { getMonacoMode } from "../config/languages";
 
 type BottomTab = "testcases" | "output" | "history";
@@ -41,25 +42,6 @@ const PLACEHOLDER_PROBLEMS: ExamSessionProblem[] = [
   },
 ];
 
-const PLACEHOLDER_LANGUAGES: Language[] = [
-  {
-    language: "python3",
-    displayName: "Python 3.11",
-    timeMultiplier: "2.00",
-    memoryMultiplier: "1.50",
-    isEnabled: true,
-    createdAt: "",
-  },
-  {
-    language: "cpp17",
-    displayName: "C++ 17",
-    timeMultiplier: "1.00",
-    memoryMultiplier: "1.00",
-    isEnabled: true,
-    createdAt: "",
-  },
-];
-
 function formatTimeLeft(seconds: number): string {
   if (seconds <= 0) return "00:00:00";
   const h = Math.floor(seconds / 3600);
@@ -70,14 +52,12 @@ function formatTimeLeft(seconds: number): string {
 
 export default function ExamPage() {
   const problems = PLACEHOLDER_PROBLEMS;
-  const languages = PLACEHOLDER_LANGUAGES;
+  const [languages, setLanguages] = useState<Language[]>([]);
 
   const [activeProblemId, setActiveProblemId] = useState<number>(
     problems[0]?.id ?? 0,
   );
-  const [selectedLanguage, setSelectedLanguage] = useState<string>(
-    languages[0]?.language ?? "",
-  );
+  const [selectedLanguage, setSelectedLanguage] = useState<string>("");
   const [codes, setCodes] = useState<Record<number, string>>({});
   const [bottomTab, setBottomTab] = useState<BottomTab>("testcases");
   const [expiresAt] = useState<string | null>(null);
@@ -106,6 +86,16 @@ export default function ExamPage() {
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
   }
+
+  useEffect(() => {
+    getLanguages()
+      .then((data) => {
+        const enabled = data.filter((l) => l.isEnabled);
+        setLanguages(enabled);
+        setSelectedLanguage((prev) => prev || (enabled[0]?.language ?? ""));
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!expiresAt) {

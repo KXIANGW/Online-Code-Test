@@ -1,7 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ExamPage from "../pages/ExamPage";
+import type { Language } from "../types";
+
+const mockGetLanguages = vi.fn();
+vi.mock("../api/client", () => ({
+  getLanguages: () => mockGetLanguages(),
+}));
+
+const DEFAULT_LANGUAGES: Language[] = [
+  { language: "python3", displayName: "Python 3.11", timeMultiplier: "2.00", memoryMultiplier: "1.50", isEnabled: true, createdAt: "" },
+  { language: "cpp17", displayName: "C++ 17", timeMultiplier: "1.00", memoryMultiplier: "1.00", isEnabled: true, createdAt: "" },
+];
 
 vi.mock("@monaco-editor/react", () => ({
   default: ({
@@ -47,6 +58,7 @@ function renderExamPage(id = "42") {
 describe("ExamPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetLanguages.mockResolvedValue(DEFAULT_LANGUAGES);
   });
 
   // ── Layout ────────────────────────────────────────────────────────────────
@@ -89,14 +101,13 @@ describe("ExamPage", () => {
     expect(within(panel).getAllByText(/Two Sum/).length).toBeGreaterThan(0);
   });
 
-  it("renders language selector with placeholder languages", () => {
+  it("renders language selector populated from GET /api/languages", async () => {
     // given
     renderExamPage();
-    // when
-    const select = screen.getByLabelText("語言") as HTMLSelectElement;
-    // expect
-    expect(select).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Python 3.11" })).toBeInTheDocument();
+    // expect — options appear once the async fetch resolves
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Python 3.11" })).toBeInTheDocument();
+    });
     expect(screen.getByRole("option", { name: "C++ 17" })).toBeInTheDocument();
   });
 
@@ -171,18 +182,58 @@ describe("ExamPage", () => {
 
   // ── Language selector ─────────────────────────────────────────────────────
 
-  it("changes Monaco language when language selector changes", () => {
+  it("changes Monaco language when language selector changes", async () => {
     // given
     renderExamPage();
-    const select = screen.getByLabelText("語言") as HTMLSelectElement;
     const editor = screen.getByLabelText("Code editor");
-    // initially python
-    expect(editor).toHaveAttribute("data-language", "python");
+    // wait for languages to load and default to python3
+    await waitFor(() => {
+      expect(editor).toHaveAttribute("data-language", "python");
+    });
 
     // when
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "cpp17" } });
     // expect
     expect(editor).toHaveAttribute("data-language", "cpp");
+  });
+
+  it("shows empty language selector and plaintext editor when GET /api/languages returns empty list", async () => {
+    // given
+    mockGetLanguages.mockResolvedValue([]);
+    renderExamPage();
+    // when — let async fetch settle
+    await waitFor(() => expect(mockGetLanguages).toHaveBeenCalled());
+    // expect — no options, editor defaults to plaintext
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    expect(select.options).toHaveLength(0);
+    expect(screen.getByLabelText("Code editor")).toHaveAttribute("data-language", "plaintext");
+  });
+
+  it("renders editor with plaintext when GET /api/languages fails (API error)", async () => {
+    // given
+    mockGetLanguages.mockRejectedValue(new Error("500 Internal Server Error"));
+    renderExamPage();
+    // when — let async fetch settle
+    await waitFor(() => expect(mockGetLanguages).toHaveBeenCalled());
+    // expect — no language options, editor falls back to plaintext
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    expect(select.options).toHaveLength(0);
+    expect(screen.getByLabelText("Code editor")).toHaveAttribute("data-language", "plaintext");
+  });
+
+  it("filters out disabled languages from the selector", async () => {
+    // given
+    mockGetLanguages.mockResolvedValue([
+      { ...DEFAULT_LANGUAGES[0], isEnabled: false },
+      DEFAULT_LANGUAGES[1],
+    ]);
+    renderExamPage();
+    // expect — only enabled language appears
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "C++ 17" })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("option", { name: "Python 3.11" })).not.toBeInTheDocument();
   });
 
   // ── Bottom panel tabs ─────────────────────────────────────────────────────
