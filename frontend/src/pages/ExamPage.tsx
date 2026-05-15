@@ -4,12 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { NavBar } from "../components/NavBar";
 import type { ExamSessionProblem, Language } from "../types";
-
-const MONACO_LANG: Record<string, string> = {
-  python3: "python",
-  cpp17: "cpp",
-  java21: "java",
-};
+import { getMonacoMode } from "../config/languages";
 
 type BottomTab = "testcases" | "output" | "history";
 
@@ -129,7 +124,7 @@ export default function ExamPage() {
 
   const activeProblem = problems.find((p) => p.id === activeProblemId);
   const currentCode = codes[activeProblemId] ?? "";
-  const monacoLang = MONACO_LANG[selectedLanguage] ?? "plaintext";
+  const monacoLang = getMonacoMode(selectedLanguage);
 
   function handleCodeChange(value: string | undefined) {
     setCodes((prev) => ({ ...prev, [activeProblemId]: value ?? "" }));
