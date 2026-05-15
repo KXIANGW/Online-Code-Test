@@ -45,15 +45,16 @@ frontend/
 
 ## 頁面與路由
 
-| 路由 | 頁面 | 權限 |
-|---|---|---|
-| `/login` | LoginPage | 公開；已登入自動導向 |
-| `/dashboard` | DashboardPage | 任何登入者（主要給考生） |
+| 路由           | 頁面                     | 權限                       |
+| -------------- | ------------------------ | -------------------------- |
+| `/login`       | LoginPage                | 公開；已登入自動導向       |
+| `/dashboard`   | DashboardPage            | 任何登入者（主要給考生）   |
 | `/interviewer` | InterviewerDashboardPage | 任何登入者（主要給面試官） |
-| `/result/:id` | ExamResultPage | 任何登入者 |
-| `/exam/:id` | ExamPage（WIP） | 任何登入者 |
+| `/result/:id`  | ExamResultPage           | 任何登入者                 |
+| `/exam/:id`    | ExamPage（WIP）          | 任何登入者                 |
 
 **RoleRedirect 邏輯：** 登入後依 JWT 中的 permissions 決定導向目標：
+
 - `isSuperuser` 或 `permissions` 含 `exam:manage` → `/interviewer`
 - 其餘 → `/dashboard`
 
@@ -61,11 +62,11 @@ frontend/
 
 ## API 串接
 
-| 方法 | 路徑 | 使用頁面 |
-|---|---|---|
-| POST | `/api/auth/login` | LoginPage |
-| GET | `/api/exam-sessions` | DashboardPage、InterviewerDashboardPage |
-| GET | `/api/exam-sessions/:id/result` | InterviewerDashboardPage、ExamResultPage |
+| 方法 | 路徑                            | 使用頁面                                 |
+| ---- | ------------------------------- | ---------------------------------------- |
+| POST | `/api/auth/login`               | LoginPage                                |
+| GET  | `/api/exam-sessions`            | DashboardPage、InterviewerDashboardPage  |
+| GET  | `/api/exam-sessions/:id/result` | InterviewerDashboardPage、ExamResultPage |
 
 所有請求透過 `src/api/client.ts` 的 axios 實例發出，interceptor 自動附加 `Authorization: Bearer <token>`，token 存於 `sessionStorage`（per-tab 隔離，防止跨分頁 token 污染）。
 
@@ -73,11 +74,11 @@ frontend/
 
 ## 狀態管理
 
-| Store | 用途 |
-|---|---|
-| `authStore` | 登入狀態：token、username、isSuperuser、permissions；login/logout action |
-| `examStore` | 考生考試 session 清單（DashboardPage 快取） |
-| `interviewerStore` | 面試官 session result 清單（InterviewerDashboardPage 快取） |
+| Store              | 用途                                                                     |
+| ------------------ | ------------------------------------------------------------------------ |
+| `authStore`        | 登入狀態：token、username、isSuperuser、permissions；login/logout action |
+| `examStore`        | 考生考試 session 清單（DashboardPage 快取）                              |
+| `interviewerStore` | 面試官 session result 清單（InterviewerDashboardPage 快取）              |
 
 **Token 儲存策略：** 使用 `sessionStorage`（非 `localStorage`），確保每個瀏覽器分頁擁有獨立的 token，避免不同角色在多分頁同時操作時發生權限污染。
 
@@ -85,18 +86,18 @@ frontend/
 
 ## 主要依賴
 
-| 套件 | 版本 | 用途 |
-|---|---|---|
-| `react` | 18.3.1 | UI framework |
-| `react-router-dom` | 6.30.3 | SPA routing |
-| `zustand` | 4.5.4 | 狀態管理 |
-| `axios` | 1.16.0 | HTTP client |
-| `@headlessui/react` | 2.1.1 | Accessible UI components（UserMenu dropdown） |
-| `@monaco-editor/react` | 4.6.0 | 程式碼編輯器（ExamPage，WIP） |
-| `react-markdown` | 9.0.1 | 題目 Markdown 渲染（ExamPage，WIP） |
-| `tailwindcss` | 3.4.7 | CSS utility framework |
-| `vitest` | 2.1.8 | 測試 runner |
-| `@testing-library/react` | 16.0.0 | Component 測試 |
+| 套件                     | 版本   | 用途                                          |
+| ------------------------ | ------ | --------------------------------------------- |
+| `react`                  | 18.3.1 | UI framework                                  |
+| `react-router-dom`       | 6.30.3 | SPA routing                                   |
+| `zustand`                | 4.5.4  | 狀態管理                                      |
+| `axios`                  | 1.16.0 | HTTP client                                   |
+| `@headlessui/react`      | 2.1.1  | Accessible UI components（UserMenu dropdown） |
+| `@monaco-editor/react`   | 4.6.0  | 程式碼編輯器（ExamPage，WIP）                 |
+| `react-markdown`         | 9.0.1  | 題目 Markdown 渲染（ExamPage，WIP）           |
+| `tailwindcss`            | 3.4.7  | CSS utility framework                         |
+| `vitest`                 | 2.1.8  | 測試 runner                                   |
+| `@testing-library/react` | 16.0.0 | Component 測試                                |
 
 ---
 
@@ -107,14 +108,14 @@ npm test          # 執行全部測試
 npm run coverage  # 產生覆蓋率報告
 ```
 
-| 測試檔 | 涵蓋範圍 |
-|---|---|
-| `LoginPage.test.tsx` | 表單驗證、API 呼叫、登入後角色導向 |
-| `DashboardPage.test.tsx` | 考試 session 分類顯示、空狀態、導航 |
-| `InterviewerDashboardPage.test.tsx` | 候選人 card 顯示、狀態 tab 過濾、頁面刷新重取、登出 |
-| `ExamResultPage.test.tsx` | 結果載入、題目與測資結果顯示、返回導航 |
-| `authStore.test.ts` | login/logout state、sessionStorage 讀寫、跨分頁隔離驗證 |
-| `jwt.test.ts` | decodeJwt 正常與邊界條件（格式錯誤、非陣列 permissions） |
+| 測試檔                              | 涵蓋範圍                                                 |
+| ----------------------------------- | -------------------------------------------------------- |
+| `LoginPage.test.tsx`                | 表單驗證、API 呼叫、登入後角色導向                       |
+| `DashboardPage.test.tsx`            | 考試 session 分類顯示、空狀態、導航                      |
+| `InterviewerDashboardPage.test.tsx` | 候選人 card 顯示、狀態 tab 過濾、頁面刷新重取、登出      |
+| `ExamResultPage.test.tsx`           | 結果載入、題目與測資結果顯示、返回導航                   |
+| `authStore.test.ts`                 | login/logout state、sessionStorage 讀寫、跨分頁隔離驗證  |
+| `jwt.test.ts`                       | decodeJwt 正常與邊界條件（格式錯誤、非陣列 permissions） |
 
 ---
 
@@ -154,8 +155,8 @@ docker compose up -d --build
 
 ### 環境變數
 
-| 變數 | 預設 | 說明 |
-|---|---|---|
+| 變數            | 預設   | 說明                                     |
+| --------------- | ------ | ---------------------------------------- |
 | `VITE_API_BASE` | `/api` | axios baseURL，build 時 inline 進 bundle |
 
 注意：`VITE_*` 在 **build 時**確定，不是執行階段讀取。要改 API base 須重新 build image。
@@ -171,11 +172,12 @@ docker compose up -d --build
 
 ## 剩餘工作
 
-| 項目 | 說明 |
-|---|---|
-| **ExamPage** | Monaco Editor 整合、題目面板、提交流程、倒數計時 |
-| **editorStore / submissionStore** | 編輯器與提交狀態的 Zustand store |
-| **API 串接** | startExam、submitCode、getSubmission、getExamDetail |
-| **useExamTimer** | 考試倒數計時 hook |
-| **WebSocket** | `/api/ws?token=JWT`，訂閱 sessionId，即時顯示判題結果 |
-| **建立考試** | InterviewerDashboardPage 的「建立考試」目前為 placeholder button |
+| 項目                                 | 說明                                                  |
+| ------------------------------------ | ----------------------------------------------------- |
+| **ExamPage**                         | 提交流程、倒數計時                                    |
+| **editorStore / submissionStore**    | 編輯器與提交狀態的 Zustand store                      |
+| **API 串接**                         | startExam、submitCode、getSubmission、getExamDetail   |
+| **useExamTimer**                     | 考試倒數計時 hook                                     |
+| **WebSocket**                        | `/api/ws?token=JWT`，訂閱 sessionId，即時顯示判題結果 |
+| **DisplayProblem in ExamresultPage** | interviewer 在查看面試者考試結果時可以看題目預覽      |
+| **Interviewer Account Management**   | interviewer 在要有他所建立的 candidate 的帳號密碼總覽 |

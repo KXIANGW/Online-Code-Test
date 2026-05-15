@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { NavBar } from "../components/NavBar";
-import { createUser, deleteUser, getUsers, updateUserRoles } from "../api/client";
+import {
+  createUser,
+  deleteUser,
+  getUsers,
+  updateUserRoles,
+} from "../api/client";
 import { CreateUserRequest } from "../types";
 
 type UserRole = "interviewer" | "problem_setter" | "candidate" | "root";
@@ -52,8 +57,13 @@ export default function AdminDashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<"all" | "role">("all");
   const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
-  const [editingUser, setEditingUser] = useState<{ id: number; username: string } | null>(null);
-  const [pendingRoles, setPendingRoles] = useState<Array<"interviewer" | "problem_setter">>([]);
+  const [editingUser, setEditingUser] = useState<{
+    id: number;
+    username: string;
+  } | null>(null);
+  const [pendingRoles, setPendingRoles] = useState<
+    Array<"interviewer" | "problem_setter">
+  >([]);
   const [savingRoles, setSavingRoles] = useState(false);
 
   const filteredUsers = users
@@ -320,7 +330,9 @@ export default function AdminDashboardPage() {
                       <button
                         type="button"
                         onClick={() => handleOpenEditRoles(user)}
-                        disabled={user.isSuperuser || user.roles.includes("candidate")}
+                        disabled={
+                          user.isSuperuser || user.roles.includes("candidate")
+                        }
                         className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
                       >
                         編輯角色
@@ -435,8 +447,16 @@ export default function AdminDashboardPage() {
             <div className="mt-5 flex flex-col gap-3">
               {(
                 [
-                  { role: "interviewer", label: "interviewer（面試官）", color: "text-blue-600" },
-                  { role: "problem_setter", label: "problem_setter（出題者）", color: "text-purple-600" },
+                  {
+                    role: "interviewer",
+                    label: "interviewer（面試官）",
+                    color: "text-blue-600",
+                  },
+                  {
+                    role: "problem_setter",
+                    label: "problem_setter（出題者）",
+                    color: "text-purple-600",
+                  },
                 ] as const
               ).map(({ role, label, color }) => (
                 <label
