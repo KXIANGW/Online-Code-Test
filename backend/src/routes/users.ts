@@ -57,18 +57,18 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     return getUser(request.user, parsePositiveIntParam(id, "id"));
   });
 
-  app.put("/:id", { preHandler: [authenticate] }, async (request) => {
-    const { id } = request.params as { id: string };
-    const result = updateUserBody.safeParse(request.body);
-    if (!result.success) throw BadRequestError(result.error.message);
-    return updateUser(request.user, parsePositiveIntParam(id, "id"), result.data);
-  });
-
   app.put("/:id/roles", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
     const result = updateRolesBody.safeParse(request.body);
     if (!result.success) throw BadRequestError(result.error.message);
     return updateUserRoles(request.user, parsePositiveIntParam(id, "id"), result.data.roleNames);
+  });
+
+  app.put("/:id", { preHandler: [authenticate] }, async (request) => {
+    const { id } = request.params as { id: string };
+    const result = updateUserBody.safeParse(request.body);
+    if (!result.success) throw BadRequestError(result.error.message);
+    return updateUser(request.user, parsePositiveIntParam(id, "id"), result.data);
   });
 
   app.delete("/:id", { preHandler: [authenticate] }, async (request, reply) => {
