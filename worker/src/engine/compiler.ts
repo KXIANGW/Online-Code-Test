@@ -6,9 +6,10 @@ import {
   sandboxHostConfig,
   SANDBOX_USER,
 } from "./sandbox";
+import type { LanguageSpec } from "./languages";
 
 export interface CompileOptions {
-  language: "python3" | "cpp17";
+  spec: LanguageSpec;
   hostWorkDir: string;
   dockerClient?: Docker;
 }
@@ -20,13 +21,15 @@ export interface CompileResult {
 
 export async function compileInSandbox(options: CompileOptions): Promise<CompileResult> {
   const docker = options.dockerClient ?? defaultDocker;
-  if (options.language === "python3") return { success: true };
+
+  // Interpreted languages have no compile step
+  if (!options.spec.compile) return { success: true };
 
   await prepareSandboxWorkDir(options.hostWorkDir);
 
   const container = await docker.createContainer({
-    Image: "oj-sandbox-cpp",
-    Cmd: ["g++", "solution.cpp", "-O2", "-std=c++17", "-o", "solution", "-lm"],
+    Image: options.spec.image,
+    Cmd: options.spec.compile.cmd,
     WorkingDir: "/code",
     User: SANDBOX_USER,
     AttachStdout: true,

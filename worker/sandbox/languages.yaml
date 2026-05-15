@@ -1,0 +1,22 @@
+version: 1
+languages:
+  - id: cpp17
+    image: oct-sandbox-cpp:12
+    source:
+      filename: solution.cpp
+    compile:
+      cmd: ["g++", "solution.cpp", "-O2", "-std=c++17", "-o", "solution", "-lm"]
+    run:
+      cmd: ["/code/solution"]
+    enabled: true
+
+  - id: python3
+    image: oct-sandbox-python:3.11
+    source:
+      filename: solution.py
+    run:
+      cmd: ["python3", "/code/solution.py"]
+      env:
+        PYTHONUNBUFFERED: "1"
+        PYTHONDONTWRITEBYTECODE: "1"
+    enabled: true
