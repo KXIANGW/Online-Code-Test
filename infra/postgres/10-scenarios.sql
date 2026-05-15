@@ -38,6 +38,12 @@ DECLARE
   v_p6_id BIGINT;  -- Valid Parentheses  (medium)
   v_p7_id BIGINT;  -- LCS                (hard)
   v_p8_id BIGINT;  -- Coin Change        (hard)
+  -- new added 5 problems
+  v_p9_id BIGINT;   -- Container With Most Water (medium)
+  v_p10_id BIGINT;  -- Longest Substring Without Repeating Characters (medium)
+  v_p11_id BIGINT;  -- Edit Distance (hard)
+  v_p12_id BIGINT;  -- Sliding Window Maximum (hard)
+  v_p13_id BIGINT;  -- N-Queens (hard)
 
   -- Exam session IDs
   v_s1_id BIGINT; v_s2_id BIGINT; v_s3_id BIGINT;
@@ -228,6 +234,158 @@ BEGIN
     (v_p8_id, 1, TRUE,  E'3\n1 5 10\n11', '2'),
     (v_p8_id, 2, TRUE,  E'1\n2\n3',       '-1'),
     (v_p8_id, 3, FALSE, E'3\n1 2 5\n11',  '3');
+    
+  -------------------------------------------------------------------------------
+  -- 9. Container With Most Water (Medium)
+  --
+  -- [測資說明]
+  -- 輸入格式：第一行為陣列長度 N，第二行為 N 個由空格分隔的非負整數（代表垂直線高度）。
+  -- 輸出格式：一個整數，代表兩條線與 X 軸圍成的最大裝水容積。
+  --
+  -- 測資解析：
+  -- * Case 1 (Public): LeetCode 經典範例，最大容積由 index 1 (高8) 與 index 8 (高7) 組成，距離為 7，容積 = min(8, 7) * 7 = 49。
+  -- * Case 2 (Public): 邊界邊界測資（最小長度 N=2），高度均為 1，容積 = min(1, 1) * 1 = 1。
+  -- * Case 3 (Hidden): 遞減數列測資 [4, 3, 2, 1]，最佳解為選擇前兩個 [4, 3]，距離 1，容積 = min(4, 3) * 1 = 3，或選擇 [4, 2] 容積為 4。
+  -- * Case 4 (Hidden): 凹型/凸型過渡測資 [1, 2, 4, 3]，驗證雙指標（Two Pointers）向內收斂時的正確性。
+  -------------------------------------------------------------------------------
+  INSERT INTO problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb, created_by)
+  VALUES (
+    'Container With Most Water',
+    E'## Problem\n\nGiven $n$ non-negative integers $a_1, a_2, ..., a_n$ where each represents a point at coordinate $(i, a_i)$. Find two lines, which, together with the x-axis forms a container, such that the container contains the most water.\n\n**Input:** Line 1: `n` (number of elements); Line 2: space-separated integers representing heights.\n**Output:** An integer representing the maximum volume of water.',
+    'medium', 1000, 256, v_carol_id
+  ) RETURNING id INTO v_p9_id;
+
+  INSERT INTO problem_language_limits (problem_id, language, time_multiplier, memory_multiplier)
+  VALUES (v_p9_id, 'python3', 2.0, 2.0);
+
+  INSERT INTO problem_testcases (problem_id, order_index, is_public, input_data, expected_output) VALUES
+    (v_p9_id, 1, TRUE,  E'9\n1 8 6 2 5 4 8 3 7', '49'),
+    (v_p9_id, 2, TRUE,  E'2\n1 1', '1'),
+    (v_p9_id, 3, FALSE, E'4\n4 3 2 1', '4'),
+    (v_p9_id, 4, FALSE, E'5\n1 2 4 3', '4');
+
+
+  -------------------------------------------------------------------------------
+  -- 10. Longest Substring Without Repeating Characters (Medium)
+  --
+  -- [測資說明]
+  -- 輸入格式：第一行為一個字串 s（長度可能為 0，可能包含重複字母）。
+  -- 輸出格式：一個整數，代表不含重複字元的「最長連續子字串」長度。
+  --
+  -- 測資解析：
+  -- * Case 1 (Public): 標準交錯重複測資 "abcabcbb"，最長不重複子字串為 "abc"、"bca" 或 "cab"，長度均為 3。
+  -- * Case 2 (Public): 全重複單一字元測資 "bbbbb"，最長不重複長度僅能為 1。
+  -- * Case 3 (Public): 字元重疊於中段的測資 "pwwkew"，最長為 "wke"，長度為 3（注意 "pwke" 不是子字串，它是子序列）。
+  -- * Case 4 (Hidden): 邊界測資（空字串 ""），預期輸出為 0。驗證程式碼是否有做防禦性檢查。
+  -- * Case 5 (Hidden): 完全不重複的純遞增字串 "abcdefg"，預期輸出為字串總長度 7。
+  -------------------------------------------------------------------------------
+  INSERT INTO problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb, created_by)
+  VALUES (
+    'Longest Substring Without Repeating Characters',
+    E'## Problem\n\nGiven a string `s`, find the length of the longest substring without repeating characters.\n\n**Input:** Line 1: The string `s` (could be empty).\n**Output:** An integer representing the maximum length.',
+    'medium', 1000, 256, v_carol_id
+  ) RETURNING id INTO v_p10_id;
+
+  INSERT INTO problem_language_limits (problem_id, language, time_multiplier, memory_multiplier)
+  VALUES (v_p10_id, 'python3', 2.0, 2.0);
+
+  INSERT INTO problem_testcases (problem_id, order_index, is_public, input_data, expected_output) VALUES
+    (v_p10_id, 1, TRUE,  E'abcabcbb', '3'),
+    (v_p10_id, 2, TRUE,  E'bbbbb', '1'),
+    (v_p10_id, 3, TRUE,  E'pwwkew', '3'),
+    (v_p10_id, 4, FALSE, E'', '0'),
+    (v_p10_id, 5, FALSE, E'abcdefg', '7');
+
+
+  -------------------------------------------------------------------------------
+  -- 11. Edit Distance (Hard)
+  --
+  -- [測資說明]
+  -- 輸入格式：第一行為來源字串 word1，第二行為目標字串 word2。
+  -- 輸出格式：一個整數，代表將 word1 轉換為 word2 所需的最少操作步數（插入、刪除、替換）。
+  --
+  -- 測資解析：
+  -- * Case 1 (Public): 範例測資 "horse" -> "ros"，最少需要 3 步（h->r, 刪除 o, 刪除 e）。
+  -- * Case 2 (Public): 較長字串的複雜 DP 轉換 "intention" -> "execution"，最少需要 5 步。
+  -- * Case 3 (Hidden): 單一字元轉換為空字串 "a" -> ""，需要 1 步（刪除），驗證 DP 表邊界初始化。
+  -- * Case 4 (Hidden): 字元完全不同且長度相異的轉換 "plasma" -> "altitude"，需要 6 步，考驗動態規劃狀態轉移。
+  -------------------------------------------------------------------------------
+  INSERT INTO problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb, created_by)
+  VALUES (
+    'Edit Distance',
+    E'## Problem\n\nGiven two strings `word1` and `word2`, return the minimum number of operations required to convert `word1` to `word2`. You have 3 operations permitted on a word: Insert, Delete, or Replace a character.\n\n**Input:** Line 1: `word1`; Line 2: `word2`\n**Output:** An integer representing the minimum edit distance.',
+    'hard', 2000, 512, v_carol_id
+  ) RETURNING id INTO v_p11_id;
+
+  INSERT INTO problem_language_limits (problem_id, language, time_multiplier, memory_multiplier)
+  VALUES (v_p11_id, 'python3', 2.0, 2.0);
+
+  INSERT INTO problem_testcases (problem_id, order_index, is_public, input_data, expected_output) VALUES
+    (v_p11_id, 1, TRUE,  E'horse\nros', '3'),
+    (v_p11_id, 2, TRUE,  E'intention\nexecution', '5'),
+    (v_p11_id, 3, FALSE, E'a\n', '1'),
+    (v_p11_id, 4, FALSE, E'plasma\naltitude', '6');
+
+
+  -------------------------------------------------------------------------------
+  -- 12. Sliding Window Maximum (Hard)
+  --
+  -- [測資說明]
+  -- 輸入格式：第一行為兩個由空格分隔的整數，分別為陣列長度 N 與視窗大小 K。
+  --           第二行為 N 個由空格分隔的整數（包含負數）。
+  -- 輸出格式：一列由空格分隔的整數，代表視窗由左往右滑動時，每個視窗內的最大值。
+  --
+  -- 測資解析：
+  -- * Case 1 (Public): 經典範例，陣列包含正負號與起伏 [1, 3, -1, -3, 5, 3, 6, 7] 且 K=3，驗證單調佇列（Monotonic Queue）的維護。
+  -- * Case 2 (Public): 最小極端邊界，N=1 且 K=1，預期輸出即為該元素本身。
+  -- * Case 3 (Hidden): 完全單調遞減數列 [4, 3, 2, 1] 且 K=2，驗證當左側滑出視窗時，最大值能否正確遞減更新（輸出：4 3 2）。
+  -- * Case 4 (Hidden): 包含多個重複最大值與大幅震盪的數列 [-7, -8, 7, 5, 7, 1] 且 K=3，考驗雙向佇列（Deque）剔除過期索引的嚴謹度。
+  -------------------------------------------------------------------------------
+  INSERT INTO problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb, created_by)
+  VALUES (
+    'Sliding Window Maximum',
+    E'## Problem\n\nYou are given an array of integers `nums`, there is a sliding window of size `k` which is moving from the very left of the array to the very right. You can only see the `k` numbers in the window. Each time the sliding window moves right by one position. Return the max sliding window.\n\n**Input:** Line 1: `n` (array size) and `k` (window size) separated by space; Line 2: space-separated integers.\n**Output:** Space-separated max integers for each window position.',
+    'hard', 2000, 512, v_carol_id
+  ) RETURNING id INTO v_p12_id;
+
+  INSERT INTO problem_language_limits (problem_id, language, time_multiplier, memory_multiplier)
+  VALUES (v_p12_id, 'python3', 2.5, 2.0);
+
+  INSERT INTO problem_testcases (problem_id, order_index, is_public, input_data, expected_output) VALUES
+    (v_p12_id, 1, TRUE,  E'8 3\n1 3 -1 -3 5 3 6 7', '3 3 5 5 6 7'),
+    (v_p12_id, 2, TRUE,  E'1 1\n1', '1'),
+    (v_p12_id, 3, FALSE, E'4 2\n4 3 2 1', '4 3 2'),
+    (v_p12_id, 4, FALSE, E'6 3\n-7 -8 7 5 7 1', '7 7 7 7');
+
+
+  -------------------------------------------------------------------------------
+  -- 13. N-Queens (Hard)
+  --
+  -- [測資說明]
+  -- 輸入格式：第一行為一個整數 N，代表棋盤大小為 N * N。
+  -- 輸出格式：一個整數，代表在該棋盤上擺放 N 個互不攻擊的皇后，總共獨立存在幾種解法。
+  --
+  -- 測資解析：
+  -- * Case 1 (Public): 標準的 4 皇后問題（4x4 棋盤），其擺放法的對稱解總數為 2。
+  -- * Case 2 (Public): 邊界基礎解，1 皇后（1x1 棋盤），擺放方法數必為 1。
+  -- * Case 3 (Hidden): 經典的 8 皇后問題，解的總數為 92。這題可以有效測試回溯法（Backtracking）在大量遞迴下的效能與剪枝是否正確。
+  -- * Case 4 (Hidden): 5 皇后問題，總共有 10 種可能解。作為中等複雜度效能與正確性的夾擊驗證。
+  -------------------------------------------------------------------------------
+  INSERT INTO problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb, created_by)
+  VALUES (
+    'N-Queens',
+    E'## Problem\n\nThe n-queens puzzle is the problem of placing $n$ queens on an $n \times n$ chessboard such that no two queens attack each other. Given an integer $n$, return the number of distinct solutions.\n\n**Input:** Line 1: An integer `n`.\n**Output:** An integer representing the total number of distinct solutions.',
+    'hard', 2000, 512, v_carol_id
+  ) RETURNING id INTO v_p13_id;
+
+  INSERT INTO problem_language_limits (problem_id, language, time_multiplier, memory_multiplier)
+  VALUES (v_p13_id, 'python3', 2.0, 2.0);
+
+  INSERT INTO problem_testcases (problem_id, order_index, is_public, input_data, expected_output) VALUES
+    (v_p13_id, 1, TRUE,  E'4', '2'),
+    (v_p13_id, 2, TRUE,  E'1', '1'),
+    (v_p13_id, 3, FALSE, E'8', '92'),
+    (v_p13_id, 4, FALSE, E'5', '10');
 
   -- ================================================================
   -- 3. EXAM SESSIONS
