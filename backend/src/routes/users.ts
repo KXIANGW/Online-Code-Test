@@ -7,6 +7,7 @@ import {
   batchCreateCandidates,
   getUser,
   updateUser,
+  updateUserRoles,
   deleteUser,
 } from "../services/user.service";
 import { BadRequestError } from "../errors";
@@ -26,6 +27,10 @@ const updateUserBody = z.object({
 
 const batchBody = z.object({
   count: z.number().int().min(1).max(100),
+});
+
+const updateRolesBody = z.object({
+  roleNames: z.array(z.string()),
 });
 
 export const userRoutes: FastifyPluginAsync = async (app) => {
@@ -57,6 +62,13 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     const result = updateUserBody.safeParse(request.body);
     if (!result.success) throw BadRequestError(result.error.message);
     return updateUser(request.user, parsePositiveIntParam(id, "id"), result.data);
+  });
+
+  app.put("/:id/roles", { preHandler: [authenticate] }, async (request) => {
+    const { id } = request.params as { id: string };
+    const result = updateRolesBody.safeParse(request.body);
+    if (!result.success) throw BadRequestError(result.error.message);
+    return updateUserRoles(request.user, parsePositiveIntParam(id, "id"), result.data.roleNames);
   });
 
   app.delete("/:id", { preHandler: [authenticate] }, async (request, reply) => {

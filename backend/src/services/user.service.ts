@@ -209,6 +209,39 @@ export async function updateUser(
   return updated!;
 }
 
+export async function updateUserRoles(
+  currentUser: CurrentUser,
+  targetId: number,
+  roleNames: string[],
+) {
+  requireSuperuser(currentUser);
+
+  const allowed = new Set(["interviewer", "problem_setter"]);
+  if (roleNames.some((r) => !allowed.has(r))) throw BadRequestError("Only interviewer and problem_setter roles are assignable");
+
+  const [existing] = await db
+    .select({ id: users.id, deletedAt: users.deletedAt, isSuperuser: users.isSuperuser })
+    .from(users)
+    .where(eq(users.id, targetId));
+
+  if (!existing || existing.deletedAt !== null) throw NotFoundError("user");
+  if (existing.isSuperuser) throw ForbiddenError();
+
+  await db.transaction(async (tx) => {
+    await tx.delete(userRoles).where(eq(userRoles.userId, targetId));
+    if (roleNames.length > 0) {
+      const roleRows = await tx
+        .select({ id: roles.id })
+        .from(roles)
+        .where(inArray(roles.name, roleNames));
+      if (roleRows.length !== new Set(roleNames).size) throw BadRequestError("Unknown role");
+      await tx.insert(userRoles).values(roleRows.map((r) => ({ userId: targetId, roleId: r.id })));
+    }
+  });
+
+  return { id: targetId, roles: roleNames };
+}
+
 export async function deleteUser(currentUser: CurrentUser, targetId: number) {
   requirePermissionOrSuperuser(currentUser, "exam:manage");
 

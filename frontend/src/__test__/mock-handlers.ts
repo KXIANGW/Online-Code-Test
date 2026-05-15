@@ -45,6 +45,11 @@ export const handlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
 
+  http.put(`${BASE}/users/:id/roles`, async ({ request, params }) => {
+    const body = (await request.json()) as { roleNames: string[] };
+    return HttpResponse.json({ id: Number(params.id), roles: body.roleNames });
+  }),
+
   http.delete(`${BASE}/users/:id`, () => {
     return new HttpResponse(null, { status: 204 });
   }),

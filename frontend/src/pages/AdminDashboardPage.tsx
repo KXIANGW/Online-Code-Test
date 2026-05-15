@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavBar } from "../components/NavBar";
-import { createUser, deleteUser, getUsers } from "../api/client";
+import { createUser, deleteUser, getUsers, updateUserRoles } from "../api/client";
 import { CreateUserRequest } from "../types";
 
 type UserRole = "interviewer" | "problem_setter" | "candidate" | "root";
@@ -52,6 +52,9 @@ export default function AdminDashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<"all" | "role">("all");
   const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
+  const [editingUser, setEditingUser] = useState<{ id: number; username: string } | null>(null);
+  const [pendingRoles, setPendingRoles] = useState<Array<"interviewer" | "problem_setter">>([]);
+  const [savingRoles, setSavingRoles] = useState(false);
 
   const filteredUsers = users
     .filter((user) => {
@@ -145,6 +148,42 @@ export default function AdminDashboardPage() {
       .catch(() => {
         alert("刪除使用者失敗，請稍後再試。");
       });
+  }
+
+  function handleOpenEditRoles(user: UserRow) {
+    setEditingUser({ id: user.id, username: user.username });
+    setPendingRoles(
+      user.roles.filter(
+        (r): r is "interviewer" | "problem_setter" =>
+          r === "interviewer" || r === "problem_setter",
+      ),
+    );
+  }
+
+  function handleTogglePendingRole(role: "interviewer" | "problem_setter") {
+    setPendingRoles((current) =>
+      current.includes(role)
+        ? current.filter((r) => r !== role)
+        : [...current, role],
+    );
+  }
+
+  function handleSaveRoles() {
+    if (!editingUser) return;
+    setSavingRoles(true);
+    updateUserRoles(editingUser.id, pendingRoles)
+      .then(() => {
+        setUsers((current) =>
+          current.map((u) =>
+            u.id === editingUser.id ? { ...u, roles: pendingRoles } : u,
+          ),
+        );
+        setEditingUser(null);
+      })
+      .catch(() => {
+        alert("更新角色失敗，請稍後再試。");
+      })
+      .finally(() => setSavingRoles(false));
   }
 
   return (
@@ -280,7 +319,9 @@ export default function AdminDashboardPage() {
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap"
+                        onClick={() => handleOpenEditRoles(user)}
+                        disabled={user.isSuperuser || user.roles.includes("candidate")}
+                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
                       >
                         編輯角色
                       </button>
@@ -377,6 +418,63 @@ export default function AdminDashboardPage() {
           </form>
         </section>
       </main>
+
+      {editingUser && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          aria-label="編輯角色"
+        >
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-slate-900">編輯角色</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {editingUser.username}
+            </p>
+
+            <div className="mt-5 flex flex-col gap-3">
+              {(
+                [
+                  { role: "interviewer", label: "interviewer（面試官）", color: "text-blue-600" },
+                  { role: "problem_setter", label: "problem_setter（出題者）", color: "text-purple-600" },
+                ] as const
+              ).map(({ role, label, color }) => (
+                <label
+                  key={role}
+                  className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={pendingRoles.includes(role)}
+                    onChange={() => handleTogglePendingRole(role)}
+                    className={`h-4 w-4 rounded border-slate-300 ${color} focus:ring-2`}
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingUser(null)}
+                disabled={savingRoles}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveRoles}
+                disabled={savingRoles}
+                className="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-40"
+              >
+                {savingRoles ? "儲存中..." : "儲存"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

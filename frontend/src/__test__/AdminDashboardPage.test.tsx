@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import AdminDashboardPage from "../pages/AdminDashboardPage";
@@ -9,11 +9,13 @@ import type { UserSummary, CreateUserResponse } from "../types";
 const mockGetUsers = vi.hoisted(() => vi.fn());
 const mockCreateUser = vi.hoisted(() => vi.fn());
 const mockDeleteUser = vi.hoisted(() => vi.fn());
+const mockUpdateUserRoles = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
   getUsers: mockGetUsers,
   createUser: mockCreateUser,
   deleteUser: mockDeleteUser,
+  updateUserRoles: mockUpdateUserRoles,
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -77,6 +79,7 @@ describe("AdminDashboardPage()", () => {
     mockGetUsers.mockReset();
     mockCreateUser.mockReset();
     mockDeleteUser.mockReset();
+    mockUpdateUserRoles.mockReset();
     vi.spyOn(window, "alert").mockImplementation(() => undefined);
   });
 
@@ -377,6 +380,158 @@ describe("AdminDashboardPage()", () => {
     // expect
     expect(window.alert).toHaveBeenCalledWith("請至少選擇一個角色！");
     expect(mockCreateUser).not.toHaveBeenCalled();
+  });
+
+  // ── Edit role button disable logic ─────────────────────────────────────────
+
+  it("disables 編輯角色 button for superuser (root)", async () => {
+    // given
+    mockGetUsers.mockResolvedValue([rootUser]);
+
+    // when
+    renderPage();
+    await waitFor(() => screen.getByText("root"));
+
+    // expect
+    expect(screen.getByRole("button", { name: "編輯角色" })).toBeDisabled();
+  });
+
+  it("disables 編輯角色 button for candidate", async () => {
+    // given
+    mockGetUsers.mockResolvedValue([candidate]);
+
+    // when
+    renderPage();
+    await waitFor(() => screen.getByText("candidate01"));
+
+    // expect
+    expect(screen.getByRole("button", { name: "編輯角色" })).toBeDisabled();
+  });
+
+  it("enables 編輯角色 button for interviewer", async () => {
+    // given
+    mockGetUsers.mockResolvedValue([interviewer]);
+
+    // when
+    renderPage();
+    await waitFor(() => screen.getByText("interviewer01"));
+
+    // expect
+    expect(screen.getByRole("button", { name: "編輯角色" })).not.toBeDisabled();
+  });
+
+  it("enables 編輯角色 button for problem_setter", async () => {
+    // given
+    mockGetUsers.mockResolvedValue([problemSetter]);
+
+    // when
+    renderPage();
+    await waitFor(() => screen.getByText("setter01"));
+
+    // expect
+    expect(screen.getByRole("button", { name: "編輯角色" })).not.toBeDisabled();
+  });
+
+  // ── Edit role modal ────────────────────────────────────────────────────────
+
+  it("opens modal with existing roles pre-checked when clicking 編輯角色", async () => {
+    // given
+    mockGetUsers.mockResolvedValue([interviewer]);
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => screen.getByText("interviewer01"));
+
+    // when
+    await user.click(screen.getByRole("button", { name: "編輯角色" }));
+
+    // expect — modal visible, interviewer pre-checked, problem_setter unchecked
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/interviewer（面試官）/)).toBeChecked();
+    expect(within(dialog).getByLabelText(/problem_setter（出題者）/)).not.toBeChecked();
+  });
+
+  it("closes modal without saving when 取消 is clicked", async () => {
+    // given
+    mockGetUsers.mockResolvedValue([interviewer]);
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => screen.getByText("interviewer01"));
+    await user.click(screen.getByRole("button", { name: "編輯角色" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    // when
+    await user.click(screen.getByRole("button", { name: "取消" }));
+
+    // expect
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockUpdateUserRoles).not.toHaveBeenCalled();
+  });
+
+  it("calls updateUserRoles and updates pills on save", async () => {
+    // given
+    mockGetUsers.mockResolvedValue([interviewer]);
+    mockUpdateUserRoles.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => screen.getByText("interviewer01"));
+    await user.click(screen.getByRole("button", { name: "編輯角色" }));
+
+    // when — also check problem_setter, then save
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByLabelText(/problem_setter（出題者）/));
+    await user.click(within(dialog).getByRole("button", { name: "儲存" }));
+
+    // expect
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(mockUpdateUserRoles).toHaveBeenCalledWith(interviewer.id, [
+      "interviewer",
+      "problem_setter",
+    ]);
+    expect(screen.getByText("出題者")).toBeInTheDocument();
+  });
+
+  it("shows alert and keeps modal open when updateUserRoles fails", async () => {
+    // given
+    mockGetUsers.mockResolvedValue([interviewer]);
+    mockUpdateUserRoles.mockRejectedValue(new Error("Server Error"));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => screen.getByText("interviewer01"));
+    await user.click(screen.getByRole("button", { name: "編輯角色" }));
+
+    // when
+    await user.click(screen.getByRole("button", { name: "儲存" }));
+
+    // expect
+    await waitFor(() =>
+      expect(window.alert).toHaveBeenCalledWith("更新角色失敗，請稍後再試。"),
+    );
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("unchecking a role removes it from pendingRoles on save", async () => {
+    // given — start with both roles
+    mockGetUsers.mockResolvedValue([multiRoleUser]);
+    mockUpdateUserRoles.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => screen.getByText("multi01"));
+    await user.click(screen.getByRole("button", { name: "編輯角色" }));
+
+    // when — uncheck interviewer, save
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByLabelText(/interviewer（面試官）/));
+    await user.click(within(dialog).getByRole("button", { name: "儲存" }));
+
+    // expect
+    await waitFor(() =>
+      expect(mockUpdateUserRoles).toHaveBeenCalledWith(multiRoleUser.id, [
+        "problem_setter",
+      ]),
+    );
   });
 
   it("shows alert when createUser API fails", async () => {
