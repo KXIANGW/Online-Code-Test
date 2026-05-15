@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
