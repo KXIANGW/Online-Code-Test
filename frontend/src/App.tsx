@@ -10,6 +10,7 @@ import ProblemFormPage from "./pages/ProblemFormPage";
 import ExamCreatePage from "./pages/ExamCreatePage";
 import ExamPage from "./pages/ExamPage";
 import { useAuthStore } from "./stores/authStore";
+import { PERMISSIONS, type Permission } from "./config/permissions";
 
 /**
  * 嚴格權限路由守衛
@@ -20,7 +21,7 @@ function RoleBasedRoute({
   onlyAdmin = false,
 }: {
   children: ReactNode;
-  requiredPermission?: "exam:manage" | "problem:manage" | "exam:take";
+  requiredPermission?: Permission;
   onlyAdmin?: boolean;
 }) {
   const { token, isSuperuser, permissions } = useAuthStore((s) => ({
@@ -87,15 +88,15 @@ function RoleRedirect() {
   if (isSuperuser) return <Navigate to="/admin" replace />;
 
   // 優先級 2: 面試主管 (Interviewer) -> /interviewer
-  if (permissions.includes("exam:manage"))
+  if (permissions.includes(PERMISSIONS.EXAM_MANAGE))
     return <Navigate to="/interviewer" replace />;
 
   // 優先級 3: 出題主管 (Problem Setter) -> /problem-setter
-  if (permissions.includes("problem:manage"))
+  if (permissions.includes(PERMISSIONS.PROBLEM_MANAGE))
     return <Navigate to="/problem-setter" replace />;
 
   // 優先級 4: 考生 -> /candidate
-  if (permissions.includes("exam:take"))
+  if (permissions.includes(PERMISSIONS.EXAM_TAKE))
     return <Navigate to="/candidate" replace />;
 
   return <Navigate to="/" replace />;
@@ -127,7 +128,7 @@ export default function App() {
         <Route
           path="/interviewer"
           element={
-            <RoleBasedRoute requiredPermission="exam:manage">
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
               <InterviewerDashboardPage />
             </RoleBasedRoute>
           }
@@ -137,7 +138,7 @@ export default function App() {
         <Route
           path="/candidate"
           element={
-            <RoleBasedRoute requiredPermission="exam:take">
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_TAKE}>
               <DashboardPage />
             </RoleBasedRoute>
           }
@@ -147,7 +148,7 @@ export default function App() {
         <Route
           path="/problem-setter"
           element={
-            <RoleBasedRoute requiredPermission="problem:manage">
+            <RoleBasedRoute requiredPermission={PERMISSIONS.PROBLEM_MANAGE}>
               <ProblemSetterDashboardPage />
             </RoleBasedRoute>
           }
@@ -157,7 +158,7 @@ export default function App() {
         <Route
           path="/problem-setter/new"
           element={
-            <RoleBasedRoute requiredPermission="problem:manage">
+            <RoleBasedRoute requiredPermission={PERMISSIONS.PROBLEM_MANAGE}>
               <ProblemFormPage />
             </RoleBasedRoute>
           }
@@ -167,7 +168,7 @@ export default function App() {
         <Route
           path="/problem-setter/:id/edit"
           element={
-            <RoleBasedRoute requiredPermission="problem:manage">
+            <RoleBasedRoute requiredPermission={PERMISSIONS.PROBLEM_MANAGE}>
               <ProblemFormPage />
             </RoleBasedRoute>
           }
@@ -177,7 +178,7 @@ export default function App() {
         <Route
           path="/interviewer/new"
           element={
-            <RoleBasedRoute requiredPermission="exam:manage">
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
               <ExamCreatePage />
             </RoleBasedRoute>
           }
@@ -187,7 +188,7 @@ export default function App() {
         <Route
           path="/exam/:id"
           element={
-            <RoleBasedRoute requiredPermission="exam:take">
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_TAKE}>
               <ExamPage />
             </RoleBasedRoute>
           }
@@ -197,7 +198,7 @@ export default function App() {
         <Route
           path="/result/:id"
           element={
-            <RoleBasedRoute requiredPermission="exam:manage">
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
               <ExamResultPage />
             </RoleBasedRoute>
           }
