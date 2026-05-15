@@ -2,7 +2,7 @@ name: CD
 
 on:
   push:
-    branches: ['release/**']
+    branches: ["release/**"]
 
 env:
   REGISTRY: ghcr.io
@@ -30,9 +30,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract version from branch name
+      - name: Extract version and lowercase owner
         id: version
-        run: echo "value=${GITHUB_REF#refs/heads/release/}" >> $GITHUB_OUTPUT
+        run: |
+          echo "value=${GITHUB_REF#refs/heads/release/}" >> $GITHUB_OUTPUT
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
 
       - uses: docker/login-action@v3
         with:
@@ -46,7 +48,7 @@ jobs:
         with:
           context: ${{ matrix.context }}
           push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/oct-${{ matrix.service }}:${{ steps.version.outputs.value }}
+          tags: ${{ env.REGISTRY }}/${{ steps.version.outputs.owner }}/oct-${{ matrix.service }}:${{ steps.version.outputs.value }}
           build-args: ${{ matrix.build-args }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,scope=${{ matrix.service }},mode=max
