@@ -15,8 +15,6 @@ interface UserRow {
 
 const initialUsers: UserRow[] = [];
 
-
-
 function RolePill({ role }: { role: UserRole }) {
   const label =
     role === "interviewer"
@@ -55,18 +53,20 @@ export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState<"all" | "role">("all");
   const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
 
-  const filteredUsers = users.filter((user) => {
-    const nameMatch = user.username
-      .toLowerCase()
-      .includes(searchTerm.trim().toLowerCase());
-    if (!nameMatch) return false;
+  const filteredUsers = users
+    .filter((user) => {
+      const nameMatch = user.username
+        .toLowerCase()
+        .includes(searchTerm.trim().toLowerCase());
+      if (!nameMatch) return false;
 
-    if (activeTab === "role" && roleFilter !== "all") {
-      return user.roles.includes(roleFilter);
-    }
+      if (activeTab === "role" && roleFilter !== "all") {
+        return user.roles.includes(roleFilter);
+      }
 
-    return true;
-  });
+      return true;
+    })
+    .sort((a, b) => a.id - b.id);
 
   useEffect(() => {
     setLoading(true);
@@ -191,9 +191,7 @@ export default function AdminDashboardPage() {
                   <button
                     key={tab.key}
                     type="button"
-                    onClick={() =>
-                      setActiveTab(tab.key as "all" | "role")
-                    }
+                    onClick={() => setActiveTab(tab.key as "all" | "role")}
                     className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
                       activeTab === tab.key
                         ? "bg-slate-900 text-white"

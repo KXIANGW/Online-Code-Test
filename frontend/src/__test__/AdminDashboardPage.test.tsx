@@ -193,6 +193,26 @@ describe("AdminDashboardPage()", () => {
     });
   });
 
+  // ── ID sort ────────────────────────────────────────────────────────────────
+
+  it("renders users in ascending ID order regardless of API response order", async () => {
+    // given — API returns users in reverse ID order
+    mockGetUsers.mockResolvedValue([candidate, problemSetter, interviewer, rootUser]);
+
+    // when
+    renderPage();
+
+    // expect — DOM order should be id 1 → 2 → 3 → 4
+    await waitFor(() => screen.getByText("root"));
+    const usernames = screen
+      .getAllByRole("paragraph")
+      .map((el) => el.textContent)
+      .filter((t) =>
+        ["root", "interviewer01", "setter01", "candidate01"].includes(t ?? ""),
+      );
+    expect(usernames).toEqual(["root", "interviewer01", "setter01", "candidate01"]);
+  });
+
   // ── Search filter ──────────────────────────────────────────────────────────
 
   it("filters users by username search term", async () => {
