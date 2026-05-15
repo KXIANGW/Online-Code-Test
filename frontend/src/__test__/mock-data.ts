@@ -65,13 +65,15 @@ export const mockUserSummaries: UserSummary[] = [
     displayName: "Alice Chen",
     isSuperuser: false,
     createdAt: "2026-01-01T00:00:00.000Z",
+    roles: ["candidate"],
   },
   {
     id: 2,
-    username: "candidate02",
+    username: "interviewer01",
     displayName: "Bob Li",
     isSuperuser: false,
     createdAt: "2026-01-02T00:00:00.000Z",
+    roles: ["interviewer"],
   },
   {
     id: 3,
@@ -79,6 +81,7 @@ export const mockUserSummaries: UserSummary[] = [
     displayName: "Prof. Wang",
     isSuperuser: true,
     createdAt: "2025-01-01T00:00:00.000Z",
+    roles: [],
   },
 ];
 

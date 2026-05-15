@@ -3,7 +3,7 @@ import { NavBar } from "../components/NavBar";
 import { createUser, deleteUser, getUsers } from "../api/client";
 import { CreateUserRequest } from "../types";
 
-type UserRole = "interviewer" | "problem_setter" | "root";
+type UserRole = "interviewer" | "problem_setter" | "candidate" | "root";
 
 interface UserRow {
   id: number;
@@ -23,13 +23,17 @@ function RolePill({ role }: { role: UserRole }) {
       ? "面試官"
       : role === "problem_setter"
         ? "出題者"
-        : "Root";
+        : role === "candidate"
+          ? "候選人"
+          : "Root";
   const color =
     role === "interviewer"
       ? "bg-blue-50 text-blue-600"
       : role === "problem_setter"
         ? "bg-purple-50 text-purple-600"
-        : "bg-slate-100 text-slate-500";
+        : role === "candidate"
+          ? "bg-green-50 text-green-600"
+          : "bg-slate-100 text-slate-500";
   return (
     <span
       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${color}`}
@@ -75,7 +79,7 @@ export default function AdminDashboardPage() {
             username: item.username,
             displayName: item.displayName ?? item.username,
             isSuperuser: item.isSuperuser,
-            roles: item.isSuperuser ? ["root"] : [],
+            roles: item.isSuperuser ? ["root"] : (item.roles as UserRole[]),
           })),
         );
       })
@@ -221,6 +225,7 @@ export default function AdminDashboardPage() {
                   { key: "root", label: "Root" },
                   { key: "interviewer", label: "面試官" },
                   { key: "problem_setter", label: "出題者" },
+                  { key: "candidate", label: "候選人" },
                 ].map((filter) => (
                   <button
                     key={filter.key}

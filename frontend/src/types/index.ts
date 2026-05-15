@@ -5,6 +5,7 @@ export interface UserSummary {
   displayName: string | null;
   isSuperuser: boolean;
   createdAt: string;
+  roles: string[];
 }
 
 export interface CreateUserRequest {
