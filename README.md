@@ -277,17 +277,23 @@ kubectl get scaledobject  # 查看 KEDA 自動擴縮設定
 ### CI/CD 流程總覽
 
 ```
-開發者 push 到 develop
+開發者 push 到 develop（或任意分支）
         ↓
-CI（.github/workflows/ci.yml）
-  lint → test → build → push image 到 ghcr.io（tag: commit SHA）
+CI（.github/workflows/ci.yml）自動觸發
+  frontend: lint → test → build
+  backend:  lint → test（含 DB integration）
+  build-images: build & push image 到 ghcr.io（tag: commit SHA 前 10 碼）
         ↓
-開發者 push 到 release/x.y.z
+開發者開 PR，目標分支為 release/x.y.z
         ↓
-CD（.github/workflows/cd.yml）
-  build → push image 到 ghcr.io（tag: x.y.z）
+Branch Protection 檢查：CI 所有 job 必須通過才允許 merge
+        ↓
+PR merge → 觸發 CD（.github/workflows/cd.yml）
+  build & push image 到 ghcr.io（tag: x.y.z）
         ↓
 （手動）helm upgrade → k8s Rolling Update → 零停機換版
 ```
+
+> **Branch Protection 說明**：`release/**` 分支已啟用保護，禁止直接 push，所有變更必須透過 PR，且 CI 全部通過後才可 merge。這確保進入 CD 的程式碼一定經過測試。
 
 Image 存放位置：`ghcr.io/kxiangw/oct-{frontend,backend,worker}:{tag}`
