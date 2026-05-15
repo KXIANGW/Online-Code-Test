@@ -7,8 +7,15 @@ import {
   updateUserRoles,
 } from "../api/client";
 import { CreateUserRequest } from "../types";
+import {
+  ROLE_CONFIG_MAP,
+  ROLE_CONFIGS,
+  EDITABLE_ROLES,
+  CREATABLE_ROLES,
+  type RoleKey,
+} from "../config/roles";
 
-type UserRole = "interviewer" | "problem_setter" | "candidate" | "root";
+type UserRole = RoleKey;
 
 interface UserRow {
   id: number;
@@ -21,27 +28,12 @@ interface UserRow {
 const initialUsers: UserRow[] = [];
 
 function RolePill({ role }: { role: UserRole }) {
-  const label =
-    role === "interviewer"
-      ? "面試官"
-      : role === "problem_setter"
-        ? "出題者"
-        : role === "candidate"
-          ? "候選人"
-          : "Root";
-  const color =
-    role === "interviewer"
-      ? "bg-blue-50 text-blue-600"
-      : role === "problem_setter"
-        ? "bg-purple-50 text-purple-600"
-        : role === "candidate"
-          ? "bg-green-50 text-green-600"
-          : "bg-slate-100 text-slate-500";
+  const config = ROLE_CONFIG_MAP[role];
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${color}`}
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${config.pillColor}`}
     >
-      {label}
+      {config.label}
     </span>
   );
 }
@@ -61,9 +53,7 @@ export default function AdminDashboardPage() {
     id: number;
     username: string;
   } | null>(null);
-  const [pendingRoles, setPendingRoles] = useState<
-    Array<"interviewer" | "problem_setter">
-  >([]);
+  const [pendingRoles, setPendingRoles] = useState<RoleKey[]>([]);
   const [savingRoles, setSavingRoles] = useState(false);
 
   const filteredUsers = users
@@ -162,15 +152,10 @@ export default function AdminDashboardPage() {
 
   function handleOpenEditRoles(user: UserRow) {
     setEditingUser({ id: user.id, username: user.username });
-    setPendingRoles(
-      user.roles.filter(
-        (r): r is "interviewer" | "problem_setter" =>
-          r === "interviewer" || r === "problem_setter",
-      ),
-    );
+    setPendingRoles(user.roles.filter((r) => ROLE_CONFIG_MAP[r]?.editable));
   }
 
-  function handleTogglePendingRole(role: "interviewer" | "problem_setter") {
+  function handleTogglePendingRole(role: RoleKey) {
     setPendingRoles((current) =>
       current.includes(role)
         ? current.filter((r) => r !== role)
@@ -269,10 +254,7 @@ export default function AdminDashboardPage() {
               <div className="mt-4 flex flex-wrap gap-2">
                 {[
                   { key: "all", label: "全部角色" },
-                  { key: "root", label: "Root" },
-                  { key: "interviewer", label: "面試官" },
-                  { key: "problem_setter", label: "出題者" },
-                  { key: "candidate", label: "候選人" },
+                  ...ROLE_CONFIGS.map((r) => ({ key: r.key, label: r.label })),
                 ].map((filter) => (
                   <button
                     key={filter.key}
@@ -401,24 +383,20 @@ export default function AdminDashboardPage() {
                 授權面試官或出題者，角色可疊加。
               </p>
               <div className="mt-3 flex flex-col gap-3">
-                <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={roleNames.includes("interviewer")}
-                    onChange={() => handleToggleRole("interviewer")}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span>interviewer（面試官）</span>
-                </label>
-                <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={roleNames.includes("problem_setter")}
-                    onChange={() => handleToggleRole("problem_setter")}
-                    className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                  />
-                  <span>problem_setter（出題者）</span>
-                </label>
+                {CREATABLE_ROLES.map((r) => (
+                  <label
+                    key={r.key}
+                    className="inline-flex items-center gap-2 text-sm text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={roleNames.includes(r.key)}
+                      onChange={() => handleToggleRole(r.key)}
+                      className={`h-4 w-4 rounded border-slate-300 ${r.checkboxColor} focus:ring-2`}
+                    />
+                    <span>{r.key}（{r.label}）</span>
+                  </label>
+                ))}
               </div>
             </div>
             <button
@@ -445,31 +423,18 @@ export default function AdminDashboardPage() {
             </p>
 
             <div className="mt-5 flex flex-col gap-3">
-              {(
-                [
-                  {
-                    role: "interviewer",
-                    label: "interviewer（面試官）",
-                    color: "text-blue-600",
-                  },
-                  {
-                    role: "problem_setter",
-                    label: "problem_setter（出題者）",
-                    color: "text-purple-600",
-                  },
-                ] as const
-              ).map(({ role, label, color }) => (
+              {EDITABLE_ROLES.map((r) => (
                 <label
-                  key={role}
+                  key={r.key}
                   className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer"
                 >
                   <input
                     type="checkbox"
-                    checked={pendingRoles.includes(role)}
-                    onChange={() => handleTogglePendingRole(role)}
-                    className={`h-4 w-4 rounded border-slate-300 ${color} focus:ring-2`}
+                    checked={pendingRoles.includes(r.key)}
+                    onChange={() => handleTogglePendingRole(r.key)}
+                    className={`h-4 w-4 rounded border-slate-300 ${r.checkboxColor} focus:ring-2`}
                   />
-                  <span>{label}</span>
+                  <span>{r.key}（{r.label}）</span>
                 </label>
               ))}
             </div>
