@@ -157,7 +157,7 @@ export default function ExamPage() {
   const currentCode = codes[activeProblemId] ?? "";
   const currentLang =
     selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
-  const monacoLang = getMonacoMode(currentLang);
+  const monacoLang = MONACO_LANG[currentLang] ?? currentLang;
 
   function handleCodeChange(value: string | undefined) {
     const code = value ?? "";
