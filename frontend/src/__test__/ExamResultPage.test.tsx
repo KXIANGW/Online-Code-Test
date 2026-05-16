@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import ExamResultPage from "../pages/ExamResultPage";
-import { mockSessionResult, mockSubmissionDetail } from "./mock-data";
+import { mockSessionResult, mockSubmissionDetail, mockSubmissions } from "./mock-data";
 import type { SessionResult } from "../types";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
@@ -12,6 +12,7 @@ const mockLogout = vi.hoisted(() => vi.fn());
 const mockUseAuthStore = vi.hoisted(() => vi.fn());
 const mockGetSessionResult = vi.hoisted(() => vi.fn());
 const mockGetSubmissionDetail = vi.hoisted(() => vi.fn());
+const mockListSessionSubmissions = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
@@ -21,6 +22,7 @@ vi.mock("../stores/authStore", () => ({ useAuthStore: mockUseAuthStore }));
 vi.mock("../api/client", () => ({
   getSessionResult: mockGetSessionResult,
   getSubmissionDetail: mockGetSubmissionDetail,
+  listSessionSubmissions: mockListSessionSubmissions,
 }));
 
 // ── Extra fixture data ────────────────────────────────────────────────────────
@@ -77,6 +79,8 @@ describe("ExamResultPage()", () => {
     mockUseAuthStore.mockReset();
     mockGetSessionResult.mockReset();
     mockGetSubmissionDetail.mockReset();
+    mockListSessionSubmissions.mockReset();
+    mockListSessionSubmissions.mockResolvedValue([]);
     setupAuthStore();
   });
 
@@ -244,6 +248,33 @@ describe("ExamResultPage()", () => {
 
     // expect
     expect(await screen.findByText("0 / 80")).toBeInTheDocument();
+  });
+
+  it("loads and renders submission history for the interviewer", async () => {
+    mockGetSessionResult.mockResolvedValue(mockSessionResult);
+    mockListSessionSubmissions.mockResolvedValue(mockSubmissions);
+
+    renderPage();
+
+    expect(await screen.findByText("提交紀錄")).toBeInTheDocument();
+    expect(screen.getByText("一般")).toBeInTheDocument();
+    expect(screen.getByText("正式")).toBeInTheDocument();
+    expect(screen.getByText("最終提交")).toBeInTheDocument();
+  });
+
+  it("expands a history item and shows only public testcase results", async () => {
+    mockGetSessionResult.mockResolvedValue(mockSessionResult);
+    mockListSessionSubmissions.mockResolvedValue(mockSubmissions);
+    mockGetSubmissionDetail.mockResolvedValue(mockSubmissionDetail);
+
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "查看公開測資：提交 2" }),
+    );
+
+    expect(await screen.findByText("公開測資 1")).toBeInTheDocument();
+    expect(screen.getByText("公開測資 2")).toBeInTheDocument();
+    expect(screen.queryByText("測資 3")).not.toBeInTheDocument();
   });
 
   // ── Exam date ─────────────────────────────────────────────────────────────

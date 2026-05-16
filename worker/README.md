@@ -52,7 +52,7 @@ M2 已完成：Backend Mock Judge 已移除，替換為真實非同步判題系�
                                      │              Docker Engine (Host)          │
                                      │  ┌──────────────┐  ┌───────────────────┐  │
                                      │  │ compiler ctr  │  │  sandbox ctr      │  │
-                                     │  │ oj-sandbox-cpp│  │  oj-sandbox-cpp   │  │
+                                     │  │ oct-sandbox-cpp│ │  oct-sandbox-cpp  │  │
                                      │  │ (普通 runtime) │  │  (runsc / gVisor) │  │
                                      │  └──────────────┘  └───────────────────┘  │
                                      └───────────────────────────────────────────┘
@@ -66,8 +66,8 @@ M2 已完成：Backend Mock Judge 已移除，替換為真實非同步判題系�
 worker/
 ├── Dockerfile                  # node:20-alpine + docker-cli（偵錯用）；執行 dist/index.js
 ├── sandbox/
-│   ├── cpp/Dockerfile          # oj-sandbox-cpp image（ubuntu:22.04 + g++）
-│   └── python/Dockerfile       # oj-sandbox-python image（python:3.11-slim）
+│   ├── cpp/Dockerfile          # oct-sandbox-cpp:12 image（gcc:12-bookworm）
+│   └── python/Dockerfile       # oct-sandbox-python:3.11 image（python:3.11-slim）
 └── src/
     ├── index.ts                # 入口：連線 RabbitMQ、assert exchange/queue、設定 prefetch=1、啟動 consumer
     ├── config/
@@ -277,4 +277,4 @@ npm run lint
 
 - **Worker 端到端整合測試**：目前已有真實 PostgreSQL 的 `db/queries` integration tests；仍可補充真實 RabbitMQ + Docker sandbox 的 E2E worker 測試，驗證從 `judge.tasks` 到 `judge.results` 的完整鏈路。
 - **gVisor CI 安裝策略**：gVisor 需在 host 安裝，CI runner 需要支援巢狀虛擬化；目前 CI 用 `SANDBOX_RUNTIME=runc`，需評估是否引入 gVisor 專屬 CI 環境。
-- **Sandbox image 版本管理**：`oj-sandbox-cpp` / `oj-sandbox-python` 目前需手動 build；整合進 docker-compose build 或 registry push 流程。
+- **Sandbox image 版本管理**：`oct-sandbox-cpp:12` / `oct-sandbox-python:3.11` 目前需手動 build；整合進 docker-compose build 或 registry push 流程。

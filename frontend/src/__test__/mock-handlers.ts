@@ -109,11 +109,13 @@ export const handlers = [
       examSessionProblemId: number;
       language: string;
       sourceCode: string;
+      type: "simple" | "formal";
     };
     const created: SubmissionCreated = {
       id: Date.now(),
       examSessionProblemId: body.examSessionProblemId,
       language: body.language,
+      submissionType: body.type,
       status: "pending",
       verdict: null,
       runtimeMs: null,

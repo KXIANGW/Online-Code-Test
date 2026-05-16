@@ -9,6 +9,7 @@ import ProblemSetterDashboardPage from "./pages/ProblemSetterDashboardPage";
 import ProblemFormPage from "./pages/ProblemFormPage";
 import ExamCreatePage from "./pages/ExamCreatePage";
 import ExamPage from "./pages/ExamPage";
+import CandidateResultPage from "./pages/CandidateResultPage";
 import { useAuthStore } from "./stores/authStore";
 import { PERMISSIONS, type Permission } from "./config/permissions";
 
@@ -190,6 +191,16 @@ export default function App() {
           element={
             <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_TAKE}>
               <ExamPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 考生：交卷後結果頁 */}
+        <Route
+          path="/exam/:id/result"
+          element={
+            <RoleBasedRoute requiredPermission="exam:take">
+              <CandidateResultPage />
             </RoleBasedRoute>
           }
         />

@@ -15,6 +15,7 @@ import { publishToSession } from "../ws/hub";
 
 type ResultMessage = {
   submissionId: number;
+  eventType?: "status" | "result";
   sessionId?: number;
   examSessionProblemId?: number;
   type?: "simple" | "formal";
@@ -104,6 +105,32 @@ export async function buildJudgeResultPayload(submissionId: number) {
   };
 }
 
+export async function buildSubmissionStatusPayload(submissionId: number) {
+  const [submission] = await db
+    .select({
+      id: submissions.id,
+      status: submissions.status,
+      judgedAt: submissions.judgedAt,
+      sessionId: examSessionProblems.examSessionId,
+    })
+    .from(submissions)
+    .innerJoin(
+      examSessionProblems,
+      eq(submissions.examSessionProblemId, examSessionProblems.id)
+    )
+    .where(eq(submissions.id, submissionId));
+
+  if (!submission) return null;
+
+  return {
+    type: "submission_status",
+    submissionId: submission.id,
+    sessionId: submission.sessionId,
+    status: submission.status,
+    judgedAt: submission.judgedAt,
+  };
+}
+
 export async function handleJudgeResultMessage(
   channel: Pick<Channel, "ack">,
   message: ConsumeMessage
@@ -114,7 +141,10 @@ export async function handleJudgeResultMessage(
     return;
   }
 
-  const payload = await buildJudgeResultPayload(parsed.submissionId);
+  const payload =
+    parsed.eventType === "status"
+      ? await buildSubmissionStatusPayload(parsed.submissionId)
+      : await buildJudgeResultPayload(parsed.submissionId);
   if (payload) publishToSession(payload.sessionId, payload);
   channel.ack(message);
 }

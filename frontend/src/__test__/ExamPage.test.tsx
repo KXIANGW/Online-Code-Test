@@ -1,8 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ExamPage from "../pages/ExamPage";
-import type { ExamSession, ExamSessionProblem, Language } from "../types";
+import type {
+  ExamSession,
+  ExamSessionProblem,
+  JudgeResultMessage,
+  Language,
+  SubmissionStatusMessage,
+  SubmissionCreated,
+} from "../types";
+import { mockSubmissions } from "./mock-data";
 
 // ── Hoisted mock factories ────────────────────────────────────────────────────
 const mockGetExamSession         = vi.hoisted(() => vi.fn());
@@ -10,6 +18,11 @@ const mockGetExamSessionProblems = vi.hoisted(() => vi.fn());
 const mockGetLanguages           = vi.hoisted(() => vi.fn());
 const mockGetExamDrafts          = vi.hoisted(() => vi.fn());
 const mockSaveExamDraft          = vi.hoisted(() => vi.fn());
+const mockCreateSubmission       = vi.hoisted(() => vi.fn());
+const mockListSessionSubmissions = vi.hoisted(() => vi.fn());
+const mockSubmitExamSession      = vi.hoisted(() => vi.fn());
+const mockUseJudgeSocket         = vi.hoisted(() => vi.fn());
+const mockNavigate               = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
   getExamSession:         mockGetExamSession,
@@ -17,7 +30,19 @@ vi.mock("../api/client", () => ({
   getLanguages:           mockGetLanguages,
   getExamDrafts:          mockGetExamDrafts,
   saveExamDraft:          mockSaveExamDraft,
+  createSubmission:       mockCreateSubmission,
+  listSessionSubmissions: mockListSessionSubmissions,
+  submitExamSession:      mockSubmitExamSession,
 }));
+
+vi.mock("../hooks/useJudgeSocket", () => ({
+  useJudgeSocket: mockUseJudgeSocket,
+}));
+
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 vi.mock("@monaco-editor/react", () => ({
   default: ({
@@ -59,6 +84,7 @@ const mockExamPageSession: ExamSession = {
   durationMinutes: 90,
   actualStartAt: null,
   expiresAt: null,
+  submittedAt: null,
   totalScore: 0,
   maxScore: 100,
   createdAt: "2026-01-01T00:00:00.000Z",
@@ -138,6 +164,10 @@ async function renderExamPage(id = "42") {
 }
 
 describe("ExamPage", () => {
+  let realtimeHandler:
+    | ((message: JudgeResultMessage | SubmissionStatusMessage) => void)
+    | undefined;
+
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
@@ -146,6 +176,35 @@ describe("ExamPage", () => {
     mockGetLanguages.mockResolvedValue(mockExamPageLanguages);
     mockGetExamDrafts.mockResolvedValue({});
     mockSaveExamDraft.mockResolvedValue({ ok: true });
+    mockListSessionSubmissions.mockResolvedValue([]);
+    mockSubmitExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "submitted",
+      submittedAt: "2026-01-01T00:30:00.000Z",
+    });
+    mockCreateSubmission.mockImplementation(
+      async (_sessionId: number, { type }: { type: "simple" | "formal" }): Promise<SubmissionCreated> => ({
+        id: type === "simple" ? 9001 : 9002,
+        examSessionProblemId: 101,
+        language: "python3",
+        submissionType: type,
+        status: "pending",
+        verdict: null,
+        runtimeMs: null,
+        memoryKb: null,
+        submittedAt: "2026-01-01T00:10:00.000Z",
+        judgedAt: null,
+      }),
+    );
+    realtimeHandler = undefined;
+    mockUseJudgeSocket.mockImplementation(
+      (
+        _sessionId: number,
+        onJudgeResult: (message: JudgeResultMessage | SubmissionStatusMessage) => void,
+      ) => {
+        realtimeHandler = onJudgeResult;
+      },
+    );
   });
 
   // ── Layout ────────────────────────────────────────────────────────────────
@@ -177,6 +236,20 @@ describe("ExamPage", () => {
     await renderExamPage();
     // expect
     expect(screen.getByLabelText("倒數計時")).toHaveTextContent("--:--:--");
+  });
+
+  it("renders live remaining time when exam is in progress", async () => {
+    const oneHourFromNow = new Date(Date.now() + 3_600_500).toISOString();
+    mockGetExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "in_progress",
+      actualStartAt: new Date().toISOString(),
+      expiresAt: oneHourFromNow,
+    });
+
+    await renderExamPage();
+
+    expect(screen.getByLabelText("倒數計時")).toHaveTextContent("01:00:00");
   });
 
   it("renders problem description panel with first problem by default", async () => {
@@ -320,6 +393,26 @@ describe("ExamPage", () => {
     expect(screen.queryByRole("option", { name: "Python 3.11" })).not.toBeInTheDocument();
   });
 
+  it("falls back to the first enabled language when a restored draft language is disabled", async () => {
+    // given
+    mockGetLanguages.mockResolvedValue([
+      { ...mockExamPageLanguages[0], isEnabled: false },
+      mockExamPageLanguages[1],
+    ]);
+    localStorage.setItem(
+      "oct:draft:42:1",
+      JSON.stringify({ code: "print('stale')", language: "python3" }),
+    );
+
+    // when
+    await renderExamPage();
+
+    // expect
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    expect(select.value).toBe("cpp17");
+    expect(screen.getByLabelText("Code editor")).toHaveAttribute("data-language", "cpp");
+  });
+
   // ── Bottom panel tabs ─────────────────────────────────────────────────────
 
   it("switches to output tab when '執行結果' tab is clicked", async () => {
@@ -365,17 +458,140 @@ describe("ExamPage", () => {
     expect(screen.getByText("尚未執行")).toBeInTheDocument();
   });
 
-  it("clicking Submit switches bottom panel to '提交記錄' tab", async () => {
+  it("clicking Run creates a simple submission", async () => {
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('run')" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+    await waitFor(() =>
+      expect(mockCreateSubmission).toHaveBeenCalledWith(42, {
+        examSessionProblemId: 101,
+        language: "python3",
+        sourceCode: "print('run')",
+        type: "simple",
+      }),
+    );
+  });
+
+  it("clicking Submit creates a formal submission and switches to history", async () => {
     // given
     await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('submit')" },
+    });
     // when
     fireEvent.click(screen.getByRole("button", { name: "Submit" }));
     // expect
+    await waitFor(() =>
+      expect(mockCreateSubmission).toHaveBeenCalledWith(42, {
+        examSessionProblemId: 101,
+        language: "python3",
+        sourceCode: "print('submit')",
+        type: "formal",
+      }),
+    );
     expect(screen.getByRole("tab", { name: "提交記錄" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    expect(screen.getByText("尚無提交記錄")).toBeInTheDocument();
+  });
+
+  it("renders loaded submission history", async () => {
+    mockListSessionSubmissions.mockResolvedValue(mockSubmissions);
+    await renderExamPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+
+    expect(
+      within(screen.getByLabelText("底部面板")).getAllByText("1. Two Sum"),
+    ).toHaveLength(2);
+    expect(screen.getByText("一般")).toBeInTheDocument();
+    expect(screen.getByText("正式")).toBeInTheDocument();
+    expect(screen.getByText("WA")).toBeInTheDocument();
+    expect(screen.getByText("AC")).toBeInTheDocument();
+  });
+
+  it("updates pending submissions to judging from realtime lifecycle messages", async () => {
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('run')" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalled());
+
+    act(() => {
+      realtimeHandler?.({
+        type: "submission_status",
+        submissionId: 9001,
+        sessionId: 42,
+        status: "judging",
+        judgedAt: null,
+      });
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+    expect(screen.getByText("judging")).toBeInTheDocument();
+  });
+
+  it("shows realtime public testcase results after judge_result arrives", async () => {
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('run')" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalled());
+
+    act(() => {
+      realtimeHandler?.({
+        type: "judge_result",
+        submissionId: 9001,
+        examSessionProblemId: 101,
+        sessionId: 42,
+        status: "done",
+        verdict: "AC",
+        runtimeMs: 12,
+        memoryKb: 1024,
+        judgedAt: "2026-01-01T00:10:02.000Z",
+        submissionType: "simple",
+        score: 0,
+        testcaseResults: [
+          {
+            id: 1,
+            testcaseId: 1,
+            orderIndex: 1,
+            isPublic: true,
+            verdict: "AC",
+            runtimeMs: 12,
+            memoryKb: 1024,
+            actualOutput: "3",
+          },
+        ],
+      });
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "測試資料" }));
+    expect(screen.getByText("測資 1")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("submits the exam early after confirmation", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    mockGetExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "in_progress",
+      actualStartAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    await renderExamPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "提前結束考試" }));
+
+    await waitFor(() => expect(mockSubmitExamSession).toHaveBeenCalledWith(42));
+    expect(mockNavigate).toHaveBeenCalledWith("/exam/42/result");
+    confirmSpy.mockRestore();
   });
 
   // ── Expired overlay ───────────────────────────────────────────────────────

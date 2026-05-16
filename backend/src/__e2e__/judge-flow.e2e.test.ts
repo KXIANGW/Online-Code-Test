@@ -609,6 +609,40 @@ describe("Postgres + RabbitMQ + backend + worker end-to-end judging", () => {
     expect(detail.score).toBe(0);
   }, E2E_TEST_TIMEOUT_MS);
 
+  it("accepts valid C++ submissions end-to-end", async () => {
+    const stack = await createStack();
+    const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
+      sum: stack.problemIds.sum,
+    });
+    await startSession(session.sessionId, stack.candidates.perfect.token);
+
+    const submission = await submitCode(
+      session.sessionId,
+      session.problemsByKey.sum.id,
+      stack.candidates.perfect.token,
+      [
+        "#include <iostream>",
+        "int main() {",
+        "  long long a, b;",
+        "  std::cin >> a >> b;",
+        "  std::cout << (a + b) << '\\n';",
+        "  return 0;",
+        "}",
+        "",
+      ].join("\n"),
+      { language: "cpp17" }
+    );
+    await waitForSubmissionsDone([submission.id]);
+
+    const detail = await api<SubmissionDetail>(
+      "GET",
+      `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
+      stack.interviewer.token
+    );
+    expect(detail.verdict).toBe("AC");
+    expect(detail.score).toBe(30);
+  }, E2E_TEST_TIMEOUT_MS);
+
   it("keeps tasks durable while no worker is consuming and processes them after worker restart", async () => {
     await workerChannel.close();
     await waitForJudgeConsumerCount(0, 5000);

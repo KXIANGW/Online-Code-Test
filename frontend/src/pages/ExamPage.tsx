@@ -1,30 +1,41 @@
-import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { NavBar } from "../components/NavBar";
-import type { ExamSessionProblem, Language } from "../types";
+import type {
+  ExamSessionProblem,
+  ExamStatus,
+  JudgeSocketMessage,
+  Language,
+  SubmissionSummary,
+  TestcaseResult,
+} from "../types";
 import {
+  createSubmission,
   getExamSession,
   getExamSessionProblems,
   getLanguages,
   saveExamDraft,
   getExamDrafts,
+  listSessionSubmissions,
+  submitExamSession,
 } from "../api/client";
-import { getMonacoMode } from "../config/languages";
+import { formatTimeLeft, useExamTimer } from "../hooks/useExamTimer";
+import { useJudgeSocket } from "../hooks/useJudgeSocket";
+
+const MONACO_LANG: Record<string, string> = {
+  python3: "python",
+  cpp17: "cpp",
+  java21: "java",
+};
 
 type BottomTab = "testcases" | "output" | "history";
-function formatTimeLeft(seconds: number): string {
-  if (seconds <= 0) return "00:00:00";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
-}
 
 export default function ExamPage() {
   const { id: sessionIdStr } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const sessionId = Number(sessionIdStr);
 
   const [problems, setProblems] = useState<ExamSessionProblem[]>([]);
@@ -36,7 +47,12 @@ export default function ExamPage() {
   const [codes, setCodes] = useState<Record<number, string>>({});
   const [bottomTab, setBottomTab] = useState<BottomTab>("testcases");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<ExamStatus>("not_started");
+  const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
+  const [latestSubmissionId, setLatestSubmissionId] = useState<number | null>(null);
+  const [publicResultsBySubmission, setPublicResultsBySubmission] = useState<
+    Record<number, TestcaseResult[]>
+  >({});
   const [leftWidth, setLeftWidth] = useState(420);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -48,15 +64,22 @@ export default function ExamPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [session, sessionProblems, langs] = await Promise.all([
+        const [session, sessionProblems, langs, history] = await Promise.all([
           getExamSession(sessionId),
           getExamSessionProblems(sessionId),
           getLanguages(),
+          listSessionSubmissions(sessionId),
         ]);
 
-        const enabledLangs = langs.filter((l) => l.isEnabled);
+        const enabledLangs = langs.filter((l) => l.isEnabled !== false);
+        const enabledLanguageIds = new Set(
+          enabledLangs.map((lang) => lang.language),
+        );
         setProblems(sessionProblems);
         setLanguages(enabledLangs);
+        setSessionStatus(session.status);
+        setSubmissions(history);
+        setLatestSubmissionId(history.at(-1)?.id ?? null);
         if (session.expiresAt) setExpiresAt(session.expiresAt);
         if (sessionProblems.length > 0)
           setActiveProblemId(sessionProblems[0].problemId);
@@ -76,7 +99,10 @@ export default function ExamPage() {
               };
               if (parsed.code !== undefined)
                 initialCodes[p.problemId] = parsed.code;
-              initialLangs[p.problemId] = parsed.language ?? defaultLang;
+              initialLangs[p.problemId] =
+                parsed.language && enabledLanguageIds.has(parsed.language)
+                  ? parsed.language
+                  : defaultLang;
             } catch {
               initialLangs[p.problemId] = defaultLang;
             }
@@ -102,11 +128,18 @@ export default function ExamPage() {
                 setCodes((prev) => ({ ...prev, [pid]: draft.code }));
                 setSelectedLangs((prev) => ({
                   ...prev,
-                  [pid]: draft.language,
+                  [pid]: enabledLanguageIds.has(draft.language)
+                    ? draft.language
+                    : defaultLang,
                 }));
                 localStorage.setItem(
                   `oct:draft:${sessionId}:${pid}`,
-                  JSON.stringify(draft),
+                  JSON.stringify({
+                    ...draft,
+                    language: enabledLanguageIds.has(draft.language)
+                      ? draft.language
+                      : defaultLang,
+                  }),
                 );
               }
             }
@@ -131,27 +164,15 @@ export default function ExamPage() {
     };
   }, []);
 
-  // Countdown timer
-  useEffect(() => {
-    if (!expiresAt) {
-      setTimeLeft(null);
-      return;
-    }
-    const calc = () =>
-      Math.max(
-        0,
-        Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000),
-      );
-    setTimeLeft(calc());
-    const interval = setInterval(() => setTimeLeft(calc()), 1000);
-    return () => clearInterval(interval);
-  }, [expiresAt]);
+  const timeLeft = useExamTimer(expiresAt);
 
   const activeProblem = problems.find((p) => p.problemId === activeProblemId);
   const currentCode = codes[activeProblemId] ?? "";
   const currentLang =
     selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
-  const monacoLang = getMonacoMode(currentLang);
+  const monacoLang = currentLang
+    ? MONACO_LANG[currentLang] ?? currentLang
+    : "plaintext";
 
   function handleCodeChange(value: string | undefined) {
     const code = value ?? "";
@@ -206,15 +227,113 @@ export default function ExamPage() {
     document.addEventListener("mouseup", onMouseUp);
   }
 
+  async function sendSubmission(type: "simple" | "formal") {
+    if (!activeProblem || currentCode.trim().length === 0) return;
+
+    const created = await createSubmission(sessionId, {
+      examSessionProblemId: activeProblem.id,
+      language: currentLang,
+      sourceCode: currentCode,
+      type,
+    });
+
+    const summary: SubmissionSummary = {
+      ...created,
+      problemId: activeProblem.problemId,
+      problemTitle: activeProblem.title,
+      orderIndex: activeProblem.orderIndex,
+      score: 0,
+      scoreWeight: activeProblem.scoreWeight,
+      isFinalSubmission: false,
+    };
+
+    setSubmissions((prev) => [...prev, summary]);
+    setLatestSubmissionId(summary.id);
+    setBottomTab(type === "simple" ? "output" : "history");
+  }
+
   function handleRun() {
     setBottomTab("output");
+    void sendSubmission("simple");
   }
 
   function handleSubmit() {
     setBottomTab("history");
+    void sendSubmission("formal");
   }
 
+  async function handleFinishExam() {
+    if (!window.confirm("確定要提前結束考試嗎？交卷後將無法再次提交。")) return;
+    await submitExamSession(sessionId);
+    navigate(`/exam/${sessionId}/result`);
+  }
+
+  const reloadSubmissions = useCallback(async () => {
+    const history = await listSessionSubmissions(sessionId);
+    setSubmissions(history);
+    setLatestSubmissionId(history.at(-1)?.id ?? null);
+  }, [sessionId]);
+
+  const handleJudgeSocketMessage = useCallback((message: JudgeSocketMessage) => {
+    if (message.type === "submission_status") {
+      setSubmissions((prev) =>
+        prev.map((submission) =>
+          submission.id === message.submissionId
+            ? {
+                ...submission,
+                status: message.status,
+                judgedAt: message.judgedAt,
+              }
+            : submission,
+        ),
+      );
+      setLatestSubmissionId(message.submissionId);
+      return;
+    }
+
+    setSubmissions((prev) =>
+      prev.map((submission) =>
+        submission.id === message.submissionId
+          ? {
+              ...submission,
+              status: message.status,
+              verdict: message.verdict,
+              runtimeMs: message.runtimeMs,
+              memoryKb: message.memoryKb,
+              judgedAt: message.judgedAt,
+              score: message.score,
+              isFinalSubmission:
+                message.submissionType === "formal" && message.score > 0,
+            }
+          : submission,
+      ),
+    );
+    setLatestSubmissionId(message.submissionId);
+    setPublicResultsBySubmission((prev) => ({
+      ...prev,
+      [message.submissionId]: message.testcaseResults.filter((result) => result.isPublic),
+    }));
+
+    if (message.submissionType === "formal") {
+      setProblems((prev) =>
+        prev.map((problem) =>
+          problem.id === message.examSessionProblemId
+            ? { ...problem, score: message.score }
+            : problem,
+        ),
+      );
+    }
+  }, []);
+
+  useJudgeSocket(sessionId, handleJudgeSocketMessage, reloadSubmissions);
+
   const isExpired = timeLeft !== null && timeLeft === 0;
+  const isSubmitted = sessionStatus === "submitted";
+  const isLocked = isExpired || isSubmitted || sessionStatus === "expired";
+  const latestSubmission =
+    submissions.find((submission) => submission.id === latestSubmissionId) ?? null;
+  const latestPublicResults =
+    latestSubmissionId !== null ? publicResultsBySubmission[latestSubmissionId] ?? [] : [];
 
   if (Number.isNaN(sessionId)) {
     return (
@@ -276,16 +395,30 @@ export default function ExamPage() {
             </button>
           ))}
         </div>
-        <span
-          aria-label="倒數計時"
-          className={`text-sm font-mono font-medium tabular-nums ${
-            timeLeft !== null && timeLeft < 300
-              ? "text-red-500"
-              : "text-slate-600"
-          }`}
-        >
-          {timeLeft !== null ? formatTimeLeft(timeLeft) : "--:--:--"}
-        </span>
+        <div className="flex items-center gap-3">
+          {isSubmitted && (
+            <span className="text-xs font-medium text-green-600">已交卷</span>
+          )}
+          {sessionStatus === "in_progress" && (
+            <button
+              type="button"
+              onClick={() => void handleFinishExam()}
+              className="rounded-md border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              提前結束考試
+            </button>
+          )}
+          <span
+            aria-label="倒數計時"
+            className={`text-sm font-mono font-medium tabular-nums ${
+              timeLeft !== null && timeLeft < 300
+                ? "text-red-500"
+                : "text-slate-600"
+            }`}
+          >
+            {timeLeft !== null ? formatTimeLeft(timeLeft) : "--:--:--"}
+          </span>
+        </div>
       </div>
 
       {/* Main area */}
@@ -416,6 +549,7 @@ export default function ExamPage() {
                 <button
                   type="button"
                   onClick={handleRun}
+                  disabled={isLocked}
                   className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 transition-colors"
                 >
                   Run
@@ -423,6 +557,7 @@ export default function ExamPage() {
                 <button
                   type="button"
                   onClick={handleSubmit}
+                  disabled={isLocked}
                   className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-black transition-colors"
                 >
                   Submit
@@ -433,13 +568,60 @@ export default function ExamPage() {
             {/* Tab content */}
             <div className="flex-1 overflow-y-auto px-4 py-3 text-xs text-slate-400">
               {bottomTab === "testcases" && (
-                <p className="text-center py-6">暫無公開測試資料</p>
+                latestPublicResults.length === 0 ? (
+                  <p className="text-center py-6">暫無公開測試資料</p>
+                ) : (
+                  <div className="space-y-2">
+                    {latestPublicResults.map((result) => (
+                      <div
+                        key={result.id}
+                        className="flex items-center justify-between rounded-md border border-slate-100 px-3 py-2 text-slate-600"
+                      >
+                        <span>測資 {result.orderIndex}</span>
+                        <span>{result.verdict}</span>
+                        <span>{result.actualOutput ?? "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
               )}
               {bottomTab === "output" && (
-                <p className="text-center py-6">尚未執行</p>
+                latestSubmission ? (
+                  <div className="space-y-2 text-slate-600">
+                    <p>
+                      {latestSubmission.submissionType === "simple" ? "一般" : "正式"}提交：
+                      {latestSubmission.status === "done"
+                        ? latestSubmission.verdict
+                        : latestSubmission.status}
+                    </p>
+                    {latestSubmission.runtimeMs !== null && (
+                      <p>執行時間：{latestSubmission.runtimeMs} ms</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-center py-6">尚未執行</p>
+                )
               )}
               {bottomTab === "history" && (
-                <p className="text-center py-6">尚無提交記錄</p>
+                submissions.length === 0 ? (
+                  <p className="text-center py-6">尚無提交記錄</p>
+                ) : (
+                  <div className="space-y-2">
+                    {submissions.map((submission) => (
+                      <div
+                        key={submission.id}
+                        className="flex items-center justify-between rounded-md border border-slate-100 px-3 py-2 text-slate-600"
+                      >
+                        <span>
+                          {submission.orderIndex}. {submission.problemTitle}
+                        </span>
+                        <span>{submission.submissionType === "simple" ? "一般" : "正式"}</span>
+                        <span>{submission.verdict ?? submission.status}</span>
+                        <span>{submission.language}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
               )}
             </div>
           </div>

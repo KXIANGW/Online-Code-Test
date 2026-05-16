@@ -6,6 +6,8 @@ import type {
   ExamSessionProblem,
   Language,
   SessionResult,
+  SubmissionCreated,
+  SubmissionSummary,
   SubmissionDetail,
   CreateUserRequest,
   CreateUserResponse,
@@ -17,6 +19,7 @@ import type {
   Testcase,
   CreateTestcaseRequest,
   CreateExamSessionRequest,
+  CreateSubmissionRequest,
 } from "../types";
 
 const baseURL = import.meta.env.VITE_API_BASE ?? "/api";
@@ -64,6 +67,16 @@ export async function login(req: LoginRequest): Promise<LoginResponse> {
 
 export async function getExamSessions(): Promise<ExamSession[]> {
   const { data } = await api.get<ExamSession[]>("/exam-sessions");
+  return data;
+}
+
+export async function startExamSession(id: number): Promise<ExamSession> {
+  const { data } = await api.post<ExamSession>(`/exam-sessions/${id}/start`);
+  return data;
+}
+
+export async function submitExamSession(id: number): Promise<ExamSession> {
+  const { data } = await api.post<ExamSession>(`/exam-sessions/${id}/submit`);
   return data;
 }
 
@@ -148,6 +161,26 @@ export async function getSubmissionDetail(
 ): Promise<SubmissionDetail> {
   const { data } = await api.get<SubmissionDetail>(
     `/exam-sessions/${sessionId}/submissions/${submissionId}`,
+  );
+  return data;
+}
+
+export async function createSubmission(
+  sessionId: number,
+  req: CreateSubmissionRequest,
+): Promise<SubmissionCreated> {
+  const { data } = await api.post<SubmissionCreated>(
+    `/exam-sessions/${sessionId}/submissions`,
+    req,
+  );
+  return data;
+}
+
+export async function listSessionSubmissions(
+  sessionId: number,
+): Promise<SubmissionSummary[]> {
+  const { data } = await api.get<SubmissionSummary[]>(
+    `/exam-sessions/${sessionId}/submissions`,
   );
   return data;
 }

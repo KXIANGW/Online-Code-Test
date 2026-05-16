@@ -164,6 +164,7 @@ export const examSessions = pgTable("exam_sessions", {
   durationMinutes: integer("duration_minutes").notNull(),
   actualStartAt:   timestamp("actual_start_at", { withTimezone: true }),
   expiresAt:       timestamp("expires_at",       { withTimezone: true }),
+  submittedAt:     timestamp("submitted_at",     { withTimezone: true }),
   totalScore:      integer("total_score").notNull().default(0),
   maxScore:        integer("max_score").notNull().default(0),
   createdAt:       timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

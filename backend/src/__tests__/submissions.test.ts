@@ -18,7 +18,12 @@ vi.mock("../mq/publisher", () => ({
 }));
 
 import { publishJudgeTask } from "../mq/publisher";
-import { buildJudgeResultPayload, handleJudgeResultMessage } from "../mq/consumer";
+import {
+  buildJudgeResultPayload,
+  buildSubmissionStatusPayload,
+  handleJudgeResultMessage,
+} from "../mq/consumer";
+import { resetSubscribersForTests, subscribeToSession } from "../ws/hub";
 
 const publishJudgeTaskMock = vi.mocked(publishJudgeTask);
 
@@ -49,6 +54,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  resetSubscribersForTests();
   await truncateTestTables();
 
   await seedUser({ username: "root", password: "Root@1234", displayName: "Root", isSuperuser: true });
@@ -404,6 +410,53 @@ describe("Submission API async judge", () => {
       { content: Buffer.from("{bad json") } as never
     );
     expect(ack).toHaveBeenCalledTimes(1);
+  });
+
+  it("publishes pending immediately and streams worker status events to the same session", async () => {
+    const { sessionId, espIds } = await createSession(aliceToken, davidId);
+    await startSession(sessionId);
+    const sent: string[] = [];
+    subscribeToSession(sessionId, {
+      readyState: 1,
+      send: (data) => sent.push(data),
+      close: vi.fn(),
+      on: vi.fn(),
+    });
+
+    const { id } = await submitCode(sessionId, espIds[0]!, "formal");
+    expect(JSON.parse(sent[0]!)).toMatchObject({
+      type: "submission_status",
+      submissionId: id,
+      sessionId,
+      status: "pending",
+    });
+
+    await db
+      .update(submissions)
+      .set({ status: "judging" })
+      .where(eq(submissions.id, id));
+
+    const payload = await buildSubmissionStatusPayload(id);
+    expect(payload).toMatchObject({
+      type: "submission_status",
+      submissionId: id,
+      sessionId,
+      status: "judging",
+    });
+
+    const ack = vi.fn();
+    await handleJudgeResultMessage(
+      { ack },
+      { content: Buffer.from(JSON.stringify({ submissionId: id, eventType: "status" })) } as never
+    );
+
+    expect(ack).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(sent.at(-1)!)).toMatchObject({
+      type: "submission_status",
+      submissionId: id,
+      sessionId,
+      status: "judging",
+    });
   });
 });
 

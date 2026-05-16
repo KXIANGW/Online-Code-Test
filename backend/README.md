@@ -113,6 +113,7 @@ backend/src/
 | GET | `/api/exam-sessions` | `exam:manage` / `exam:take` / superuser | superuser 看全部；interviewer 看自己建立；candidate 看自己的 |
 | GET | `/api/exam-sessions/:id` | ownership check | Session 詳情 |
 | POST | `/api/exam-sessions/:id/start` | `exam:take`（本人）| 面試者開始考試，寫入 `actual_start_at`、`expires_at` |
+| POST | `/api/exam-sessions/:id/submit` | `exam:take`（本人）| 面試者提前交卷，寫入 `submitted_at` |
 | POST | `/api/exam-sessions/:id/cancel` | `exam:manage` | 面試主管取消 |
 | GET | `/api/exam-sessions/:id/problems` | ownership check | 本場派題清單，包含題目基本資料與 `languageLimits` |
 

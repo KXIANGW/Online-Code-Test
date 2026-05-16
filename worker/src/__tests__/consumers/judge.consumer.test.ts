@@ -131,6 +131,26 @@ describe("judge consumer", () => {
     expect(ack).toHaveBeenCalledTimes(1);
   });
 
+  it("publishes a judging lifecycle event before the final result", async () => {
+    const ack = vi.fn();
+    const publish = vi.fn().mockReturnValue(true);
+
+    await handleJudgeMessage(
+      { ack, publish },
+      { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "simple" })) } as never,
+      mockLanguages as never
+    );
+
+    const lifecyclePayload = JSON.parse(
+      Buffer.from(publish.mock.calls[0]![2] as Buffer).toString("utf8")
+    );
+    expect(lifecyclePayload).toMatchObject({
+      submissionId: 123,
+      eventType: "status",
+      status: "judging",
+    });
+  });
+
   it("marks skipped testcases after first failure", async () => {
     vi.mocked(getTestcases).mockResolvedValue([
       { id: 1, orderIndex: 1, isPublic: true, inputData: "", expectedOutput: "1\n" },

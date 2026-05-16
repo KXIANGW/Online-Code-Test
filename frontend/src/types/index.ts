@@ -130,6 +130,7 @@ export interface ExamSession {
   durationMinutes: number;
   actualStartAt: string | null;
   expiresAt: string | null;
+  submittedAt: string | null;
   totalScore: number;
   maxScore: number;
   createdAt: string;
@@ -160,6 +161,7 @@ export interface SubmissionCreated {
   id: number;
   examSessionProblemId: number;
   language: string;
+  submissionType: SubmissionType;
   status: SubmissionStatus;
   verdict: Verdict | null;
   runtimeMs: number | null;
@@ -175,6 +177,7 @@ export interface SubmissionSummary {
   problemTitle: string;
   orderIndex: number;
   language: string;
+  submissionType: SubmissionType;
   status: SubmissionStatus;
   verdict: Verdict | null;
   runtimeMs: number | null;
@@ -240,7 +243,7 @@ export interface CreateSubmissionRequest {
   examSessionProblemId: number;
   language: string;
   sourceCode: string;
-  submissionType: SubmissionType;
+  type: SubmissionType;
 }
 
 // ── Session Result ────────────────────────────────────────────────────────────
@@ -267,7 +270,33 @@ export interface SessionResult {
   status: ExamStatus;
   actualStartAt: string | null;
   expiresAt: string | null;
+  submittedAt: string | null;
   totalScore: number;
   maxScore: number;
   problems: SessionResultProblem[];
 }
+
+export interface JudgeResultMessage {
+  type: "judge_result";
+  submissionId: number;
+  examSessionProblemId: number;
+  sessionId: number;
+  status: SubmissionStatus;
+  verdict: Verdict | null;
+  runtimeMs: number | null;
+  memoryKb: number | null;
+  judgedAt: string | null;
+  submissionType: SubmissionType;
+  score: number;
+  testcaseResults: TestcaseResult[];
+}
+
+export interface SubmissionStatusMessage {
+  type: "submission_status";
+  submissionId: number;
+  sessionId: number;
+  status: SubmissionStatus;
+  judgedAt: string | null;
+}
+
+export type JudgeSocketMessage = JudgeResultMessage | SubmissionStatusMessage;

@@ -30,6 +30,10 @@ async function main() {
       ALTER TABLE users
         ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES users(id);
     `);
+    await pool.query(`
+      ALTER TABLE exam_sessions
+        ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ;
+    `);
     console.log("[migrate] done.");
   } finally {
     await pool.end();

@@ -13,6 +13,12 @@ import { and, asc, eq } from "drizzle-orm";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 import { publishJudgeTask } from "../mq/publisher";
+import { publishToSession } from "../ws/hub";
+import {
+  expireIfNeeded,
+  getSessionOrThrow,
+  type ExamSessionRecord,
+} from "./session-lifecycle.service";
 
 type CurrentUser = FastifyJWT["user"];
 type SubmissionType = "simple" | "formal";
@@ -44,17 +50,7 @@ function requireResultAccess(
   throw ForbiddenError();
 }
 
-async function getSessionOrThrow(sessionId: number) {
-  const [session] = await db
-    .select()
-    .from(examSessions)
-    .where(eq(examSessions.id, sessionId));
-
-  if (!session) throw NotFoundError("exam session");
-  return session;
-}
-
-type ExamSession = Awaited<ReturnType<typeof getSessionOrThrow>>;
+type ExamSession = ExamSessionRecord;
 
 export async function assertSessionResultAccess(
   currentUser: CurrentUser,
@@ -62,19 +58,6 @@ export async function assertSessionResultAccess(
 ): Promise<ExamSession> {
   const session = await expireIfNeeded(await getSessionOrThrow(sessionId));
   requireResultAccess(currentUser, session);
-  return session;
-}
-
-async function expireIfNeeded(session: ExamSession): Promise<ExamSession> {
-  if (session.status === "in_progress" && session.expiresAt && session.expiresAt <= new Date()) {
-    const [updated] = await db
-      .update(examSessions)
-      .set({ status: "expired", updatedAt: new Date() })
-      .where(eq(examSessions.id, session.id))
-      .returning();
-    return updated!;
-  }
-
   return session;
 }
 
@@ -188,6 +171,14 @@ export async function createSubmission(
     .returning();
 
   await publishJudgeTask({ submissionId: submission!.id, type: data.type });
+
+  publishToSession(sessionId, {
+    type: "submission_status",
+    submissionId: submission!.id,
+    sessionId,
+    status: submission!.status,
+    judgedAt: submission!.judgedAt,
+  });
 
   return {
     id: submission!.id,

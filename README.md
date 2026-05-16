@@ -20,7 +20,6 @@ NTHU 1142 雲原生 HW2 / Team 12。本版本已從 M1 mock judge 升級為 M2 �
 
 ```bash
 cp .env.example .env
-make sandbox-images
 make up
 make ps
 ```
@@ -46,8 +45,8 @@ SANDBOX_RUNTIME=runc
 
 ```bash
 make bootstrap       # 產生 .env
-make sandbox-images  # 建立 oj-sandbox-cpp / oj-sandbox-python
-make up              # docker compose up -d --build
+make sandbox-images  # 單獨重建 oct-sandbox-cpp:12 / oct-sandbox-python:3.11
+make up              # 先確保 sandbox images 存在，再 docker compose up -d --build
 make ps              # 查看服務健康狀態
 make logs            # 追蹤所有服務 log
 make down            # 停止服務

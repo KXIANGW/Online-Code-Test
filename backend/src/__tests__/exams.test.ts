@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { buildApp } from "./helpers/app";
 import { truncateTestTables, seedUser, loginAs } from "./helpers/db";
 import { db } from "../db/client";
-import { problems } from "../db/schema";
+import { examSessions, problems } from "../db/schema";
+import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
 let app: FastifyInstance;
@@ -489,6 +490,102 @@ describe("POST /api/exam-sessions/:id/start", () => {
       headers: { authorization: `Bearer ${candToken}` },
     });
     expect(res.statusCode).toBe(409);
+  });
+});
+
+// ── POST /api/exam-sessions/:id/submit ───────────────────────────────────────
+
+describe("POST /api/exam-sessions/:id/submit", () => {
+  let sessionId: number;
+
+  beforeEach(async () => {
+    const { easy } = await getProblemIds();
+    sessionId = await createSession(aliceToken, davidId, easy);
+  });
+
+  it("candidate can submit an in-progress session and records submittedAt", async () => {
+    await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/start`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/submit`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ status: string; submittedAt: string | null }>();
+    expect(body.status).toBe("submitted");
+    expect(body.submittedAt).toBeTruthy();
+  });
+
+  it("rejects submit when requester is not the assigned candidate", async () => {
+    await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/start`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/submit`,
+      headers: { authorization: `Bearer ${eveToken}` },
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("rejects submit outside the in-progress state", async () => {
+    const notStarted = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/submit`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(notStarted.statusCode).toBe(409);
+
+    await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/start`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+
+    const firstSubmit = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/submit`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(firstSubmit.statusCode).toBe(200);
+
+    const alreadySubmitted = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/submit`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(alreadySubmitted.statusCode).toBe(409);
+  });
+
+  it("lazily expires sessions when reading exam detail", async () => {
+    await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/start`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    await db
+      .update(examSessions)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(examSessions.id, sessionId));
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ status: string }>().status).toBe("expired");
   });
 });
 

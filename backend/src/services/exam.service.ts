@@ -4,6 +4,11 @@ import { and, eq, sql, inArray, isNull } from "drizzle-orm";
 import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 import { clearSessionDrafts } from "./draft.service";
+import {
+  expireIfNeeded,
+  getFreshSessionOrThrow,
+  getSessionOrThrow,
+} from "./session-lifecycle.service";
 
 type CurrentUser = FastifyJWT["user"];
 type Difficulty = "easy" | "medium" | "hard";
@@ -145,31 +150,26 @@ export async function createExamSessionRandom(
 export async function listExamSessions(currentUser: CurrentUser) {
   if (!canManageExam(currentUser) && !canTakeExam(currentUser)) throw ForbiddenError();
 
+  let sessions;
   if (currentUser.isSuperuser) {
-    return db.select().from(examSessions);
-  }
-
-  if (canManageExam(currentUser)) {
-    return db
+    sessions = await db.select().from(examSessions);
+  } else if (canManageExam(currentUser)) {
+    sessions = await db
       .select()
       .from(examSessions)
       .where(eq(examSessions.createdBy, currentUser.id));
+  } else {
+    sessions = await db
+      .select()
+      .from(examSessions)
+      .where(eq(examSessions.candidateId, currentUser.id));
   }
 
-  return db
-    .select()
-    .from(examSessions)
-    .where(eq(examSessions.candidateId, currentUser.id));
+  return Promise.all(sessions.map(expireIfNeeded));
 }
 
 export async function getExamSession(currentUser: CurrentUser, id: number) {
-  const rows = await db
-    .select()
-    .from(examSessions)
-    .where(eq(examSessions.id, id));
-
-  const session = rows[0];
-  if (!session) throw NotFoundError("exam session");
+  const session = await getFreshSessionOrThrow(id);
 
   if (currentUser.isSuperuser) return session;
 
@@ -216,16 +216,32 @@ export async function startExamSession(currentUser: CurrentUser, id: number) {
   return updated[0]!;
 }
 
+export async function submitExamSession(currentUser: CurrentUser, id: number) {
+  if (!canTakeExam(currentUser)) throw ForbiddenError();
+
+  const session = await getFreshSessionOrThrow(id);
+  if (session.candidateId !== currentUser.id) throw NotFoundError("exam session");
+  if (session.status !== "in_progress") {
+    throw ConflictError(`Cannot submit exam session: current status is '${session.status}'`);
+  }
+
+  const [updated] = await db
+    .update(examSessions)
+    .set({
+      status: "submitted",
+      submittedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(examSessions.id, id))
+    .returning();
+
+  return updated!;
+}
+
 export async function cancelExamSession(currentUser: CurrentUser, id: number) {
   if (!canManageExam(currentUser)) throw ForbiddenError();
 
-  const rows = await db
-    .select()
-    .from(examSessions)
-    .where(eq(examSessions.id, id));
-
-  const session = rows[0];
-  if (!session) throw NotFoundError("exam session");
+  const session = await getSessionOrThrow(id);
 
   if (!currentUser.isSuperuser && session.createdBy !== currentUser.id) {
     throw ForbiddenError();
