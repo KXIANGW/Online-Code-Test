@@ -10,8 +10,14 @@ import {
   cancelExamSession,
   getExamSessionProblems,
 } from "../services/exam.service";
+import { saveDraft, getDrafts } from "../services/draft.service";
 import { BadRequestError } from "../errors";
 import { parsePositiveIntParam } from "./params";
+
+const saveDraftBody = z.object({
+  code: z.string().max(65536),
+  language: z.string().min(1).max(32),
+});
 
 const manualSessionBody = z.object({
   candidateId: z.number().int(),
@@ -79,5 +85,24 @@ export const examRoutes: FastifyPluginAsync = async (app) => {
   app.get("/:id/problems", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
     return getExamSessionProblems(request.user, parsePositiveIntParam(id, "id"));
+  });
+
+  // PUT /:id/drafts/:problemId — save draft
+  app.put("/:id/drafts/:problemId", { preHandler: [authenticate] }, async (request, reply) => {
+    const { id, problemId } = request.params as { id: string; problemId: string };
+    const sessionId = parsePositiveIntParam(id, "id");
+    const pid = parsePositiveIntParam(problemId, "problemId");
+
+    const body = request.body as Record<string, unknown>;
+    const result = saveDraftBody.safeParse(body);
+    if (!result.success) throw BadRequestError(result.error.message);
+
+    return saveDraft(request.user, sessionId, pid, result.data);
+  });
+
+  // GET /:id/drafts — get all drafts for session
+  app.get("/:id/drafts", { preHandler: [authenticate] }, async (request) => {
+    const { id } = request.params as { id: string };
+    return getDrafts(request.user, parsePositiveIntParam(id, "id"));
   });
 };
