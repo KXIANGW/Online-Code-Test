@@ -604,3 +604,96 @@ describe("GET /api/exam-sessions/:id/problems", () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+// ── PUT /:id/drafts/:problemId & GET /:id/drafts ──────────────────────────────
+
+describe("PUT /api/exam-sessions/:id/drafts/:problemId and GET /:id/drafts", () => {
+  let sessionId: number;
+  let easyProblemId: number;
+  let mediumProblemId: number;
+
+  beforeEach(async () => {
+    const { easy, medium } = await getProblemIds();
+    easyProblemId = easy;
+    mediumProblemId = medium;
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        candidateId: davidId,
+        durationMinutes: 60,
+        problems: [
+          { problemId: easy, scoreWeight: 50, orderIndex: 1 },
+          { problemId: medium, scoreWeight: 50, orderIndex: 2 },
+        ],
+      },
+    });
+    sessionId = createRes.json<{ id: number }>().id;
+
+    await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/start`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+  });
+
+  it("candidate can save a draft for their in-progress session", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}`,
+      headers: { authorization: `Bearer ${candToken}` },
+      payload: { code: "print('hello')", language: "python3" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ ok: boolean }>().ok).toBe(true);
+  });
+
+  it("save draft rejects non-owner (interviewer) → 404", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { code: "// interviewer", language: "cpp17" },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("save draft rejects a problemId not in the session → 404", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/exam-sessions/${sessionId}/drafts/999999`,
+      headers: { authorization: `Bearer ${candToken}` },
+      payload: { code: "print('x')", language: "python3" },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("candidate can read back a previously saved draft", async () => {
+    await app.inject({
+      method: "PUT",
+      url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}`,
+      headers: { authorization: `Bearer ${candToken}` },
+      payload: { code: "saved = True", language: "python3" },
+    });
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/drafts`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<Record<string, { code: string; language: string }>>();
+    expect(body[String(easyProblemId)]).toEqual({ code: "saved = True", language: "python3" });
+    expect(body[String(mediumProblemId)]).toBeUndefined();
+  });
+
+  it("get drafts for a session belonging to another candidate → 404", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/drafts`,
+      headers: { authorization: `Bearer ${eveToken}` },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+});
