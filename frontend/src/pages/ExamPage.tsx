@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -35,6 +35,7 @@ type BottomTab = "testcases" | "output" | "history";
 
 export default function ExamPage() {
   const { id: sessionIdStr } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const sessionId = Number(sessionIdStr);
 
   const [problems, setProblems] = useState<ExamSessionProblem[]>([]);
@@ -231,8 +232,8 @@ export default function ExamPage() {
 
   async function handleFinishExam() {
     if (!window.confirm("確定要提前結束考試嗎？交卷後將無法再次提交。")) return;
-    const submitted = await submitExamSession(sessionId);
-    setSessionStatus(submitted.status);
+    await submitExamSession(sessionId);
+    navigate(`/exam/${sessionId}/result`);
   }
 
   const reloadSubmissions = useCallback(async () => {

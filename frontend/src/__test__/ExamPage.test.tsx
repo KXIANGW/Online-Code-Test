@@ -22,6 +22,7 @@ const mockCreateSubmission       = vi.hoisted(() => vi.fn());
 const mockListSessionSubmissions = vi.hoisted(() => vi.fn());
 const mockSubmitExamSession      = vi.hoisted(() => vi.fn());
 const mockUseJudgeSocket         = vi.hoisted(() => vi.fn());
+const mockNavigate               = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
   getExamSession:         mockGetExamSession,
@@ -37,6 +38,11 @@ vi.mock("../api/client", () => ({
 vi.mock("../hooks/useJudgeSocket", () => ({
   useJudgeSocket: mockUseJudgeSocket,
 }));
+
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 vi.mock("@monaco-editor/react", () => ({
   default: ({
@@ -528,7 +534,7 @@ describe("ExamPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "提前結束考試" }));
 
     await waitFor(() => expect(mockSubmitExamSession).toHaveBeenCalledWith(42));
-    expect(screen.getByText("已交卷")).toBeInTheDocument();
+    expect(mockNavigate).toHaveBeenCalledWith("/exam/42/result");
     confirmSpy.mockRestore();
   });
 
