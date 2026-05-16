@@ -13,6 +13,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 import { publishJudgeTask } from "../mq/publisher";
+import { publishToSession } from "../ws/hub";
 import {
   expireIfNeeded,
   getSessionOrThrow,
@@ -170,6 +171,14 @@ export async function createSubmission(
     .returning();
 
   await publishJudgeTask({ submissionId: submission!.id, type: data.type });
+
+  publishToSession(sessionId, {
+    type: "submission_status",
+    submissionId: submission!.id,
+    sessionId,
+    status: submission!.status,
+    judgedAt: submission!.judgedAt,
+  });
 
   return {
     id: submission!.id,

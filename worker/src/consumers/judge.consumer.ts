@@ -99,6 +99,11 @@ async function judgeSubmission(
   const spec = findLanguage(languages, submission.language);
 
   await updateSubmissionJudging(submission.id);
+  await publishResult(channel, {
+    submissionId: submission.id,
+    eventType: "status",
+    status: "judging",
+  });
 
   const hostWorkDir = path.join(config.hostWorkDir, String(submission.id));
   await fs.emptyDir(hostWorkDir);
