@@ -499,6 +499,7 @@ export default function ExamPage() {
           {/* Monaco Editor */}
           <div className="flex-1 min-h-0">
             <Editor
+              key={monacoLang}
               height="100%"
               language={monacoLang}
               value={currentCode}
