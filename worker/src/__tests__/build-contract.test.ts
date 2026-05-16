@@ -18,6 +18,7 @@ describe("sandbox image build contract", () => {
 
     expect(runtimeImages).toEqual(["oct-sandbox-cpp:12", "oct-sandbox-python:3.11"]);
     expect(rootMakefile).toContain("$(MAKE) -C worker build-sandbox-images");
+    expect(rootMakefile).toContain("up: bootstrap sandbox-images");
     for (const image of runtimeImages) {
       expect(workerMakefile).toContain(`docker build -t ${image}`);
     }

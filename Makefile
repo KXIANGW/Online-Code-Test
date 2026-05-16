@@ -6,7 +6,7 @@ help:
 	@echo "Online Code Test — M2 async judge"
 	@echo ""
 	@echo "  make bootstrap   Copy .env.example to .env (idempotent)"
-	@echo "  make up          docker compose up -d --build"
+	@echo "  make up          Build sandbox images, then docker compose up -d --build"
 	@echo "  make down        docker compose down"
 	@echo "  make logs        Tail logs from all services"
 	@echo "  make ps          Show service health"
@@ -24,7 +24,7 @@ bootstrap:
 		echo ".env already exists; leaving untouched."; \
 	fi
 
-up: bootstrap
+up: bootstrap sandbox-images
 	docker compose up -d --build
 
 up-build: up

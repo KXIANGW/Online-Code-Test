@@ -70,7 +70,6 @@ cd ..
 
 # 4. 手動測試：重置後全開完整 stack
 docker compose down -v
-make sandbox-images
 make up
 make ps
 ```
@@ -83,8 +82,7 @@ make ps
 
 ```bash
 cp .env.example .env
-make sandbox-images   # 建立 oct-sandbox-cpp:12 / oct-sandbox-python:3.11 沙箱 image
-make up               # docker compose up -d --build
+make up               # 先建立 oct-sandbox-cpp:12 / oct-sandbox-python:3.11，再啟動 stack
 make ps               # 確認所有服務健康
 ```
 
