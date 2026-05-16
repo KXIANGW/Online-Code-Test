@@ -14,6 +14,7 @@ import { languageRoutes } from "./routes/languages";
 import { submissionRoutes } from "./routes/submissions";
 import { closeMq } from "./mq/client";
 import { startJudgeResultConsumer } from "./mq/consumer";
+import { redis } from "./db/redis";
 import { assertSessionResultAccess } from "./services/submission.service";
 import { subscribeToSession, unsubscribeClient } from "./ws/hub";
 
@@ -98,8 +99,13 @@ export async function buildApp() {
     });
   }
 
+  app.addHook("onReady", async () => {
+    redis.connect().catch((err) => app.log.warn({ err }, "Redis connect failed"));
+  });
+
   app.addHook("onClose", async () => {
     await closeMq();
+    await redis.quit().catch((err) => app.log.warn({ err }, "Redis quit failed"));
   });
 
   return app;

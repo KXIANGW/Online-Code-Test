@@ -4,6 +4,7 @@ import { users, userRoles, roles } from "../db/schema";
 import { and, eq, isNull, inArray, sql } from "drizzle-orm";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
+import { cacheGet, cacheSet, cacheDel } from "../db/redis";
 
 type CurrentUser = FastifyJWT["user"];
 
@@ -143,8 +144,20 @@ export async function batchCreateCandidates(
   return results;
 }
 
+type UserProfileCache = {
+  id: number;
+  username: string;
+  displayName: string | null;
+  isSuperuser: boolean;
+  createdAt: string;
+};
+
 export async function getUser(currentUser: CurrentUser, targetId: number) {
   if (!currentUser.isSuperuser && currentUser.id !== targetId) throw ForbiddenError();
+
+  const cacheKey = `user:${targetId}`;
+  const cached = await cacheGet<UserProfileCache>(cacheKey).catch(() => null);
+  if (cached) return cached;
 
   const [user] = await db
     .select({
@@ -160,6 +173,7 @@ export async function getUser(currentUser: CurrentUser, targetId: number) {
 
   if (!user || user.deletedAt !== null) throw NotFoundError("user");
   const { deletedAt: _deletedAt, ...response } = user;
+  cacheSet(cacheKey, response, 300).catch(() => {});
   return response;
 }
 
@@ -184,6 +198,7 @@ export async function updateUser(
   if (data.password !== undefined) updates.passwordHash = await bcrypt.hash(data.password, 10);
 
   await db.update(users).set(updates).where(eq(users.id, targetId));
+  cacheDel(`user:${targetId}`).catch(() => {});
 
   const [updated] = await db
     .select({
@@ -215,6 +230,8 @@ export async function deleteUser(currentUser: CurrentUser, targetId: number) {
     .update(users)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(eq(users.id, targetId));
+
+  cacheDel(`user:${targetId}`).catch(() => {});
 }
 
 function generatePassword(length: number): string {

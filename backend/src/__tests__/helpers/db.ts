@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt";
 import { pool } from "../../db/client";
 import { db } from "../../db/client";
+import { redis } from "../../db/redis";
 import { users, userRoles, roles } from "../../db/schema";
 import { eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -20,6 +21,13 @@ export async function truncateTestTables(): Promise<void> {
              user_roles, users
     RESTART IDENTITY CASCADE
   `);
+  // Flush Redis so stale cache entries from previous test files don't pollute
+  // tests that reseed users with the same auto-incremented IDs.
+  // Only flush when connected: with lazyConnect, calling flushdb() before
+  // connect() queues the command in ioredis's offline queue and hangs forever.
+  if (redis.status === "ready") {
+    await redis.flushdb().catch(() => {});
+  }
 }
 
 interface SeedUser {

@@ -37,7 +37,7 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: oct
-          POSTGRES_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+          POSTGRES_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'oct_dev_password' }}
           POSTGRES_DB: oct
         ports:
           - 5432:5432
@@ -45,6 +45,16 @@ jobs:
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
           --health-retries 5
 
     steps:
@@ -61,7 +71,7 @@ jobs:
       # Apply schema in order before running tests
       - name: Apply database schema
         env:
-          PGPASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+          PGPASSWORD: ${{ secrets.CI_DB_PASSWORD || 'oct_dev_password' }}
         run: |
           for f in $(ls ../infra/postgres/[0-9]*.sql | sort); do
             psql -h localhost -U oct -d oct -f "$f"
@@ -71,7 +81,7 @@ jobs:
 
       - name: Run unit tests
         env:
-          TEST_DATABASE_URL: postgres://oct:${{ secrets.CI_DB_PASSWORD }}@localhost:5432/oct
+          TEST_DATABASE_URL: postgres://oct:${{ secrets.CI_DB_PASSWORD || 'oct_dev_password' }}@localhost:5432/oct
           JWT_SECRET: test-secret-minimum-32-chars-for-jwt-signing
         run: npm test
 

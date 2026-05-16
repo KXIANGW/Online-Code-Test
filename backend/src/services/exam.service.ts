@@ -3,6 +3,7 @@ import { examSessions, examSessionProblems, problems, problemLanguageLimits, use
 import { and, eq, sql, inArray, isNull } from "drizzle-orm";
 import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
+import { clearSessionDrafts } from "./draft.service";
 
 type CurrentUser = FastifyJWT["user"];
 type Difficulty = "easy" | "medium" | "hard";
@@ -239,6 +240,13 @@ export async function cancelExamSession(currentUser: CurrentUser, id: number) {
     .set({ status: "cancelled", updatedAt: new Date() })
     .where(eq(examSessions.id, id))
     .returning();
+
+  // Clear Redis drafts for this session (fire-and-forget, non-fatal)
+  db.select({ problemId: examSessionProblems.problemId })
+    .from(examSessionProblems)
+    .where(eq(examSessionProblems.examSessionId, id))
+    .then((esps) => clearSessionDrafts(id, esps.map((e) => e.problemId)))
+    .catch(() => {});
 
   return updated[0]!;
 }
