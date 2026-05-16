@@ -2,8 +2,9 @@ import { useNavigate } from "react-router-dom";
 import { useExamStore } from "../stores/examStore";
 import type { ExamSession } from "../types";
 import { useEffect } from "react";
-import { getExamSessions } from "../api/client";
+import { getExamSessions, startExamSession } from "../api/client";
 import { NavBar } from "../components/NavBar";
+import { formatTimeLeft, useExamTimer } from "../hooks/useExamTimer";
 
 function SectionCard({
   title,
@@ -37,8 +38,15 @@ function EmptyState({ message }: { message: string }) {
   return <p className="text-sm text-slate-400 text-center py-6">{message}</p>;
 }
 
-function ExamSessionCard({ session }: { session: ExamSession }) {
+function ExamSessionCard({
+  session,
+  onStart,
+}: {
+  session: ExamSession;
+  onStart: (sessionId: number) => Promise<void>;
+}) {
   const navigate = useNavigate();
+  const timeLeft = useExamTimer(session.expiresAt);
 
   return (
     <div className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
@@ -46,7 +54,7 @@ function ExamSessionCard({ session }: { session: ExamSession }) {
         <p className="text-sm font-medium text-slate-800">考試 #{session.id}</p>
         {session.status === "in_progress" && session.expiresAt && (
           <p className="text-xs text-slate-400 mt-0.5">
-            到期：{new Date(session.expiresAt).toLocaleString("zh-TW")}
+            剩餘：{formatTimeLeft(timeLeft ?? 0)}
           </p>
         )}
         {session.status === "not_started" && (
@@ -71,7 +79,7 @@ function ExamSessionCard({ session }: { session: ExamSession }) {
       )}
       {session.status === "not_started" && (
         <button
-          onClick={() => navigate(`/exam/${session.id}`)}
+          onClick={() => void onStart(session.id)}
           className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
         >
           開始考試
@@ -82,6 +90,7 @@ function ExamSessionCard({ session }: { session: ExamSession }) {
 }
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const sessions = useExamStore((s) => s.sessions);
   const setSessions = useExamStore((s) => s.setSessions);
 
@@ -94,6 +103,12 @@ export default function DashboardPage() {
   useEffect(() => {
     getExamSessions().then((data) => setSessions(data));
   }, []);
+
+  async function handleStart(sessionId: number) {
+    const started = await startExamSession(sessionId);
+    setSessions(sessions.map((session) => (session.id === sessionId ? started : session)));
+    navigate(`/exam/${sessionId}`);
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -108,7 +123,9 @@ export default function DashboardPage() {
           {inProgress.length === 0 ? (
             <EmptyState message="目前沒有進行中的考試" />
           ) : (
-            inProgress.map((s) => <ExamSessionCard key={s.id} session={s} />)
+            inProgress.map((s) => (
+              <ExamSessionCard key={s.id} session={s} onStart={handleStart} />
+            ))
           )}
         </SectionCard>
 
@@ -120,7 +137,9 @@ export default function DashboardPage() {
           {pending.length === 0 ? (
             <EmptyState message="目前沒有待考的考試" />
           ) : (
-            pending.map((s) => <ExamSessionCard key={s.id} session={s} />)
+            pending.map((s) => (
+              <ExamSessionCard key={s.id} session={s} onStart={handleStart} />
+            ))
           )}
         </SectionCard>
 
@@ -128,7 +147,9 @@ export default function DashboardPage() {
           {history.length === 0 ? (
             <EmptyState message="尚無歷史紀錄" />
           ) : (
-            history.map((s) => <ExamSessionCard key={s.id} session={s} />)
+            history.map((s) => (
+              <ExamSessionCard key={s.id} session={s} onStart={handleStart} />
+            ))
           )}
         </SectionCard>
       </main>

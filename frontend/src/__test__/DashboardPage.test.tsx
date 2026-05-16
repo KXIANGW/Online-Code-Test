@@ -11,6 +11,7 @@ const mockLogout = vi.hoisted(() => vi.fn());
 const mockUseAuthStore = vi.hoisted(() => vi.fn());
 const mockUseExamStore = vi.hoisted(() => vi.fn());
 const mockGetExamSessions = vi.hoisted(() => vi.fn());
+const mockStartExamSession = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
@@ -19,7 +20,10 @@ vi.mock("react-router-dom", async (importOriginal) => {
 
 vi.mock("../stores/authStore", () => ({ useAuthStore: mockUseAuthStore }));
 vi.mock("../stores/examStore", () => ({ useExamStore: mockUseExamStore }));
-vi.mock("../api/client", () => ({ getExamSessions: mockGetExamSessions }));
+vi.mock("../api/client", () => ({
+  getExamSessions: mockGetExamSessions,
+  startExamSession: mockStartExamSession,
+}));
 
 function setupAuthStore(username = "candidate01") {
   mockUseAuthStore.mockImplementation((sel: any) =>
@@ -27,10 +31,11 @@ function setupAuthStore(username = "candidate01") {
   );
 }
 
-function setupExamStore(sessions: ExamSession[] = []) {
+function setupExamStore(sessions: ExamSession[] = [], setSessions = vi.fn()) {
   mockUseExamStore.mockImplementation((sel: any) =>
-    sel({ sessions, setSessions: vi.fn() })
+    sel({ sessions, setSessions })
   );
+  return setSessions;
 }
 
 function renderDashboard() {
@@ -43,11 +48,13 @@ function renderDashboard() {
 
 describe("DashboardPage()", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     mockNavigate.mockReset();
     mockLogout.mockReset();
     mockUseAuthStore.mockReset();
     mockUseExamStore.mockReset();
     mockGetExamSessions.mockResolvedValue([]);
+    mockStartExamSession.mockReset();
   });
 
   it("renders 3 section headings", () => {
@@ -113,7 +120,7 @@ describe("DashboardPage()", () => {
 
     // expect
     expect(screen.getByText("考試 #2")).toBeInTheDocument();
-    expect(screen.getByText(/到期：/)).toBeInTheDocument();
+    expect(screen.getByText(/剩餘：/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "繼續考試" })).toBeInTheDocument();
     expect(screen.queryByText("目前沒有進行中的考試")).not.toBeInTheDocument();
   });
@@ -176,17 +183,45 @@ describe("DashboardPage()", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/exam/2");
   });
 
-  it("clicking 開始考試 navigates to /exam/1", async () => {
+  it("clicking 開始考試 starts the session before navigating", async () => {
     // given
     setupAuthStore();
-    setupExamStore([mockExamSessions[0]!]);
+    const setSessions = setupExamStore([mockExamSessions[0]!]);
+    mockStartExamSession.mockResolvedValue({
+      ...mockExamSessions[0]!,
+      status: "in_progress",
+      actualStartAt: "2026-05-10T08:00:00.000Z",
+      expiresAt: "2026-05-10T09:30:00.000Z",
+    });
     renderDashboard();
 
     // when
     await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
 
     // expect
+    expect(mockStartExamSession).toHaveBeenCalledWith(1);
+    expect(setSessions).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 1,
+        status: "in_progress",
+        expiresAt: "2026-05-10T09:30:00.000Z",
+      }),
+    ]);
     expect(mockNavigate).toHaveBeenCalledWith("/exam/1");
+  });
+
+  it("shows live remaining time for in-progress sessions", () => {
+    // given
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-10T08:00:00.000Z"));
+    setupAuthStore();
+    setupExamStore([mockExamSessions[1]!]);
+
+    // when
+    renderDashboard();
+
+    // expect
+    expect(screen.getByText("剩餘：01:00:00")).toBeInTheDocument();
   });
 
   it("shows user initials derived from username", () => {

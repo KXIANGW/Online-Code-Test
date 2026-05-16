@@ -179,6 +179,20 @@ describe("ExamPage", () => {
     expect(screen.getByLabelText("倒數計時")).toHaveTextContent("--:--:--");
   });
 
+  it("renders live remaining time when exam is in progress", async () => {
+    const oneHourFromNow = new Date(Date.now() + 3_600_500).toISOString();
+    mockGetExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "in_progress",
+      actualStartAt: new Date().toISOString(),
+      expiresAt: oneHourFromNow,
+    });
+
+    await renderExamPage();
+
+    expect(screen.getByLabelText("倒數計時")).toHaveTextContent("01:00:00");
+  });
+
   it("renders problem description panel with first problem by default", async () => {
     // given
     await renderExamPage();

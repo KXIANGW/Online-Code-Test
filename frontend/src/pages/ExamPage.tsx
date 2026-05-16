@@ -12,6 +12,7 @@ import {
   saveExamDraft,
   getExamDrafts,
 } from "../api/client";
+import { formatTimeLeft, useExamTimer } from "../hooks/useExamTimer";
 
 const MONACO_LANG: Record<string, string> = {
   python3: "python",
@@ -20,14 +21,6 @@ const MONACO_LANG: Record<string, string> = {
 };
 
 type BottomTab = "testcases" | "output" | "history";
-
-function formatTimeLeft(seconds: number): string {
-  if (seconds <= 0) return "00:00:00";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
-}
 
 export default function ExamPage() {
   const { id: sessionIdStr } = useParams<{ id: string }>();
@@ -40,7 +33,6 @@ export default function ExamPage() {
   const [codes, setCodes] = useState<Record<number, string>>({});
   const [bottomTab, setBottomTab] = useState<BottomTab>("testcases");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [leftWidth, setLeftWidth] = useState(420);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -126,21 +118,7 @@ export default function ExamPage() {
     };
   }, []);
 
-  // Countdown timer
-  useEffect(() => {
-    if (!expiresAt) {
-      setTimeLeft(null);
-      return;
-    }
-    const calc = () =>
-      Math.max(
-        0,
-        Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000),
-      );
-    setTimeLeft(calc());
-    const interval = setInterval(() => setTimeLeft(calc()), 1000);
-    return () => clearInterval(interval);
-  }, [expiresAt]);
+  const timeLeft = useExamTimer(expiresAt);
 
   const activeProblem = problems.find((p) => p.problemId === activeProblemId);
   const currentCode = codes[activeProblemId] ?? "";

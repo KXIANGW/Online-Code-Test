@@ -67,6 +67,11 @@ export async function getExamSessions(): Promise<ExamSession[]> {
   return data;
 }
 
+export async function startExamSession(id: number): Promise<ExamSession> {
+  const { data } = await api.post<ExamSession>(`/exam-sessions/${id}/start`);
+  return data;
+}
+
 export async function getSessionResult(id: number): Promise<SessionResult> {
   const { data } = await api.get<SessionResult>(`/exam-sessions/${id}/result`);
   return data;
