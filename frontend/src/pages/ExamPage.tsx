@@ -71,9 +71,12 @@ export default function ExamPage() {
           listSessionSubmissions(sessionId),
         ]);
 
-        const enabledLangs = langs.filter((l) => l.isEnabled);
+        const enabledLangs = langs.filter((l) => l.isEnabled !== false);
+        const enabledLanguageIds = new Set(
+          enabledLangs.map((lang) => lang.language),
+        );
         setProblems(sessionProblems);
-        setLanguages(langs);
+        setLanguages(enabledLangs);
         setSessionStatus(session.status);
         setSubmissions(history);
         setLatestSubmissionId(history.at(-1)?.id ?? null);
@@ -96,7 +99,10 @@ export default function ExamPage() {
               };
               if (parsed.code !== undefined)
                 initialCodes[p.problemId] = parsed.code;
-              initialLangs[p.problemId] = parsed.language ?? defaultLang;
+              initialLangs[p.problemId] =
+                parsed.language && enabledLanguageIds.has(parsed.language)
+                  ? parsed.language
+                  : defaultLang;
             } catch {
               initialLangs[p.problemId] = defaultLang;
             }
@@ -122,11 +128,18 @@ export default function ExamPage() {
                 setCodes((prev) => ({ ...prev, [pid]: draft.code }));
                 setSelectedLangs((prev) => ({
                   ...prev,
-                  [pid]: draft.language,
+                  [pid]: enabledLanguageIds.has(draft.language)
+                    ? draft.language
+                    : defaultLang,
                 }));
                 localStorage.setItem(
                   `oct:draft:${sessionId}:${pid}`,
-                  JSON.stringify(draft),
+                  JSON.stringify({
+                    ...draft,
+                    language: enabledLanguageIds.has(draft.language)
+                      ? draft.language
+                      : defaultLang,
+                  }),
                 );
               }
             }
@@ -157,7 +170,9 @@ export default function ExamPage() {
   const currentCode = codes[activeProblemId] ?? "";
   const currentLang =
     selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
-  const monacoLang = MONACO_LANG[currentLang] ?? currentLang;
+  const monacoLang = currentLang
+    ? MONACO_LANG[currentLang] ?? currentLang
+    : "plaintext";
 
   function handleCodeChange(value: string | undefined) {
     const code = value ?? "";

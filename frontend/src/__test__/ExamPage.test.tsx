@@ -393,6 +393,26 @@ describe("ExamPage", () => {
     expect(screen.queryByRole("option", { name: "Python 3.11" })).not.toBeInTheDocument();
   });
 
+  it("falls back to the first enabled language when a restored draft language is disabled", async () => {
+    // given
+    mockGetLanguages.mockResolvedValue([
+      { ...mockExamPageLanguages[0], isEnabled: false },
+      mockExamPageLanguages[1],
+    ]);
+    localStorage.setItem(
+      "oct:draft:42:1",
+      JSON.stringify({ code: "print('stale')", language: "python3" }),
+    );
+
+    // when
+    await renderExamPage();
+
+    // expect
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    expect(select.value).toBe("cpp17");
+    expect(screen.getByLabelText("Code editor")).toHaveAttribute("data-language", "cpp");
+  });
+
   // ── Bottom panel tabs ─────────────────────────────────────────────────────
 
   it("switches to output tab when '執行結果' tab is clicked", async () => {
