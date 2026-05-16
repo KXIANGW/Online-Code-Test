@@ -9,6 +9,7 @@ CREATE TABLE exam_sessions (
   duration_minutes INT         NOT NULL CHECK (duration_minutes > 0),
   actual_start_at  TIMESTAMPTZ,
   expires_at       TIMESTAMPTZ,
+  submitted_at     TIMESTAMPTZ,
   total_score      INT         NOT NULL DEFAULT 0,
   max_score        INT         NOT NULL DEFAULT 0,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -7,6 +7,7 @@ import {
   listExamSessions,
   getExamSession,
   startExamSession,
+  submitExamSession,
   cancelExamSession,
   getExamSessionProblems,
 } from "../services/exam.service";
@@ -75,6 +76,11 @@ export const examRoutes: FastifyPluginAsync = async (app) => {
   app.post("/:id/start", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
     return startExamSession(request.user, parsePositiveIntParam(id, "id"));
+  });
+
+  app.post("/:id/submit", { preHandler: [authenticate] }, async (request) => {
+    const { id } = request.params as { id: string };
+    return submitExamSession(request.user, parsePositiveIntParam(id, "id"));
   });
 
   app.post("/:id/cancel", { preHandler: [authenticate] }, async (request) => {
