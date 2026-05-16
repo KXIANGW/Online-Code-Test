@@ -23,7 +23,11 @@ export async function truncateTestTables(): Promise<void> {
   `);
   // Flush Redis so stale cache entries from previous test files don't pollute
   // tests that reseed users with the same auto-incremented IDs.
-  await redis.flushdb().catch(() => {});
+  // Only flush when connected: with lazyConnect, calling flushdb() before
+  // connect() queues the command in ioredis's offline queue and hangs forever.
+  if (redis.status === "ready") {
+    await redis.flushdb().catch(() => {});
+  }
 }
 
 interface SeedUser {
