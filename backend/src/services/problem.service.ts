@@ -3,8 +3,49 @@ import { problems, problemTestcases, examSessionProblems, problemLanguageLimits 
 import { eq, isNull, sql } from "drizzle-orm";
 import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
+import { cacheGet, cacheSet, cacheDel } from "../db/redis";
 
 type CurrentUser = FastifyJWT["user"];
+
+// ── Types for raw cache payload ───────────────────────────────────────────────
+
+type RawProblem = {
+  id: number;
+  title: string;
+  descriptionMd: string;
+  difficulty: "easy" | "medium" | "hard";
+  timeLimitMs: number;
+  memoryLimitMb: number;
+  outputLimitKb: number;
+  createdBy: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+};
+
+type RawTestcase = {
+  id: number;
+  problemId: number;
+  orderIndex: number;
+  isPublic: boolean;
+  inputData: string;
+  expectedOutput: string;
+  createdAt: string;
+};
+
+type RawLanguageLimit = {
+  language: string;
+  timeMultiplier: string;
+  memoryMultiplier: string;
+};
+
+type RawProblemCache = {
+  problem: RawProblem;
+  testcases: RawTestcase[];
+  languageLimits: RawLanguageLimit[];
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function requireProblemAccess(user: CurrentUser): void {
   if (
@@ -22,9 +63,40 @@ function requireProblemManage(user: CurrentUser): void {
   }
 }
 
+function sanitizeProblemCache(raw: RawProblemCache, currentUser: CurrentUser) {
+  const canSeeHidden =
+    currentUser.isSuperuser || currentUser.permissions.includes("problem:manage");
+
+  const sanitizedTestcases = raw.testcases.map((tc) => ({
+    id: tc.id,
+    orderIndex: tc.orderIndex,
+    isPublic: tc.isPublic,
+    ...(canSeeHidden || tc.isPublic
+      ? { inputData: tc.inputData, expectedOutput: tc.expectedOutput }
+      : {}),
+  }));
+
+  return { ...raw.problem, testcases: sanitizedTestcases, languageLimits: raw.languageLimits };
+}
+
+// ── Service functions ─────────────────────────────────────────────────────────
+
 export async function listProblems(currentUser: CurrentUser) {
   requireProblemAccess(currentUser);
-  return db
+
+  const cached = await cacheGet<
+    {
+      id: number;
+      title: string;
+      difficulty: "easy" | "medium" | "hard";
+      timeLimitMs: number;
+      memoryLimitMb: number;
+      createdAt: string;
+    }[]
+  >("problems:list").catch(() => null);
+  if (cached) return cached;
+
+  const result = await db
     .select({
       id: problems.id,
       title: problems.title,
@@ -35,6 +107,9 @@ export async function listProblems(currentUser: CurrentUser) {
     })
     .from(problems)
     .where(isNull(problems.deletedAt));
+
+  cacheSet("problems:list", result, 300).catch(() => {});
+  return result;
 }
 
 export async function createProblem(
@@ -55,7 +130,7 @@ export async function createProblem(
   assertUniqueValues(data.testcases?.map((tc) => tc.orderIndex) ?? [], "Duplicate testcase orderIndex");
   assertUniqueValues(data.languageLimits?.map((ll) => ll.language) ?? [], "Duplicate language limit");
 
-  return db.transaction(async (tx) => {
+  const problem = await db.transaction(async (tx) => {
     const problemRows = await tx
       .insert(problems)
       .values({
@@ -69,18 +144,18 @@ export async function createProblem(
       })
       .returning();
 
-    const problem = problemRows[0]!;
+    const created = problemRows[0]!;
 
     if (data.testcases && data.testcases.length > 0) {
       await tx.insert(problemTestcases).values(
-        data.testcases.map((tc) => ({ ...tc, problemId: problem.id }))
+        data.testcases.map((tc) => ({ ...tc, problemId: created.id }))
       );
     }
 
     if (data.languageLimits && data.languageLimits.length > 0) {
       await tx.insert(problemLanguageLimits).values(
         data.languageLimits.map((ll) => ({
-          problemId: problem.id,
+          problemId: created.id,
           language: ll.language,
           timeMultiplier: String(ll.timeMultiplier),
           memoryMultiplier: String(ll.memoryMultiplier),
@@ -88,16 +163,27 @@ export async function createProblem(
       );
     }
 
-    return problem;
+    return created;
   }).catch((err: unknown) => {
     if (isPgErrorCode(err, "23503")) throw BadRequestError("Unknown language or user");
     if (isPgErrorCode(err, "23505")) throw ConflictError("Duplicate problem data");
     throw err;
   });
+
+  cacheDel("problems:list").catch(() => {});
+  return problem;
 }
 
 export async function getProblem(currentUser: CurrentUser, id: number) {
   requireProblemAccess(currentUser);
+
+  const cacheKey = `problem:${id}:raw`;
+  const cached = await cacheGet<RawProblemCache>(cacheKey).catch(() => null);
+
+  if (cached) {
+    if (!cached.problem || cached.problem.deletedAt !== null) throw NotFoundError("problem");
+    return sanitizeProblemCache(cached, currentUser);
+  }
 
   const [problem] = await db
     .select()
@@ -111,18 +197,6 @@ export async function getProblem(currentUser: CurrentUser, id: number) {
     .from(problemTestcases)
     .where(eq(problemTestcases.problemId, id));
 
-  const canSeeHidden =
-    currentUser.isSuperuser || currentUser.permissions.includes("problem:manage");
-
-  const sanitizedTestcases = testcases.map((tc) => ({
-    id: tc.id,
-    orderIndex: tc.orderIndex,
-    isPublic: tc.isPublic,
-    ...(canSeeHidden || tc.isPublic
-      ? { inputData: tc.inputData, expectedOutput: tc.expectedOutput }
-      : {}),
-  }));
-
   const languageLimits = await db
     .select({
       language: problemLanguageLimits.language,
@@ -132,7 +206,22 @@ export async function getProblem(currentUser: CurrentUser, id: number) {
     .from(problemLanguageLimits)
     .where(eq(problemLanguageLimits.problemId, id));
 
-  return { ...problem, testcases: sanitizedTestcases, languageLimits };
+  const rawPayload: RawProblemCache = {
+    problem: {
+      ...problem,
+      createdAt: problem.createdAt.toISOString(),
+      updatedAt: problem.updatedAt.toISOString(),
+      deletedAt: (problem.deletedAt as Date | null)?.toISOString() ?? null,
+    },
+    testcases: testcases.map((tc) => ({
+      ...tc,
+      createdAt: tc.createdAt.toISOString(),
+    })),
+    languageLimits,
+  };
+  cacheSet(cacheKey, rawPayload, 86400).catch(() => {});
+
+  return sanitizeProblemCache(rawPayload, currentUser);
 }
 
 export async function updateProblem(
@@ -162,6 +251,7 @@ export async function updateProblem(
     .where(eq(problems.id, id))
     .returning();
 
+  cacheDel("problems:list", `problem:${id}:raw`).catch(() => {});
   return updated;
 }
 
@@ -188,6 +278,8 @@ export async function deleteProblem(currentUser: CurrentUser, id: number) {
     .update(problems)
     .set({ deletedAt: new Date() })
     .where(eq(problems.id, id));
+
+  cacheDel("problems:list", `problem:${id}:raw`).catch(() => {});
 }
 
 export async function addTestcase(
@@ -213,6 +305,7 @@ export async function addTestcase(
       throw err;
     });
 
+  cacheDel(`problem:${problemId}:raw`).catch(() => {});
   return tc;
 }
 
@@ -241,6 +334,7 @@ export async function updateTestcase(
       throw err;
     });
 
+  cacheDel(`problem:${tc.problemId}:raw`).catch(() => {});
   return updated;
 }
 
@@ -259,6 +353,7 @@ export async function deleteTestcase(
   if (!tc || tc.problemId !== problemId) throw NotFoundError("testcase");
 
   await db.delete(problemTestcases).where(eq(problemTestcases.id, tcId));
+  cacheDel(`problem:${tc.problemId}:raw`).catch(() => {});
 }
 
 export async function setProblemLanguageLimits(
@@ -291,6 +386,8 @@ export async function setProblemLanguageLimits(
       throw err;
     });
   }
+
+  cacheDel(`problem:${problemId}:raw`).catch(() => {});
 
   return db
     .select({
