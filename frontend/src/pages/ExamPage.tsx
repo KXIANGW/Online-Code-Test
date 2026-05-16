@@ -156,6 +156,25 @@ export default function ExamPage() {
     load();
   }, [sessionId]);
 
+  // Ensure every problem has a language entry once both languages and problems are loaded.
+  // This guards against any render where selectedLangs is still {} but languages are available,
+  // so the controlled <select> always has a matching value and never shows value="".
+  useEffect(() => {
+    if (languages.length === 0 || problems.length === 0) return;
+    setSelectedLangs((prev) => {
+      const defaultLang = languages[0].language;
+      const next: Record<number, string> = { ...prev };
+      let changed = false;
+      for (const p of problems) {
+        if (!next[p.problemId]) {
+          next[p.problemId] = defaultLang;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [languages, problems]);
+
   // Cleanup debounce timers on unmount
   useEffect(() => {
     return () => {

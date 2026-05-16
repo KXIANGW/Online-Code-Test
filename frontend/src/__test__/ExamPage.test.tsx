@@ -468,6 +468,22 @@ describe("ExamPage", () => {
     expect(select.value).toBe("cpp17");
   });
 
+  it("all problems have a valid default language even when Redis draft only partially restores", async () => {
+    // given — Redis returns a draft for problem 1 (cpp17) but nothing for problem 2
+    mockGetExamDrafts.mockResolvedValue({
+      "1": { code: "int main() {}", language: "cpp17" },
+    });
+    // when
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    // expect: active problem 1 (Two Sum) shows cpp17 restored from Redis
+    await waitFor(() => expect(select.value).toBe("cpp17"));
+    // when — switch to problem 2 (Binary Search, problemId: 2 — not in Redis)
+    fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
+    // expect: problem 2 falls back to the default language (python3), not empty string
+    expect(select.value).toBe("python3");
+  });
+
   // ── Bottom panel tabs ─────────────────────────────────────────────────────
 
   it("switches to output tab when '執行結果' tab is clicked", async () => {
