@@ -1,34 +1,58 @@
 import { useEffect } from "react";
-import type { JudgeResultMessage } from "../types";
+import type { JudgeSocketMessage } from "../types";
 
 export function useJudgeSocket(
   sessionId: number,
-  onJudgeResult: (message: JudgeResultMessage) => void,
+  onMessage: (message: JudgeSocketMessage) => void,
+  onReconnect?: () => void | Promise<void>,
 ): void {
   useEffect(() => {
     const token = sessionStorage.getItem("oct_token");
     if (!token || !Number.isInteger(sessionId)) return;
 
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(
-      `${protocol}//${window.location.host}/api/ws?token=${encodeURIComponent(token)}`,
-    );
+    let socket: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let closedByEffect = false;
+    let hasConnected = false;
 
-    socket.addEventListener("open", () => {
-      socket.send(JSON.stringify({ type: "subscribe", sessionId }));
-    });
+    const connect = () => {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      socket = new WebSocket(
+        `${protocol}//${window.location.host}/api/ws?token=${encodeURIComponent(token)}`,
+      );
 
-    socket.addEventListener("message", (event) => {
-      try {
-        const message = JSON.parse(String(event.data)) as Partial<JudgeResultMessage>;
-        if (message.type === "judge_result" && message.sessionId === sessionId) {
-          onJudgeResult(message as JudgeResultMessage);
+      socket.addEventListener("open", () => {
+        socket?.send(JSON.stringify({ type: "subscribe", sessionId }));
+        if (hasConnected) void onReconnect?.();
+        hasConnected = true;
+      });
+
+      socket.addEventListener("message", (event) => {
+        try {
+          const message = JSON.parse(String(event.data)) as Partial<JudgeSocketMessage>;
+          if (
+            (message.type === "judge_result" || message.type === "submission_status") &&
+            message.sessionId === sessionId
+          ) {
+            onMessage(message as JudgeSocketMessage);
+          }
+        } catch {
+          // Ignore malformed broker messages; the next valid result can still arrive.
         }
-      } catch {
-        // Ignore malformed broker messages; the next valid result can still arrive.
-      }
-    });
+      });
 
-    return () => socket.close();
-  }, [onJudgeResult, sessionId]);
+      socket.addEventListener("close", () => {
+        if (closedByEffect) return;
+        reconnectTimer = setTimeout(connect, 1000);
+      });
+    };
+
+    connect();
+
+    return () => {
+      closedByEffect = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      socket?.close();
+    };
+  }, [onMessage, onReconnect, sessionId]);
 }

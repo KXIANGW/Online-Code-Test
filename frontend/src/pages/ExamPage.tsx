@@ -7,7 +7,7 @@ import { NavBar } from "../components/NavBar";
 import type {
   ExamSessionProblem,
   ExamStatus,
-  JudgeResultMessage,
+  JudgeSocketMessage,
   Language,
   SubmissionSummary,
   TestcaseResult,
@@ -235,7 +235,29 @@ export default function ExamPage() {
     setSessionStatus(submitted.status);
   }
 
-  const handleJudgeResult = useCallback((message: JudgeResultMessage) => {
+  const reloadSubmissions = useCallback(async () => {
+    const history = await listSessionSubmissions(sessionId);
+    setSubmissions(history);
+    setLatestSubmissionId(history.at(-1)?.id ?? null);
+  }, [sessionId]);
+
+  const handleJudgeSocketMessage = useCallback((message: JudgeSocketMessage) => {
+    if (message.type === "submission_status") {
+      setSubmissions((prev) =>
+        prev.map((submission) =>
+          submission.id === message.submissionId
+            ? {
+                ...submission,
+                status: message.status,
+                judgedAt: message.judgedAt,
+              }
+            : submission,
+        ),
+      );
+      setLatestSubmissionId(message.submissionId);
+      return;
+    }
+
     setSubmissions((prev) =>
       prev.map((submission) =>
         submission.id === message.submissionId
@@ -270,7 +292,7 @@ export default function ExamPage() {
     }
   }, []);
 
-  useJudgeSocket(sessionId, handleJudgeResult);
+  useJudgeSocket(sessionId, handleJudgeSocketMessage, reloadSubmissions);
 
   const isExpired = timeLeft !== null && timeLeft === 0;
   const isSubmitted = sessionStatus === "submitted";
@@ -551,6 +573,9 @@ export default function ExamPage() {
                         key={submission.id}
                         className="flex items-center justify-between rounded-md border border-slate-100 px-3 py-2 text-slate-600"
                       >
+                        <span>
+                          {submission.orderIndex}. {submission.problemTitle}
+                        </span>
                         <span>{submission.submissionType === "simple" ? "一般" : "正式"}</span>
                         <span>{submission.verdict ?? submission.status}</span>
                         <span>{submission.language}</span>

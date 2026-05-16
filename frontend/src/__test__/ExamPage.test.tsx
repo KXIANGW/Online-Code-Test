@@ -7,6 +7,7 @@ import type {
   ExamSessionProblem,
   JudgeResultMessage,
   Language,
+  SubmissionStatusMessage,
   SubmissionCreated,
 } from "../types";
 import { mockSubmissions } from "./mock-data";
@@ -157,7 +158,9 @@ async function renderExamPage(id = "42") {
 }
 
 describe("ExamPage", () => {
-  let realtimeHandler: ((message: JudgeResultMessage) => void) | undefined;
+  let realtimeHandler:
+    | ((message: JudgeResultMessage | SubmissionStatusMessage) => void)
+    | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -174,7 +177,7 @@ describe("ExamPage", () => {
       submittedAt: "2026-01-01T00:30:00.000Z",
     });
     mockCreateSubmission.mockImplementation(
-      async ({ type }): Promise<SubmissionCreated> => ({
+      async (_sessionId: number, { type }: { type: "simple" | "formal" }): Promise<SubmissionCreated> => ({
         id: type === "simple" ? 9001 : 9002,
         examSessionProblemId: 101,
         language: "python3",
@@ -189,7 +192,10 @@ describe("ExamPage", () => {
     );
     realtimeHandler = undefined;
     mockUseJudgeSocket.mockImplementation(
-      (_sessionId: number, onJudgeResult: (message: JudgeResultMessage) => void) => {
+      (
+        _sessionId: number,
+        onJudgeResult: (message: JudgeResultMessage | SubmissionStatusMessage) => void,
+      ) => {
         realtimeHandler = onJudgeResult;
       },
     );
@@ -437,10 +443,35 @@ describe("ExamPage", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
 
+    expect(
+      within(screen.getByLabelText("底部面板")).getAllByText("1. Two Sum"),
+    ).toHaveLength(2);
     expect(screen.getByText("一般")).toBeInTheDocument();
     expect(screen.getByText("正式")).toBeInTheDocument();
     expect(screen.getByText("WA")).toBeInTheDocument();
     expect(screen.getByText("AC")).toBeInTheDocument();
+  });
+
+  it("updates pending submissions to judging from realtime lifecycle messages", async () => {
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('run')" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalled());
+
+    act(() => {
+      realtimeHandler?.({
+        type: "submission_status",
+        submissionId: 9001,
+        sessionId: 42,
+        status: "judging",
+        judgedAt: null,
+      });
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+    expect(screen.getByText("judging")).toBeInTheDocument();
   });
 
   it("shows realtime public testcase results after judge_result arrives", async () => {

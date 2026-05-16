@@ -289,3 +289,13 @@ export interface JudgeResultMessage {
   score: number;
   testcaseResults: TestcaseResult[];
 }
+
+export interface SubmissionStatusMessage {
+  type: "submission_status";
+  submissionId: number;
+  sessionId: number;
+  status: SubmissionStatus;
+  judgedAt: string | null;
+}
+
+export type JudgeSocketMessage = JudgeResultMessage | SubmissionStatusMessage;
