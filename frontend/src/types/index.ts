@@ -33,11 +33,11 @@ export interface LoginResponse {
 // ── Language ──────────────────────────────────────────────────────────────────
 export interface Language {
   language: string;
-  displayName: string;
+  displayName: string | null;
   timeMultiplier: string;
   memoryMultiplier: string;
-  isEnabled: boolean;
-  createdAt: string;
+  isEnabled?: boolean;
+  createdAt?: string;
 }
 
 // ── Problem ───────────────────────────────────────────────────────────────────

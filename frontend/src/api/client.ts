@@ -3,6 +3,8 @@ import type {
   LoginRequest,
   LoginResponse,
   ExamSession,
+  ExamSessionProblem,
+  Language,
   SessionResult,
   SubmissionDetail,
   CreateUserRequest,
@@ -142,6 +144,43 @@ export async function getSubmissionDetail(
 ): Promise<SubmissionDetail> {
   const { data } = await api.get<SubmissionDetail>(
     `/exam-sessions/${sessionId}/submissions/${submissionId}`,
+  );
+  return data;
+}
+
+// Get single exam session (for expires_at)
+export async function getExamSession(id: number): Promise<ExamSession> {
+  const { data } = await api.get<ExamSession>(`/exam-sessions/${id}`);
+  return data;
+}
+
+// Get problems for an exam session (with descriptionMd, languageLimits)
+export async function getExamSessionProblems(id: number): Promise<ExamSessionProblem[]> {
+  const { data } = await api.get<ExamSessionProblem[]>(`/exam-sessions/${id}/problems`);
+  return data;
+}
+
+// Get enabled languages (served from Redis cache on backend)
+export async function getLanguages(): Promise<Language[]> {
+  const { data } = await api.get<Language[]>("/languages");
+  return data;
+}
+
+// Auto-save draft to Redis via backend
+export async function saveExamDraft(
+  sessionId: number,
+  problemId: number,
+  draft: { code: string; language: string },
+): Promise<void> {
+  await api.put(`/exam-sessions/${sessionId}/drafts/${problemId}`, draft);
+}
+
+// Get all drafts for a session (restore from Redis on page load)
+export async function getExamDrafts(
+  sessionId: number,
+): Promise<Record<string, { code: string; language: string }>> {
+  const { data } = await api.get<Record<number, { code: string; language: string }>>(
+    `/exam-sessions/${sessionId}/drafts`,
   );
   return data;
 }
