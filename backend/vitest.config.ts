@@ -18,6 +18,7 @@ export default defineConfig({
     globalSetup: ["src/__tests__/helpers/global-setup.ts"],
     pool: "forks",
     poolOptions: { forks: { singleFork: true } },
+    fileParallelism: false,
     testTimeout: 15000,
   },
 });

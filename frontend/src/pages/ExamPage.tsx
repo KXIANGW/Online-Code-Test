@@ -1,47 +1,20 @@
 import { useEffect, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { NavBar } from "../components/NavBar";
 import type { ExamSessionProblem, Language } from "../types";
-import { getLanguages } from "../api/client";
+import {
+  getExamSession,
+  getExamSessionProblems,
+  getLanguages,
+  saveExamDraft,
+  getExamDrafts,
+} from "../api/client";
 import { getMonacoMode } from "../config/languages";
 
 type BottomTab = "testcases" | "output" | "history";
-
-const PLACEHOLDER_PROBLEMS: ExamSessionProblem[] = [
-  {
-    id: 1,
-    orderIndex: 1,
-    scoreWeight: 50,
-    score: 0,
-    problemId: 1,
-    title: "Two Sum",
-    descriptionMd:
-      "## Two Sum\n\nGiven an array of integers `nums` and an integer `target`, return indices of the two numbers such that they add up to `target`.\n\n**Example 1:**\n\n```\nInput: nums = [2,7,11,15], target = 9\nOutput: [0,1]\n```\n\n**Constraints:**\n- `2 <= nums.length <= 10^4`\n- `-10^9 <= nums[i] <= 10^9`",
-    difficulty: "easy",
-    timeLimitMs: 1000,
-    memoryLimitMb: 256,
-    outputLimitKb: 64,
-    languageLimits: [],
-  },
-  {
-    id: 2,
-    orderIndex: 2,
-    scoreWeight: 50,
-    score: 0,
-    problemId: 2,
-    title: "Binary Search",
-    descriptionMd:
-      "## Binary Search\n\nGiven an array of integers `nums` which is sorted in ascending order, and an integer `target`, write a function to search `target` in `nums`.\n\nIf `target` exists, return its index. Otherwise, return `-1`.\n\n**Example 1:**\n\n```\nInput: nums = [-1,0,3,5,9,12], target = 9\nOutput: 4\n```\n\n**Constraints:**\n- `1 <= nums.length <= 10^4`\n- All integers in `nums` are unique.",
-    difficulty: "medium",
-    timeLimitMs: 1000,
-    memoryLimitMb: 256,
-    outputLimitKb: 64,
-    languageLimits: [],
-  },
-];
-
 function formatTimeLeft(seconds: number): string {
   if (seconds <= 0) return "00:00:00";
   const h = Math.floor(seconds / 3600);
@@ -51,19 +24,165 @@ function formatTimeLeft(seconds: number): string {
 }
 
 export default function ExamPage() {
-  const problems = PLACEHOLDER_PROBLEMS;
-  const [languages, setLanguages] = useState<Language[]>([]);
+  const { id: sessionIdStr } = useParams<{ id: string }>();
+  const sessionId = Number(sessionIdStr);
 
-  const [activeProblemId, setActiveProblemId] = useState<number>(
-    problems[0]?.id ?? 0,
+  const [problems, setProblems] = useState<ExamSessionProblem[]>([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
+  const [activeProblemId, setActiveProblemId] = useState<number>(0);
+  const [selectedLangs, setSelectedLangs] = useState<Record<number, string>>(
+    {},
   );
-  const [selectedLanguage, setSelectedLanguage] = useState<string>("");
   const [codes, setCodes] = useState<Record<number, string>>({});
   const [bottomTab, setBottomTab] = useState<BottomTab>("testcases");
-  const [expiresAt] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [leftWidth, setLeftWidth] = useState(420);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
+  const lsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const apiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load session data on mount
+  useEffect(() => {
+    async function load() {
+      try {
+        const [session, sessionProblems, langs] = await Promise.all([
+          getExamSession(sessionId),
+          getExamSessionProblems(sessionId),
+          getLanguages(),
+        ]);
+
+        const enabledLangs = langs.filter((l) => l.isEnabled);
+        setProblems(sessionProblems);
+        setLanguages(enabledLangs);
+        if (session.expiresAt) setExpiresAt(session.expiresAt);
+        if (sessionProblems.length > 0)
+          setActiveProblemId(sessionProblems[0].problemId);
+
+        const defaultLang = enabledLangs[0]?.language ?? "";
+        const initialCodes: Record<number, string> = {};
+        const initialLangs: Record<number, string> = {};
+
+        for (const p of sessionProblems) {
+          const lsKey = `oct:draft:${sessionId}:${p.problemId}`;
+          const lsRaw = localStorage.getItem(lsKey);
+          if (lsRaw) {
+            try {
+              const parsed = JSON.parse(lsRaw) as {
+                code?: string;
+                language?: string;
+              };
+              if (parsed.code !== undefined)
+                initialCodes[p.problemId] = parsed.code;
+              initialLangs[p.problemId] = parsed.language ?? defaultLang;
+            } catch {
+              initialLangs[p.problemId] = defaultLang;
+            }
+          } else {
+            initialLangs[p.problemId] = defaultLang;
+          }
+        }
+
+        setCodes(initialCodes);
+        setSelectedLangs(initialLangs);
+
+        // Restore from Redis for problems not found in localStorage
+        const missingIds = sessionProblems
+          .filter((p) => initialCodes[p.problemId] === undefined)
+          .map((p) => p.problemId);
+
+        if (missingIds.length > 0) {
+          try {
+            const drafts = await getExamDrafts(sessionId);
+            for (const [pidStr, draft] of Object.entries(drafts)) {
+              const pid = Number(pidStr);
+              if (missingIds.includes(pid)) {
+                setCodes((prev) => ({ ...prev, [pid]: draft.code }));
+                setSelectedLangs((prev) => ({
+                  ...prev,
+                  [pid]: draft.language,
+                }));
+                localStorage.setItem(
+                  `oct:draft:${sessionId}:${pid}`,
+                  JSON.stringify(draft),
+                );
+              }
+            }
+          } catch {
+            // Redis restore failed — draft code may be missing, editor will be empty
+          }
+        }
+      } catch {
+        setLoadError("無法載入考試，請重新整理頁面或聯繫面試官。");
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [sessionId]);
+
+  // Cleanup debounce timers on unmount
+  useEffect(() => {
+    return () => {
+      if (lsDebounceRef.current) clearTimeout(lsDebounceRef.current);
+      if (apiDebounceRef.current) clearTimeout(apiDebounceRef.current);
+    };
+  }, []);
+
+  // Countdown timer
+  useEffect(() => {
+    if (!expiresAt) {
+      setTimeLeft(null);
+      return;
+    }
+    const calc = () =>
+      Math.max(
+        0,
+        Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000),
+      );
+    setTimeLeft(calc());
+    const interval = setInterval(() => setTimeLeft(calc()), 1000);
+    return () => clearInterval(interval);
+  }, [expiresAt]);
+
+  const activeProblem = problems.find((p) => p.problemId === activeProblemId);
+  const currentCode = codes[activeProblemId] ?? "";
+  const currentLang =
+    selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
+  const monacoLang = getMonacoMode(currentLang);
+
+  function handleCodeChange(value: string | undefined) {
+    const code = value ?? "";
+    setCodes((prev) => ({ ...prev, [activeProblemId]: code }));
+
+    const lang = selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
+    const lsKey = `oct:draft:${sessionId}:${activeProblemId}`;
+
+    if (lsDebounceRef.current) clearTimeout(lsDebounceRef.current);
+    lsDebounceRef.current = setTimeout(() => {
+      localStorage.setItem(lsKey, JSON.stringify({ code, language: lang }));
+    }, 1000);
+
+    if (apiDebounceRef.current) clearTimeout(apiDebounceRef.current);
+    apiDebounceRef.current = setTimeout(() => {
+      saveExamDraft(sessionId, activeProblemId, { code, language: lang }).catch(
+        () => {},
+      );
+    }, 5000);
+  }
+
+  function handleTabSwitch(problemId: number) {
+    // Flush current draft to localStorage immediately before switching
+    const lang = selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
+    const lsKey = `oct:draft:${sessionId}:${activeProblemId}`;
+    localStorage.setItem(
+      lsKey,
+      JSON.stringify({ code: codes[activeProblemId] ?? "", language: lang }),
+    );
+    setActiveProblemId(problemId);
+  }
 
   function handleDividerMouseDown(e: React.MouseEvent) {
     e.preventDefault();
@@ -87,39 +206,6 @@ export default function ExamPage() {
     document.addEventListener("mouseup", onMouseUp);
   }
 
-  useEffect(() => {
-    getLanguages()
-      .then((data) => {
-        const enabled = data.filter((l) => l.isEnabled);
-        setLanguages(enabled);
-        setSelectedLanguage((prev) => prev || (enabled[0]?.language ?? ""));
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!expiresAt) {
-      setTimeLeft(null);
-      return;
-    }
-    const calc = () =>
-      Math.max(
-        0,
-        Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000),
-      );
-    setTimeLeft(calc());
-    const interval = setInterval(() => setTimeLeft(calc()), 1000);
-    return () => clearInterval(interval);
-  }, [expiresAt]);
-
-  const activeProblem = problems.find((p) => p.id === activeProblemId);
-  const currentCode = codes[activeProblemId] ?? "";
-  const monacoLang = getMonacoMode(selectedLanguage);
-
-  function handleCodeChange(value: string | undefined) {
-    setCodes((prev) => ({ ...prev, [activeProblemId]: value ?? "" }));
-  }
-
   function handleRun() {
     setBottomTab("output");
   }
@@ -130,8 +216,41 @@ export default function ExamPage() {
 
   const isExpired = timeLeft !== null && timeLeft === 0;
 
+  if (Number.isNaN(sessionId)) {
+    return (
+      <div className="h-screen flex flex-col overflow-hidden bg-slate-50">
+        <NavBar homeHref="/candidate" />
+        <div className="flex-1 flex items-center justify-center">
+          <span className="text-sm text-red-500">無效的考試連結。</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="h-screen flex flex-col overflow-hidden bg-slate-50">
+        <NavBar homeHref="/candidate" />
+        <div className="flex-1 flex items-center justify-center">
+          <span className="text-sm text-slate-400">載入中...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="h-screen flex flex-col overflow-hidden bg-slate-50">
+        <NavBar homeHref="/candidate" />
+        <div className="flex-1 flex items-center justify-center">
+          <span className="text-sm text-red-500">{loadError}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-slate-50">
+    <div className="relative h-screen flex flex-col overflow-hidden bg-slate-50">
       <NavBar homeHref="/candidate" />
 
       {/* Problem tabs + Timer */}
@@ -145,10 +264,10 @@ export default function ExamPage() {
               key={p.id}
               type="button"
               role="tab"
-              aria-selected={activeProblemId === p.id}
-              onClick={() => setActiveProblemId(p.id)}
+              aria-selected={activeProblemId === p.problemId}
+              onClick={() => handleTabSwitch(p.problemId)}
               className={`h-full px-4 text-sm font-medium border-b-2 transition-colors ${
-                activeProblemId === p.id
+                activeProblemId === p.problemId
                   ? "border-blue-500 text-blue-600"
                   : "border-transparent text-slate-500 hover:text-slate-700"
               }`}
@@ -217,8 +336,23 @@ export default function ExamPage() {
             </label>
             <select
               id="language-select"
-              value={selectedLanguage}
-              onChange={(e) => setSelectedLanguage(e.target.value)}
+              value={currentLang}
+              onChange={(e) => {
+                const newLang = e.target.value;
+                setSelectedLangs((prev) => ({
+                  ...prev,
+                  [activeProblemId]: newLang,
+                }));
+                const code = codes[activeProblemId] ?? "";
+                localStorage.setItem(
+                  `oct:draft:${sessionId}:${activeProblemId}`,
+                  JSON.stringify({ code, language: newLang }),
+                );
+                saveExamDraft(sessionId, activeProblemId, {
+                  code,
+                  language: newLang,
+                }).catch(() => {});
+              }}
               className="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 outline-none focus:border-blue-400"
             >
               {languages.map((lang) => (
