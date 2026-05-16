@@ -51,5 +51,4 @@ test:
 	cd frontend && npm test
 
 sandbox-images:
-	docker build -t oj-sandbox-cpp ./worker/sandbox/cpp
-	docker build -t oj-sandbox-python ./worker/sandbox/python
+	$(MAKE) -C worker build-sandbox-images

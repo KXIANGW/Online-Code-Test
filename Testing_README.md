@@ -83,7 +83,7 @@ make ps
 
 ```bash
 cp .env.example .env
-make sandbox-images   # 建立 oj-sandbox-cpp / oj-sandbox-python 沙箱 image
+make sandbox-images   # 建立 oct-sandbox-cpp:12 / oct-sandbox-python:3.11 沙箱 image
 make up               # docker compose up -d --build
 make ps               # 確認所有服務健康
 ```
@@ -211,7 +211,7 @@ Tests       99 passed (99)
 
 ### 4.1.1 End-to-End async judge tests
 
-這批測試會連真實 PostgreSQL、RabbitMQ，並在測試程序內啟動 backend app、backend judge result consumer、worker judge consumer；提交會真的進 `judge.tasks` queue，worker 會用 Docker sandbox 跑 `oj-sandbox-python` / `oj-sandbox-cpp`，再寫回 PostgreSQL。
+這批測試會連真實 PostgreSQL、RabbitMQ，並在測試程序內啟動 backend app、backend judge result consumer、worker judge consumer；提交會真的進 `judge.tasks` queue，worker 會用 Docker sandbox 跑 `oct-sandbox-python:3.11` / `oct-sandbox-cpp:12`，再寫回 PostgreSQL。
 
 #### Step 1：清掉舊資料，只啟動 PostgreSQL + RabbitMQ
 

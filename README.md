@@ -46,7 +46,7 @@ SANDBOX_RUNTIME=runc
 
 ```bash
 make bootstrap       # 產生 .env
-make sandbox-images  # 建立 oj-sandbox-cpp / oj-sandbox-python
+make sandbox-images  # 建立 oct-sandbox-cpp:12 / oct-sandbox-python:3.11
 make up              # docker compose up -d --build
 make ps              # 查看服務健康狀態
 make logs            # 追蹤所有服務 log
