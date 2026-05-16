@@ -14,7 +14,7 @@ help:
 	@echo "  make rebuild     clean + up (full reset)"
 	@echo "  make psql        Open psql shell inside the postgres container"
 	@echo "  make sandbox-images Build judge sandbox images"
-	@echo "  make test        Run backend then frontend test suites"
+	@echo "  make test        Run lint + test + build (mirrors CI)"
 
 bootstrap:
 	@if [ ! -f .env ]; then \
@@ -47,8 +47,8 @@ psql:
 	docker compose exec -it postgres psql -U $${POSTGRES_USER:-oct} -d $${POSTGRES_DB:-oct}
 
 test:
-	cd backend && npm test
-	cd frontend && npm test
+	cd backend && npm run lint && npm test
+	cd frontend && npm run lint && npm test && npm run build
 
 sandbox-images:
 	docker build -t oj-sandbox-cpp ./worker/sandbox/cpp
