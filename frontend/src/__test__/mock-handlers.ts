@@ -9,8 +9,9 @@ import {
   mockSubmissions,
   mockSubmissionDetail,
   mockSessionResult,
+  mockUserSummaries,
 } from "./mock-data";
-import type { SubmissionCreated } from "../types";
+import type { SubmissionCreated, UserSummary } from "../types";
 
 const BASE = "/api";
 
@@ -24,6 +25,33 @@ export const handlers = [
       return HttpResponse.json({ token: mockTokens[username] });
     }
     return HttpResponse.json({ message: "Invalid credentials" }, { status: 401 });
+  }),
+
+  // ── Users ──────────────────────────────────────────────────────────────────
+  http.get(`${BASE}/users`, () => {
+    return HttpResponse.json(mockUserSummaries);
+  }),
+
+  http.post(`${BASE}/users`, async ({ request }) => {
+    const body = (await request.json()) as { username: string; displayName?: string; roleNames?: string[] };
+    const created: UserSummary = {
+      id: Date.now(),
+      username: body.username,
+      displayName: body.displayName ?? body.username,
+      isSuperuser: false,
+      createdAt: new Date().toISOString(),
+      roles: body.roleNames ?? ["candidate"],
+    };
+    return HttpResponse.json(created, { status: 201 });
+  }),
+
+  http.put(`${BASE}/users/:id/roles`, async ({ request, params }) => {
+    const body = (await request.json()) as { roleNames: string[] };
+    return HttpResponse.json({ id: Number(params.id), roles: body.roleNames });
+  }),
+
+  http.delete(`${BASE}/users/:id`, () => {
+    return new HttpResponse(null, { status: 204 });
   }),
 
   // ── Languages ──────────────────────────────────────────────────────────────

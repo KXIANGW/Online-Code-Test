@@ -261,7 +261,7 @@ describe("ExamPage", () => {
     expect(within(panel).getAllByText(/Two Sum/).length).toBeGreaterThan(0);
   });
 
-  it("renders language selector with placeholder languages", async () => {
+  it("renders language selector populated from GET /api/languages", async () => {
     // given
     await renderExamPage();
     // when
@@ -348,13 +348,49 @@ describe("ExamPage", () => {
     await renderExamPage();
     const select = screen.getByLabelText("語言") as HTMLSelectElement;
     const editor = screen.getByLabelText("Code editor");
-    // initially python
-    expect(editor).toHaveAttribute("data-language", "python");
+    // wait for languages to load and default to python3
+    await waitFor(() => {
+      expect(editor).toHaveAttribute("data-language", "python");
+    });
 
     // when
     fireEvent.change(select, { target: { value: "cpp17" } });
     // expect
     expect(editor).toHaveAttribute("data-language", "cpp");
+  });
+
+  it("shows empty language selector and plaintext editor when GET /api/languages returns empty list", async () => {
+    // given
+    mockGetLanguages.mockResolvedValue([]);
+    // when
+    await renderExamPage();
+    // expect — no options, editor defaults to plaintext
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    expect(select.options).toHaveLength(0);
+    expect(screen.getByLabelText("Code editor")).toHaveAttribute("data-language", "plaintext");
+  });
+
+  it("shows load error when GET /api/languages fails (API error)", async () => {
+    // given — getLanguages rejects → Promise.all rejects → load error UI
+    mockGetLanguages.mockRejectedValue(new Error("500 Internal Server Error"));
+    // when
+    await renderExamPage();
+    // expect — error message shown, editor not rendered
+    expect(screen.getByText("無法載入考試，請重新整理頁面或聯繫面試官。")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Code editor")).not.toBeInTheDocument();
+  });
+
+  it("filters out disabled languages from the selector", async () => {
+    // given
+    mockGetLanguages.mockResolvedValue([
+      { ...mockExamPageLanguages[0], isEnabled: false },
+      mockExamPageLanguages[1],
+    ]);
+    // when
+    await renderExamPage();
+    // expect — only enabled language appears
+    expect(screen.getByRole("option", { name: "C++ 17" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Python 3.11" })).not.toBeInTheDocument();
   });
 
   // ── Bottom panel tabs ─────────────────────────────────────────────────────

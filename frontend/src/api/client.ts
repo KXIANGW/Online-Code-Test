@@ -102,6 +102,10 @@ export async function deleteUser(id: number): Promise<void> {
   await api.delete(`/users/${id}`);
 }
 
+export async function updateUserRoles(id: number, roleNames: string[]): Promise<void> {
+  await api.put(`/users/${id}/roles`, { roleNames });
+}
+
 export async function getProblems(): Promise<ProblemSummary[]> {
   const { data } = await api.get<ProblemSummary[]>("/problems");
   return data;

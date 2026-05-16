@@ -41,7 +41,9 @@ export default function ExamPage() {
   const [problems, setProblems] = useState<ExamSessionProblem[]>([]);
   const [languages, setLanguages] = useState<Language[]>([]);
   const [activeProblemId, setActiveProblemId] = useState<number>(0);
-  const [selectedLangs, setSelectedLangs] = useState<Record<number, string>>({});
+  const [selectedLangs, setSelectedLangs] = useState<Record<number, string>>(
+    {},
+  );
   const [codes, setCodes] = useState<Record<number, string>>({});
   const [bottomTab, setBottomTab] = useState<BottomTab>("testcases");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
@@ -69,15 +71,17 @@ export default function ExamPage() {
           listSessionSubmissions(sessionId),
         ]);
 
+        const enabledLangs = langs.filter((l) => l.isEnabled);
         setProblems(sessionProblems);
         setLanguages(langs);
         setSessionStatus(session.status);
         setSubmissions(history);
         setLatestSubmissionId(history.at(-1)?.id ?? null);
         if (session.expiresAt) setExpiresAt(session.expiresAt);
-        if (sessionProblems.length > 0) setActiveProblemId(sessionProblems[0].problemId);
+        if (sessionProblems.length > 0)
+          setActiveProblemId(sessionProblems[0].problemId);
 
-        const defaultLang = langs[0]?.language ?? "";
+        const defaultLang = enabledLangs[0]?.language ?? "";
         const initialCodes: Record<number, string> = {};
         const initialLangs: Record<number, string> = {};
 
@@ -86,8 +90,12 @@ export default function ExamPage() {
           const lsRaw = localStorage.getItem(lsKey);
           if (lsRaw) {
             try {
-              const parsed = JSON.parse(lsRaw) as { code?: string; language?: string };
-              if (parsed.code !== undefined) initialCodes[p.problemId] = parsed.code;
+              const parsed = JSON.parse(lsRaw) as {
+                code?: string;
+                language?: string;
+              };
+              if (parsed.code !== undefined)
+                initialCodes[p.problemId] = parsed.code;
               initialLangs[p.problemId] = parsed.language ?? defaultLang;
             } catch {
               initialLangs[p.problemId] = defaultLang;
@@ -112,7 +120,10 @@ export default function ExamPage() {
               const pid = Number(pidStr);
               if (missingIds.includes(pid)) {
                 setCodes((prev) => ({ ...prev, [pid]: draft.code }));
-                setSelectedLangs((prev) => ({ ...prev, [pid]: draft.language }));
+                setSelectedLangs((prev) => ({
+                  ...prev,
+                  [pid]: draft.language,
+                }));
                 localStorage.setItem(
                   `oct:draft:${sessionId}:${pid}`,
                   JSON.stringify(draft),
@@ -144,8 +155,9 @@ export default function ExamPage() {
 
   const activeProblem = problems.find((p) => p.problemId === activeProblemId);
   const currentCode = codes[activeProblemId] ?? "";
-  const currentLang = selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
-  const monacoLang = MONACO_LANG[currentLang] ?? "plaintext";
+  const currentLang =
+    selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
+  const monacoLang = getMonacoMode(currentLang);
 
   function handleCodeChange(value: string | undefined) {
     const code = value ?? "";
@@ -161,7 +173,9 @@ export default function ExamPage() {
 
     if (apiDebounceRef.current) clearTimeout(apiDebounceRef.current);
     apiDebounceRef.current = setTimeout(() => {
-      saveExamDraft(sessionId, activeProblemId, { code, language: lang }).catch(() => {});
+      saveExamDraft(sessionId, activeProblemId, { code, language: lang }).catch(
+        () => {},
+      );
     }, 5000);
   }
 
@@ -169,7 +183,10 @@ export default function ExamPage() {
     // Flush current draft to localStorage immediately before switching
     const lang = selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
     const lsKey = `oct:draft:${sessionId}:${activeProblemId}`;
-    localStorage.setItem(lsKey, JSON.stringify({ code: codes[activeProblemId] ?? "", language: lang }));
+    localStorage.setItem(
+      lsKey,
+      JSON.stringify({ code: codes[activeProblemId] ?? "", language: lang }),
+    );
     setActiveProblemId(problemId);
   }
 
@@ -440,13 +457,19 @@ export default function ExamPage() {
               value={currentLang}
               onChange={(e) => {
                 const newLang = e.target.value;
-                setSelectedLangs((prev) => ({ ...prev, [activeProblemId]: newLang }));
+                setSelectedLangs((prev) => ({
+                  ...prev,
+                  [activeProblemId]: newLang,
+                }));
                 const code = codes[activeProblemId] ?? "";
                 localStorage.setItem(
                   `oct:draft:${sessionId}:${activeProblemId}`,
-                  JSON.stringify({ code, language: newLang })
+                  JSON.stringify({ code, language: newLang }),
                 );
-                saveExamDraft(sessionId, activeProblemId, { code, language: newLang }).catch(() => {});
+                saveExamDraft(sessionId, activeProblemId, {
+                  code,
+                  language: newLang,
+                }).catch(() => {});
               }}
               className="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 outline-none focus:border-blue-400"
             >

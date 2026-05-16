@@ -1,15 +1,24 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { setupServer } from "msw/node";
 import { http, HttpResponse } from "msw";
-import { api } from "../api/client";
+import { api, updateUserRoles } from "../api/client";
 
 let capturedAuthHeader: string | null | undefined = undefined;
+let capturedRolesRequest: { url: string; method: string; body: unknown } | null = null;
 
 const server = setupServer(
   http.get("*/api/ping", ({ request }) => {
     capturedAuthHeader = request.headers.get("Authorization");
     return HttpResponse.json({ pong: true, ts: new Date().toISOString() });
-  })
+  }),
+  http.put("*/api/users/:id/roles", async ({ request, params }) => {
+    capturedRolesRequest = {
+      url: request.url,
+      method: request.method,
+      body: await request.json(),
+    };
+    return HttpResponse.json({ id: Number(params.id), roles: (capturedRolesRequest.body as { roleNames: string[] }).roleNames });
+  }),
 );
 
 describe("api request interceptor", () => {
@@ -18,6 +27,7 @@ describe("api request interceptor", () => {
 
   beforeEach(() => {
     capturedAuthHeader = undefined;
+    capturedRolesRequest = null;
     sessionStorage.clear();
   });
 
@@ -73,6 +83,48 @@ describe("api request interceptor", () => {
 
     // expect
     expect(capturedAuthHeader).toBeNull();
+  });
+
+  // updateUserRoles HTTP contract
+  describe("updateUserRoles()", () => {
+    it("sends PUT to /api/users/:id/roles with { roleNames } body", async () => {
+      // given
+      sessionStorage.setItem("oct_token", "test-token");
+
+      // when
+      await updateUserRoles(5, ["interviewer", "problem_setter"]);
+
+      // expect — method and URL
+      expect(capturedRolesRequest?.method).toBe("PUT");
+      expect(capturedRolesRequest?.url).toContain("/api/users/5/roles");
+      // expect — body contains roleNames array
+      expect(capturedRolesRequest?.body).toEqual({
+        roleNames: ["interviewer", "problem_setter"],
+      });
+    });
+
+    it("sends empty roleNames array when all roles are removed", async () => {
+      // given
+      sessionStorage.setItem("oct_token", "test-token");
+
+      // when
+      await updateUserRoles(3, []);
+
+      // expect
+      expect(capturedRolesRequest?.url).toContain("/api/users/3/roles");
+      expect(capturedRolesRequest?.body).toEqual({ roleNames: [] });
+    });
+
+    it("attaches Authorization header for the roles request", async () => {
+      // given
+      sessionStorage.setItem("oct_token", "auth-token-xyz");
+
+      // when
+      await updateUserRoles(7, ["interviewer"]);
+
+      // expect
+      expect(capturedRolesRequest?.url).toContain("/api/users/7/roles");
+    });
   });
 
   // Boundary: token is replaced between requests

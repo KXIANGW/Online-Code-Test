@@ -1,9 +1,21 @@
 import { useEffect, useState } from "react";
 import { NavBar } from "../components/NavBar";
-import { createUser, deleteUser, getUsers } from "../api/client";
+import {
+  createUser,
+  deleteUser,
+  getUsers,
+  updateUserRoles,
+} from "../api/client";
 import { CreateUserRequest } from "../types";
+import {
+  ROLE_CONFIG_MAP,
+  ROLE_CONFIGS,
+  EDITABLE_ROLES,
+  CREATABLE_ROLES,
+  type RoleKey,
+} from "../config/roles";
 
-type UserRole = "interviewer" | "problem_setter" | "root";
+type UserRole = RoleKey;
 
 interface UserRow {
   id: number;
@@ -15,26 +27,13 @@ interface UserRow {
 
 const initialUsers: UserRow[] = [];
 
-
-
 function RolePill({ role }: { role: UserRole }) {
-  const label =
-    role === "interviewer"
-      ? "面試官"
-      : role === "problem_setter"
-        ? "出題者"
-        : "Root";
-  const color =
-    role === "interviewer"
-      ? "bg-blue-50 text-blue-600"
-      : role === "problem_setter"
-        ? "bg-purple-50 text-purple-600"
-        : "bg-slate-100 text-slate-500";
+  const config = ROLE_CONFIG_MAP[role];
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${color}`}
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${config.pillColor}`}
     >
-      {label}
+      {config.label}
     </span>
   );
 }
@@ -50,19 +49,27 @@ export default function AdminDashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<"all" | "role">("all");
   const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
+  const [editingUser, setEditingUser] = useState<{
+    id: number;
+    username: string;
+  } | null>(null);
+  const [pendingRoles, setPendingRoles] = useState<RoleKey[]>([]);
+  const [savingRoles, setSavingRoles] = useState(false);
 
-  const filteredUsers = users.filter((user) => {
-    const nameMatch = user.username
-      .toLowerCase()
-      .includes(searchTerm.trim().toLowerCase());
-    if (!nameMatch) return false;
+  const filteredUsers = users
+    .filter((user) => {
+      const nameMatch = user.username
+        .toLowerCase()
+        .includes(searchTerm.trim().toLowerCase());
+      if (!nameMatch) return false;
 
-    if (activeTab === "role" && roleFilter !== "all") {
-      return user.roles.includes(roleFilter);
-    }
+      if (activeTab === "role" && roleFilter !== "all") {
+        return user.roles.includes(roleFilter);
+      }
 
-    return true;
-  });
+      return true;
+    })
+    .sort((a, b) => a.id - b.id);
 
   useEffect(() => {
     setLoading(true);
@@ -75,7 +82,7 @@ export default function AdminDashboardPage() {
             username: item.username,
             displayName: item.displayName ?? item.username,
             isSuperuser: item.isSuperuser,
-            roles: item.isSuperuser ? ["root"] : [],
+            roles: item.isSuperuser ? ["root"] : (item.roles as UserRole[]),
           })),
         );
       })
@@ -143,6 +150,37 @@ export default function AdminDashboardPage() {
       });
   }
 
+  function handleOpenEditRoles(user: UserRow) {
+    setEditingUser({ id: user.id, username: user.username });
+    setPendingRoles(user.roles.filter((r) => ROLE_CONFIG_MAP[r]?.editable));
+  }
+
+  function handleTogglePendingRole(role: RoleKey) {
+    setPendingRoles((current) =>
+      current.includes(role)
+        ? current.filter((r) => r !== role)
+        : [...current, role],
+    );
+  }
+
+  function handleSaveRoles() {
+    if (!editingUser) return;
+    setSavingRoles(true);
+    updateUserRoles(editingUser.id, pendingRoles)
+      .then(() => {
+        setUsers((current) =>
+          current.map((u) =>
+            u.id === editingUser.id ? { ...u, roles: pendingRoles } : u,
+          ),
+        );
+        setEditingUser(null);
+      })
+      .catch(() => {
+        alert("更新角色失敗，請稍後再試。");
+      })
+      .finally(() => setSavingRoles(false));
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       <NavBar homeHref="/admin" />
@@ -187,9 +225,7 @@ export default function AdminDashboardPage() {
                   <button
                     key={tab.key}
                     type="button"
-                    onClick={() =>
-                      setActiveTab(tab.key as "all" | "role")
-                    }
+                    onClick={() => setActiveTab(tab.key as "all" | "role")}
                     className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
                       activeTab === tab.key
                         ? "bg-slate-900 text-white"
@@ -218,9 +254,7 @@ export default function AdminDashboardPage() {
               <div className="mt-4 flex flex-wrap gap-2">
                 {[
                   { key: "all", label: "全部角色" },
-                  { key: "root", label: "Root" },
-                  { key: "interviewer", label: "面試官" },
-                  { key: "problem_setter", label: "出題者" },
+                  ...ROLE_CONFIGS.map((r) => ({ key: r.key, label: r.label })),
                 ].map((filter) => (
                   <button
                     key={filter.key}
@@ -277,7 +311,11 @@ export default function AdminDashboardPage() {
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap"
+                        onClick={() => handleOpenEditRoles(user)}
+                        disabled={
+                          user.isSuperuser || user.roles.includes("candidate")
+                        }
+                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
                       >
                         編輯角色
                       </button>
@@ -345,24 +383,20 @@ export default function AdminDashboardPage() {
                 授權面試官或出題者，角色可疊加。
               </p>
               <div className="mt-3 flex flex-col gap-3">
-                <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={roleNames.includes("interviewer")}
-                    onChange={() => handleToggleRole("interviewer")}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span>interviewer（面試官）</span>
-                </label>
-                <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={roleNames.includes("problem_setter")}
-                    onChange={() => handleToggleRole("problem_setter")}
-                    className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                  />
-                  <span>problem_setter（出題者）</span>
-                </label>
+                {CREATABLE_ROLES.map((r) => (
+                  <label
+                    key={r.key}
+                    className="inline-flex items-center gap-2 text-sm text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={roleNames.includes(r.key)}
+                      onChange={() => handleToggleRole(r.key)}
+                      className={`h-4 w-4 rounded border-slate-300 ${r.checkboxColor} focus:ring-2`}
+                    />
+                    <span>{r.key}（{r.label}）</span>
+                  </label>
+                ))}
               </div>
             </div>
             <button
@@ -374,6 +408,58 @@ export default function AdminDashboardPage() {
           </form>
         </section>
       </main>
+
+      {editingUser && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          aria-label="編輯角色"
+        >
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-slate-900">編輯角色</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {editingUser.username}
+            </p>
+
+            <div className="mt-5 flex flex-col gap-3">
+              {EDITABLE_ROLES.map((r) => (
+                <label
+                  key={r.key}
+                  className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={pendingRoles.includes(r.key)}
+                    onChange={() => handleTogglePendingRole(r.key)}
+                    className={`h-4 w-4 rounded border-slate-300 ${r.checkboxColor} focus:ring-2`}
+                  />
+                  <span>{r.key}（{r.label}）</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingUser(null)}
+                disabled={savingRoles}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveRoles}
+                disabled={savingRoles}
+                className="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-40"
+              >
+                {savingRoles ? "儲存中..." : "儲存"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

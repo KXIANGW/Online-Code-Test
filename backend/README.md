@@ -1,10 +1,10 @@
-# Backend API 現況 — IAM / Problem / Exam / Language / Submission 模組
+# Backend API 現況 — IAM / Problem / Exam / Language / Submission / Draft 模組
 
 ## 目前狀態
 
-目前專案已完成 PostgreSQL schema/seed/scenario data 與 Backend API M1，包括 JWT auth、IAM、Problem、Exam、Language、RBAC 與 112 筆 integration tests；M2 已完成 RabbitMQ 非同步判題整合（移除 mock judge）與 WebSocket 即時推播，前端仍維持健康狀態頁，正式前端功能留待後續實作。M3 新增 `users.created_by` 欄位，interviewer 僅能管理自己建立的 candidate，並補上 `PUT /api/users/:id` 端點。
+目前專案已完成 PostgreSQL schema/seed/scenario data 與 Backend API M1，包括 JWT auth、IAM、Problem、Exam、Language、RBAC 與 112 筆 integration tests；M2 已完成 RabbitMQ 非同步判題整合（移除 mock judge）與 WebSocket 即時推播，前端仍維持健康狀態頁，正式前端功能留待後續實作。M3 新增 `users.created_by` 欄位，interviewer 僅能管理自己建立的 candidate，並補上 `PUT /api/users/:id` 端點。M4 整合 Redis：語言列表、題目列表、題目詳情與使用者 profile 均透過 cache-aside 模式加速讀取；新增 Draft 自動儲存 API（`PUT/GET /api/exam-sessions/:id/drafts`），以 Redis 持久化候選人作答草稿，Redis 不可用時自動降級不影響考試流程，測試數增至 122 筆。
 
-Database schema 已完整建置（見 `infra/postgres/` 下的 00-11 SQL 腳本，以及對應的 Drizzle ORM schema `backend/src/db/schema.ts`）。Backend 以 Routes（HTTP 薄層）+ Services（業務邏輯、RBAC）分層實作，M2 新增 MQ 發布/消費與 WebSocket hub；M3 新增 ownership 欄位與 idempotent migration。
+Database schema 已完整建置（見 `infra/postgres/` 下的 00-11 SQL 腳本，以及對應的 Drizzle ORM schema `backend/src/db/schema.ts`）。Backend 以 Routes（HTTP 薄層）+ Services（業務邏輯、RBAC）分層實作，M2 新增 MQ 發布/消費與 WebSocket hub；M3 新增 ownership 欄位與 idempotent migration；M4 新增 Redis client、cache helpers 與 draft service。
 
 ---
 
@@ -13,7 +13,7 @@ Database schema 已完整建置（見 `infra/postgres/` 下的 00-11 SQL 腳本�
 ```text
 backend/src/
 ├── server.ts              # Fastify app 主入口，註冊 plugins、routes、WebSocket 路由
-├── env.ts                 # Zod 驗證環境變數（DATABASE_URL、JWT_SECRET、RABBITMQ_URL 等）
+├── env.ts                 # Zod 驗證環境變數（DATABASE_URL、JWT_SECRET、RABBITMQ_URL、REDIS_URL 等）
 ├── errors.ts              # 401/403/404/409/400 response 共用 helper
 ├── types.d.ts             # Fastify request.user 型別擴充（augments FastifyRequest）
 │
@@ -26,7 +26,8 @@ backend/src/
 ├── db/                    # 數據存取層
 │   ├── schema.ts          # Drizzle ORM schema，與 infra/postgres/ SQL 一對一對齊
 │   ├── client.ts          # PostgreSQL 連線 pool（Drizzle + node-postgres）
-│   └── migrate.ts         # Migration runner，啟動時執行 SQL 腳本
+│   ├── migrate.ts         # Migration runner，啟動時執行 SQL 腳本
+│   └── redis.ts           # ioredis 連線（lazyConnect）；export cacheGet/cacheSet/cacheDel helpers
 │
 ├── mq/                    # RabbitMQ 整合
 │   ├── client.ts          # 連線管理（含斷線指數退避重連），export getChannel()
@@ -52,7 +53,8 @@ backend/src/
 │   ├── problem.service.ts    # 題目 CRUD、測資管理、語言倍率覆寫
 │   ├── exam.service.ts       # Session 建立（手動/隨機派題）、visibility、狀態轉換
 │   ├── submission.service.ts # Submission 建立（publish MQ 任務）、結果查詢（直接讀 DB）
-│   └── language.service.ts  # 語言列表查詢（is_enabled = true）
+│   ├── language.service.ts  # 語言列表查詢（is_enabled = true）；Redis cache-aside，TTL 1h，語言變更時失效
+│   └── draft.service.ts     # 草稿讀寫（Redis SETEX / MGET）；TTL = 考試剩餘秒數；Redis 不可用時靜默降級
 │
 └── __tests__/
     ├── helpers/
@@ -124,11 +126,18 @@ backend/src/
 | GET | `/api/exam-sessions/:sessionId/submissions/:submissionId` | ownership check | 查單筆 submission detail，包含 `sourceCode` 與 testcase results |
 | GET | `/api/exam-sessions/:sessionId/result` | ownership check | 查 session result summary、每題最新狀態與分數 |
 
+### Draft（草稿自動儲存）
+
+| Method | Path | 權限 | 說明 |
+|--------|------|------|------|
+| PUT | `/api/exam-sessions/:id/drafts/:problemId` | `exam:take`（本人）| 儲存單題草稿（code + language）至 Redis；TTL = 考試剩餘秒數；session 非 `in_progress` 回 400 |
+| GET | `/api/exam-sessions/:id/drafts` | `exam:take`（本人）| 取回本場所有題目的草稿（Redis MGET）；Redis 不可用時回 `{}` |
+
 ### Language / WebSocket
 
 | Method | Path | 權限 | 說明 |
 |--------|------|------|------|
-| GET | `/api/languages` | 任一有效 JWT | 列出 `language_defaults.is_enabled = true` 的支援語言 |
+| GET | `/api/languages` | 任一有效 JWT | 列出 `language_defaults.is_enabled = true` 的支援語言（Redis cache 1h） |
 | GET | `/api/ws` | JWT（query string `?token=<JWT>`）| WebSocket 升級；連線後 subscribe sessionId 即可收 `judge_result` 推播 |
 
 `GET /api/problems/:id` 與 `GET /api/exam-sessions/:id/problems` 會回傳該題 `languageLimits`。沒有覆寫資料時，評測端應使用 `GET /api/languages` 回傳的全域預設倍率。
@@ -137,15 +146,15 @@ backend/src/
 
 ## 測試覆蓋現況
 
-目前共有 6 個 test files、112 筆 integration tests。這些測試不是只驗證「happy path」，而是刻意依角色覆蓋 RBAC、ownership、資料隔離、錯誤狀態與關鍵業務規則。
+目前共有 6 個 test files、122 筆 integration tests。這些測試不是只驗證「happy path」，而是刻意依角色覆蓋 RBAC、ownership、資料隔離、錯誤狀態與關鍵業務規則。
 
 | Test file | 測試數 | 覆蓋重點 |
 |-----------|--------|----------|
-| `auth.test.ts` | 7 | 登入成功/失敗、軟刪除帳號、body validation、未認證與 malformed JWT 401 |
+| `auth.test.ts` | 8 | 登入成功/失敗、軟刪除帳號、body validation、未認證與 malformed JWT 401 |
 | `users.test.ts` | 37 | superuser / interviewer / candidate 的 IAM 權限、`created_by` ownership（只看/改/刪自己建立的 candidate）、重複 username、未知 role、batch bounds 與軟刪除 |
 | `problems.test.ts` | 30 | 題目 CRUD、測資 CRUD、hidden testcase sanitization、Language API、languageLimits、deleted problem guards、constraint conflicts |
-| `exams.test.ts` | 24 | 手動/隨機派題、歷史題目排除、session visibility、start/cancel ownership、session problems、random pool conflicts |
-| `submissions.test.ts` | 11 | async judge 狀態、submission history/result、source code visibility、RBAC/ownership、session 狀態 guard、final formal scoring |
+| `exams.test.ts` | 32 | 手動/隨機派題、歷史題目排除、session visibility、start/cancel ownership、session problems、random pool conflicts；草稿儲存/讀取、ownership guard、session 狀態 guard、Redis 降級行為 |
+| `submissions.test.ts` | 12 | async judge 狀態、submission history/result、source code visibility、RBAC/ownership、session 狀態 guard、final formal scoring |
 | `system.test.ts` | 3 | `/api/ping`、`/api/health`、`/api/ws` authentication/error behavior |
 
 ### 通用測試

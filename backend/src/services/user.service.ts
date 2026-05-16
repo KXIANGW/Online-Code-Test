@@ -25,16 +25,26 @@ export async function listUsers(currentUser: CurrentUser) {
     displayName: users.displayName,
     isSuperuser: users.isSuperuser,
     createdAt: users.createdAt,
+    roles: sql<string[]>`array_remove(array_agg(${roles.name}), NULL)`,
   };
 
   // superuser sees all users; exam:manage sees only candidates they personally created
   if (currentUser.isSuperuser) {
-    return db.select(cols).from(users).where(isNull(users.deletedAt));
+    return db
+      .select(cols)
+      .from(users)
+      .leftJoin(userRoles, eq(userRoles.userId, users.id))
+      .leftJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(isNull(users.deletedAt))
+      .groupBy(users.id, users.username, users.displayName, users.isSuperuser, users.createdAt);
   }
   return db
     .select(cols)
     .from(users)
-    .where(and(isNull(users.deletedAt), eq(users.isSuperuser, false), eq(users.createdBy, currentUser.id)));
+    .leftJoin(userRoles, eq(userRoles.userId, users.id))
+    .leftJoin(roles, eq(roles.id, userRoles.roleId))
+    .where(and(isNull(users.deletedAt), eq(users.isSuperuser, false), eq(users.createdBy, currentUser.id)))
+    .groupBy(users.id, users.username, users.displayName, users.isSuperuser, users.createdAt);
 }
 
 export async function createUser(
@@ -212,6 +222,39 @@ export async function updateUser(
     .where(eq(users.id, targetId));
 
   return updated!;
+}
+
+export async function updateUserRoles(
+  currentUser: CurrentUser,
+  targetId: number,
+  roleNames: string[],
+) {
+  requireSuperuser(currentUser);
+
+  const allowed = new Set(["interviewer", "problem_setter"]);
+  if (roleNames.some((r) => !allowed.has(r))) throw BadRequestError("Only interviewer and problem_setter roles are assignable");
+
+  const [existing] = await db
+    .select({ id: users.id, deletedAt: users.deletedAt, isSuperuser: users.isSuperuser })
+    .from(users)
+    .where(eq(users.id, targetId));
+
+  if (!existing || existing.deletedAt !== null) throw NotFoundError("user");
+  if (existing.isSuperuser) throw ForbiddenError();
+
+  await db.transaction(async (tx) => {
+    await tx.delete(userRoles).where(eq(userRoles.userId, targetId));
+    if (roleNames.length > 0) {
+      const roleRows = await tx
+        .select({ id: roles.id })
+        .from(roles)
+        .where(inArray(roles.name, roleNames));
+      if (roleRows.length !== new Set(roleNames).size) throw BadRequestError("Unknown role");
+      await tx.insert(userRoles).values(roleRows.map((r) => ({ userId: targetId, roleId: r.id })));
+    }
+  });
+
+  return { id: targetId, roles: roleNames };
 }
 
 export async function deleteUser(currentUser: CurrentUser, targetId: number) {
