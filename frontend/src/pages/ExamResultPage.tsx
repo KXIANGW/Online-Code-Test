@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getSessionResult, getSubmissionDetail } from "../api/client";
+import {
+  getSessionResult,
+  getSubmissionDetail,
+  listSessionSubmissions,
+} from "../api/client";
 import { NavBar } from "../components/NavBar";
-import type { ExamStatus, SessionResult, TestcaseResult } from "../types";
+import type {
+  ExamStatus,
+  SessionResult,
+  SubmissionSummary,
+  TestcaseResult,
+} from "../types";
 
 const STATUS_LABEL: Record<ExamStatus, string> = {
   not_started: "待考",
@@ -45,17 +54,27 @@ export default function ExamResultPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [result, setResult] = useState<SessionResult | null>(null);
+  const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [expandedEspId, setExpandedEspId] = useState<Set<number>>(new Set());
   const [tcCache, setTcCache] = useState<
     Record<number, TestcaseResult[] | "loading" | "error">
   >({});
+  const [expandedSubmissionId, setExpandedSubmissionId] = useState<Set<number>>(
+    new Set(),
+  );
+  const [historyTcCache, setHistoryTcCache] = useState<
+    Record<number, TestcaseResult[] | "loading" | "error">
+  >({});
 
   useEffect(() => {
     if (!id) return;
-    getSessionResult(Number(id))
-      .then(setResult)
+    Promise.all([getSessionResult(Number(id)), listSessionSubmissions(Number(id))])
+      .then(([sessionResult, submissionHistory]) => {
+        setResult(sessionResult);
+        setSubmissions(submissionHistory);
+      })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [id]);
@@ -80,6 +99,32 @@ export default function ExamResultPage() {
         setTcCache((prev) => ({ ...prev, [espId]: detail.testcaseResults })),
       )
       .catch(() => setTcCache((prev) => ({ ...prev, [espId]: "error" })));
+  }
+
+  function toggleHistoryDetail(submissionId: number) {
+    setExpandedSubmissionId((prev) => {
+      const next = new Set(prev);
+      if (next.has(submissionId)) {
+        next.delete(submissionId);
+      } else {
+        next.add(submissionId);
+      }
+      return next;
+    });
+
+    if (historyTcCache[submissionId] !== undefined) return;
+
+    setHistoryTcCache((prev) => ({ ...prev, [submissionId]: "loading" }));
+    getSubmissionDetail(Number(id), submissionId)
+      .then((detail) =>
+        setHistoryTcCache((prev) => ({
+          ...prev,
+          [submissionId]: detail.testcaseResults.filter((tc) => tc.isPublic),
+        })),
+      )
+      .catch(() =>
+        setHistoryTcCache((prev) => ({ ...prev, [submissionId]: "error" })),
+      );
   }
 
   return (
@@ -252,6 +297,138 @@ export default function ExamResultPage() {
                   );
                 })}
               </div>
+            </section>
+
+            <section className="bg-white rounded-xl border border-slate-200">
+              <div className="px-5 py-4 border-b border-slate-100">
+                <h2 className="font-medium text-slate-800">提交紀錄</h2>
+              </div>
+              {submissions.length === 0 ? (
+                <p className="px-5 py-4 text-sm text-slate-400">尚無提交紀錄</p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {submissions.map((submission) => {
+                    const isExpanded = expandedSubmissionId.has(submission.id);
+                    const tcState = historyTcCache[submission.id];
+                    const verdict = submission.verdict ?? submission.status;
+                    return (
+                      <div key={submission.id}>
+                        <div className="px-5 py-4 flex items-start justify-between gap-4">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-medium text-slate-800">
+                                {submission.orderIndex}. {submission.problemTitle}
+                              </p>
+                              <span className="text-xs rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">
+                                {submission.submissionType === "simple"
+                                  ? "一般"
+                                  : "正式"}
+                              </span>
+                              {submission.isFinalSubmission && (
+                                <span className="text-xs rounded-full bg-green-50 px-2 py-0.5 text-green-600">
+                                  最終提交
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                              <span
+                                className={
+                                  VERDICT_COLOR[verdict] ?? "text-slate-500"
+                                }
+                              >
+                                {verdict}
+                              </span>
+                              <span>{submission.language}</span>
+                              <span>
+                                {new Date(submission.submittedAt).toLocaleString(
+                                  "zh-TW",
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleHistoryDetail(submission.id)}
+                            aria-label={`查看公開測資：提交 ${submission.id}`}
+                            className="text-xs text-blue-600 hover:text-blue-800 transition-colors whitespace-nowrap"
+                          >
+                            {isExpanded ? "收合公開測資 ▲" : "查看公開測資"}
+                          </button>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="border-t border-slate-100 bg-slate-50 px-5 pb-4">
+                            {tcState === "loading" && (
+                              <p className="py-3 text-center text-xs text-slate-400">
+                                載入公開測資中...
+                              </p>
+                            )}
+                            {tcState === "error" && (
+                              <p className="py-3 text-center text-xs text-red-500">
+                                無法載入公開測資結果
+                              </p>
+                            )}
+                            {Array.isArray(tcState) && tcState.length === 0 && (
+                              <p className="py-3 text-center text-xs text-slate-400">
+                                無公開測資結果
+                              </p>
+                            )}
+                            {Array.isArray(tcState) && tcState.length > 0 && (
+                              <table className="mt-3 w-full text-xs">
+                                <thead>
+                                  <tr className="border-b border-slate-200 text-slate-400">
+                                    <th className="py-2 text-left font-medium">
+                                      #
+                                    </th>
+                                    <th className="py-2 text-left font-medium">
+                                      判決
+                                    </th>
+                                    <th className="py-2 text-left font-medium">
+                                      執行時間
+                                    </th>
+                                    <th className="py-2 text-left font-medium">
+                                      記憶體
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {tcState.map((tc) => (
+                                    <tr key={tc.id}>
+                                      <td className="py-2 text-slate-600">
+                                        公開測資 {tc.orderIndex}
+                                      </td>
+                                      <td
+                                        className={`py-2 font-medium ${
+                                          TC_VERDICT_COLOR[tc.verdict] ??
+                                          "text-slate-600"
+                                        }`}
+                                      >
+                                        {tc.verdict}
+                                      </td>
+                                      <td className="py-2 text-slate-600">
+                                        {tc.verdict === "skipped" ||
+                                        tc.runtimeMs === null
+                                          ? "—"
+                                          : `${tc.runtimeMs} ms`}
+                                      </td>
+                                      <td className="py-2 text-slate-600">
+                                        {tc.verdict === "skipped" ||
+                                        tc.memoryKb === null
+                                          ? "—"
+                                          : `${tc.memoryKb} KB`}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
           </div>
         )}
