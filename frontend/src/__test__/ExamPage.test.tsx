@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, render, screen, fireEvent, within, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ExamPage from "../pages/ExamPage";
 import type {
@@ -347,16 +348,15 @@ describe("ExamPage", () => {
     // given
     await renderExamPage();
     const select = screen.getByLabelText("語言") as HTMLSelectElement;
-    const editor = screen.getByLabelText("Code editor");
     // wait for languages to load and default to python3
     await waitFor(() => {
-      expect(editor).toHaveAttribute("data-language", "python");
+      expect(screen.getByLabelText("Code editor")).toHaveAttribute("data-language", "python");
     });
 
     // when
     fireEvent.change(select, { target: { value: "cpp17" } });
-    // expect
-    expect(editor).toHaveAttribute("data-language", "cpp");
+    // expect — re-query because key={monacoLang} causes the editor to remount on language change
+    expect(screen.getByLabelText("Code editor")).toHaveAttribute("data-language", "cpp");
   });
 
   it("shows empty language selector and plaintext editor when GET /api/languages returns empty list", async () => {
@@ -411,6 +411,61 @@ describe("ExamPage", () => {
     const select = screen.getByLabelText("語言") as HTMLSelectElement;
     expect(select.value).toBe("cpp17");
     expect(screen.getByLabelText("Code editor")).toHaveAttribute("data-language", "cpp");
+  });
+
+  it("language selector default value matches the first enabled language", async () => {
+    // given
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    // expect — select.value should be python3, not empty string
+    await waitFor(() => expect(select.value).toBe("python3"));
+  });
+
+  it("select.value updates immediately after user selects a different language", async () => {
+    // given
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("python3"));
+    // when — simulate real user interaction via userEvent (not synthetic fireEvent)
+    const user = userEvent.setup();
+    await user.selectOptions(select, "cpp17");
+    // expect
+    expect(select.value).toBe("cpp17");
+  });
+
+  it("each problem maintains its own independent language selection", async () => {
+    // given
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("python3"));
+
+    // when: change problem 1 to cpp17
+    fireEvent.change(select, { target: { value: "cpp17" } });
+    expect(select.value).toBe("cpp17");
+
+    // switch to problem 2
+    fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
+    // expect: problem 2 is still on default python3 (unaffected by problem 1 change)
+    expect(select.value).toBe("python3");
+
+    // switch back to problem 1
+    fireEvent.click(screen.getByRole("tab", { name: /Two Sum/ }));
+    // expect: problem 1 preserves cpp17
+    expect(select.value).toBe("cpp17");
+  });
+
+  it("typing code in editor does not reset the language selection", async () => {
+    // given
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("python3"));
+    fireEvent.change(select, { target: { value: "cpp17" } });
+    expect(select.value).toBe("cpp17");
+    // when — re-query editor after language change because key={monacoLang} causes remount
+    const editor = screen.getByLabelText("Code editor") as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: "int main() { return 0; }" } });
+    // expect — language must not be reset by code input
+    expect(select.value).toBe("cpp17");
   });
 
   // ── Bottom panel tabs ─────────────────────────────────────────────────────
