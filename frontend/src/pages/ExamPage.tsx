@@ -666,7 +666,7 @@ export default function ExamPage() {
                             type="button"
                             aria-pressed={isActive}
                             onClick={() => setActiveCaseIdx(idx)}
-                            className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${verdictColor}`}
+                            className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-1 ${verdictColor}`}
                           >
                             Case {tc.orderIndex}
                           </button>
