@@ -277,7 +277,7 @@ kubectl create secret docker-registry ghcr-secret \
 
 ### 部署 Worker（Helm Chart）
 
-1. 部署前，請先打開 ./charts/common-worker/values.yaml，確認或修改你的環境變數配置（如 rabbitmq.url 與 database.url）。若本地暫時無相關服務，可先填寫正確格式的虛擬網址以通過 Node.js 的開機環境變數檢查。
+1. 部署前，請先打開 ./charts/common-worker/values.yaml，確認或修改你的環境變數配置（如 rabbitmq.url 與 database.url）。若本地暫時無相關服務，可先填寫正確格式的虛擬網址以通過 Node.js 的開機環境變數檢查。(目前為虛擬網址)
 
 2. 執行部署指令：
 
