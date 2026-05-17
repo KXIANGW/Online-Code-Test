@@ -808,7 +808,7 @@ describe("ExamPage", () => {
     // expect — "測試資料" tab shows testcase enriched with verdict and actual output
     fireEvent.click(screen.getByRole("tab", { name: "測試資料" }));
     const panel = screen.getByLabelText("底部面板");
-    expect(within(panel).getByText("Test Case 1")).toBeInTheDocument();
+    expect(within(panel).getByText("Case 1")).toBeInTheDocument();
     expect(within(panel).getByText("3")).toBeInTheDocument(); // actualOutput
     expect(within(panel).getByText("AC")).toBeInTheDocument(); // verdict
   });
@@ -825,7 +825,7 @@ describe("ExamPage", () => {
     await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 101));
     // expect — testcase shown with input and expected output
     const panel = screen.getByLabelText("底部面板");
-    expect(within(panel).getByText("Test Case 1")).toBeInTheDocument();
+    expect(within(panel).getByText("Case 1")).toBeInTheDocument();
     expect(within(panel).getByText(/hello/)).toBeInTheDocument();
     expect(within(panel).getByText(/world/)).toBeInTheDocument();
   });
@@ -847,6 +847,51 @@ describe("ExamPage", () => {
     await renderExamPage();
     // expect — graceful fallback, no crash
     expect(screen.getByText("暫無公開測試資料")).toBeInTheDocument();
+  });
+
+  it("clicking a case button shows that case's content and hides the previous", async () => {
+    // given — two public testcases for the active problem
+    mockGetPublicTestcases.mockResolvedValue([
+      { id: 1, orderIndex: 1, inputData: "input_one", expectedOutput: "out_one" } satisfies PublicTestcase,
+      { id: 2, orderIndex: 2, inputData: "input_two", expectedOutput: "out_two" } satisfies PublicTestcase,
+    ]);
+    await renderExamPage();
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 101));
+    const panel = screen.getByLabelText("底部面板");
+    // by default Case 1 is active — its content is visible
+    expect(within(panel).getByText(/input_one/)).toBeInTheDocument();
+    expect(within(panel).queryByText(/input_two/)).not.toBeInTheDocument();
+    // when — click Case 2 button
+    fireEvent.click(within(panel).getByRole("button", { name: "Case 2" }));
+    // expect — Case 2 content shown, Case 1 content hidden
+    expect(within(panel).getByText(/input_two/)).toBeInTheDocument();
+    expect(within(panel).queryByText(/input_one/)).not.toBeInTheDocument();
+  });
+
+  it("resets to Case 1 when switching to a different problem", async () => {
+    // given — two cases for problem 1, one case for problem 2
+    mockGetPublicTestcases.mockImplementation(
+      (_sessionId: number, espId: number): Promise<PublicTestcase[]> =>
+        Promise.resolve(
+          espId === 101
+            ? [
+                { id: 1, orderIndex: 1, inputData: "p1c1", expectedOutput: "out" },
+                { id: 2, orderIndex: 2, inputData: "p1c2", expectedOutput: "out" },
+              ]
+            : [{ id: 3, orderIndex: 1, inputData: "p2c1", expectedOutput: "out" }],
+        ),
+    );
+    await renderExamPage();
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 101));
+    const panel = screen.getByLabelText("底部面板");
+    // advance to Case 2 on problem 1
+    fireEvent.click(within(panel).getByRole("button", { name: "Case 2" }));
+    expect(within(panel).getByText(/p1c2/)).toBeInTheDocument();
+    // when — switch to problem 2 (which only has Case 1)
+    fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 102));
+    // expect — Case 1 of problem 2 is shown (activeCaseIdx reset to 0)
+    expect(within(panel).getByText(/p2c1/)).toBeInTheDocument();
   });
 
   it("fetches testcases for a new problem when switching problem tabs", async () => {

@@ -60,6 +60,7 @@ export default function ExamPage() {
   const [publicTestcases, setPublicTestcases] = useState<
     Record<number, PublicTestcase[]>
   >({});
+  const [activeCaseIdx, setActiveCaseIdx] = useState(0);
   const [leftWidth, setLeftWidth] = useState(420);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -190,6 +191,11 @@ export default function ExamPage() {
       if (apiDebounceRef.current) clearTimeout(apiDebounceRef.current);
     };
   }, []);
+
+  // Reset selected case when switching problems
+  useEffect(() => {
+    setActiveCaseIdx(0);
+  }, [activeProblemId]);
 
   // Fetch public testcases once per exam session problem (cached by espId)
   useEffect(() => {
@@ -634,32 +640,55 @@ export default function ExamPage() {
                 (currentTestcases.length === 0 ? (
                   <p className="text-center py-6">暫無公開測試資料</p>
                 ) : (
-                  <div className="space-y-3">
-                    {currentTestcases.map((tc) => {
+                  <div className="space-y-2">
+                    {/* Case selector buttons */}
+                    <div className="flex gap-1 flex-wrap">
+                      {currentTestcases.map((tc, idx) => {
+                        const result = activePublicResults.find(
+                          (r) => r.testcaseId === tc.id,
+                        );
+                        const isActive = idx === activeCaseIdx;
+                        const verdictColor =
+                          result?.verdict === "AC"
+                            ? isActive
+                              ? "bg-green-600 text-white border-green-600"
+                              : "border-green-400 text-green-600 hover:bg-green-50"
+                            : result
+                              ? isActive
+                                ? "bg-red-500 text-white border-red-500"
+                                : "border-red-400 text-red-500 hover:bg-red-50"
+                              : isActive
+                                ? "bg-blue-500 text-white border-blue-500"
+                                : "border-slate-200 text-slate-600 hover:bg-slate-50";
+                        return (
+                          <button
+                            key={tc.id}
+                            type="button"
+                            aria-pressed={isActive}
+                            onClick={() => setActiveCaseIdx(idx)}
+                            className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${verdictColor}`}
+                          >
+                            Case {tc.orderIndex}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* Active case detail */}
+                    {(() => {
+                      const tc = currentTestcases[activeCaseIdx];
+                      if (!tc) return null;
                       const result = activePublicResults.find(
                         (r) => r.testcaseId === tc.id,
                       );
                       return (
-                        <div
-                          key={tc.id}
-                          className="rounded-md border border-slate-100 px-3 py-2 text-slate-600 space-y-1"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium">
-                              Test Case {tc.orderIndex}
+                        <div className="rounded-md border border-slate-100 px-3 py-2 text-slate-600 space-y-2">
+                          {result && (
+                            <span
+                              className={`text-xs font-semibold ${result.verdict === "AC" ? "text-green-600" : "text-red-500"}`}
+                            >
+                              {result.verdict}
                             </span>
-                            {result && (
-                              <span
-                                className={
-                                  result.verdict === "AC"
-                                    ? "text-green-600"
-                                    : "text-red-500"
-                                }
-                              >
-                                {result.verdict}
-                              </span>
-                            )}
-                          </div>
+                          )}
                           <div>
                             <span className="font-semibold text-slate-600">
                               Sample Input：
@@ -678,7 +707,9 @@ export default function ExamPage() {
                           </div>
                           {result?.actualOutput != null && (
                             <div>
-                              <span className="font-semibold text-slate-600">實際輸出：</span>
+                              <span className="font-semibold text-slate-600">
+                                Your Output：
+                              </span>
                               <pre className="whitespace-pre-wrap mt-0.5">
                                 {result.actualOutput}
                               </pre>
@@ -686,7 +717,7 @@ export default function ExamPage() {
                           )}
                         </div>
                       );
-                    })}
+                    })()}
                   </div>
                 ))}
               {bottomTab === "output" &&
