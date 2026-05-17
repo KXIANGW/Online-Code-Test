@@ -51,11 +51,15 @@ export default function ExamPage() {
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<ExamStatus>("not_started");
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
-  const [latestSubmissionId, setLatestSubmissionId] = useState<number | null>(null);
+  const [latestSubmissionId, setLatestSubmissionId] = useState<number | null>(
+    null,
+  );
   const [publicResultsBySubmission, setPublicResultsBySubmission] = useState<
     Record<number, TestcaseResult[]>
   >({});
-  const [publicTestcases, setPublicTestcases] = useState<Record<number, PublicTestcase[]>>({});
+  const [publicTestcases, setPublicTestcases] = useState<
+    Record<number, PublicTestcase[]>
+  >({});
   const [leftWidth, setLeftWidth] = useState(420);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -207,7 +211,7 @@ export default function ExamPage() {
   const currentLang =
     selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
   const monacoLang = currentLang
-    ? MONACO_LANG[currentLang] ?? currentLang
+    ? (MONACO_LANG[currentLang] ?? currentLang)
     : "plaintext";
 
   function handleCodeChange(value: string | undefined) {
@@ -311,57 +315,61 @@ export default function ExamPage() {
     setLatestSubmissionId(history.at(-1)?.id ?? null);
   }, [sessionId]);
 
-  const handleJudgeSocketMessage = useCallback((message: JudgeSocketMessage) => {
-    if (message.type === "submission_status") {
+  const handleJudgeSocketMessage = useCallback(
+    (message: JudgeSocketMessage) => {
+      if (message.type === "submission_status") {
+        setSubmissions((prev) =>
+          prev.map((submission) =>
+            submission.id === message.submissionId
+              ? {
+                  ...submission,
+                  status: message.status,
+                  judgedAt: message.judgedAt,
+                }
+              : submission,
+          ),
+        );
+        setLatestSubmissionId(message.submissionId);
+        return;
+      }
+
       setSubmissions((prev) =>
         prev.map((submission) =>
           submission.id === message.submissionId
             ? {
                 ...submission,
                 status: message.status,
+                verdict: message.verdict,
+                runtimeMs: message.runtimeMs,
+                memoryKb: message.memoryKb,
                 judgedAt: message.judgedAt,
+                score: message.score,
+                isFinalSubmission:
+                  message.submissionType === "formal" && message.score > 0,
               }
             : submission,
         ),
       );
       setLatestSubmissionId(message.submissionId);
-      return;
-    }
-
-    setSubmissions((prev) =>
-      prev.map((submission) =>
-        submission.id === message.submissionId
-          ? {
-              ...submission,
-              status: message.status,
-              verdict: message.verdict,
-              runtimeMs: message.runtimeMs,
-              memoryKb: message.memoryKb,
-              judgedAt: message.judgedAt,
-              score: message.score,
-              isFinalSubmission:
-                message.submissionType === "formal" && message.score > 0,
-            }
-          : submission,
-      ),
-    );
-    setLatestSubmissionId(message.submissionId);
-    setPublicResultsBySubmission((prev) => ({
-      ...prev,
-      [message.submissionId]: message.testcaseResults.filter((result) => result.isPublic),
-    }));
-
-    if (message.submissionType === "formal") {
-      setProblems((prev) =>
-        prev.map((problem) =>
-          problem.id === message.examSessionProblemId
-            ? { ...problem, score: message.score }
-            : problem,
+      setPublicResultsBySubmission((prev) => ({
+        ...prev,
+        [message.submissionId]: message.testcaseResults.filter(
+          (result) => result.isPublic,
         ),
-      );
-    }
+      }));
 
-  }, []);
+      if (message.submissionType === "formal") {
+        setProblems((prev) =>
+          prev.map((problem) =>
+            problem.id === message.examSessionProblemId
+              ? { ...problem, score: message.score }
+              : problem,
+          ),
+        );
+      }
+    },
+    [],
+  );
 
   useJudgeSocket(sessionId, handleJudgeSocketMessage, reloadSubmissions);
 
@@ -369,16 +377,21 @@ export default function ExamPage() {
   const isSubmitted = sessionStatus === "submitted";
   const isLocked = isExpired || isSubmitted || sessionStatus === "expired";
   const latestSubmission =
-    submissions.find((submission) => submission.id === latestSubmissionId) ?? null;
+    submissions.find((submission) => submission.id === latestSubmissionId) ??
+    null;
 
   const activeProblemLatestSubmission = activeProblem
-    ? submissions.filter((s) => s.examSessionProblemId === activeProblem.id).at(-1) ?? null
+    ? (submissions
+        .filter((s) => s.examSessionProblemId === activeProblem.id)
+        .at(-1) ?? null)
     : null;
   const activePublicResults: TestcaseResult[] = activeProblemLatestSubmission
-    ? publicResultsBySubmission[activeProblemLatestSubmission.id] ?? []
+    ? (publicResultsBySubmission[activeProblemLatestSubmission.id] ?? [])
     : [];
   const currentTestcases: PublicTestcase[] =
-    activeProblem !== undefined ? publicTestcases[activeProblem.id] ?? [] : [];
+    activeProblem !== undefined
+      ? (publicTestcases[activeProblem.id] ?? [])
+      : [];
 
   if (Number.isNaN(sessionId)) {
     return (
@@ -617,51 +630,73 @@ export default function ExamPage() {
 
             {/* Tab content */}
             <div className="flex-1 overflow-y-auto px-4 py-3 text-xs text-slate-400">
-              {bottomTab === "testcases" && (
-                currentTestcases.length === 0 ? (
+              {bottomTab === "testcases" &&
+                (currentTestcases.length === 0 ? (
                   <p className="text-center py-6">暫無公開測試資料</p>
                 ) : (
                   <div className="space-y-3">
                     {currentTestcases.map((tc) => {
-                      const result = activePublicResults.find((r) => r.testcaseId === tc.id);
+                      const result = activePublicResults.find(
+                        (r) => r.testcaseId === tc.id,
+                      );
                       return (
                         <div
                           key={tc.id}
                           className="rounded-md border border-slate-100 px-3 py-2 text-slate-600 space-y-1"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-medium">測資 {tc.orderIndex}</span>
+                            <span className="font-medium">
+                              Test Case {tc.orderIndex}
+                            </span>
                             {result && (
-                              <span className={result.verdict === "AC" ? "text-green-600" : "text-red-500"}>
+                              <span
+                                className={
+                                  result.verdict === "AC"
+                                    ? "text-green-600"
+                                    : "text-red-500"
+                                }
+                              >
                                 {result.verdict}
                               </span>
                             )}
                           </div>
                           <div>
-                            <span className="text-slate-400">輸入：</span>
-                            <pre className="inline whitespace-pre-wrap">{tc.inputData}</pre>
+                            <span className="font-semibold text-slate-600">
+                              Sample Input：
+                            </span>
+                            <pre className="whitespace-pre-wrap mt-0.5">
+                              {tc.inputData}
+                            </pre>
                           </div>
                           <div>
-                            <span className="text-slate-400">預期輸出：</span>
-                            <pre className="inline whitespace-pre-wrap">{tc.expectedOutput}</pre>
+                            <span className="font-semibold text-slate-600">
+                              Sample Output：
+                            </span>
+                            <pre className="whitespace-pre-wrap mt-0.5">
+                              {tc.expectedOutput}
+                            </pre>
                           </div>
                           {result?.actualOutput != null && (
                             <div>
-                              <span className="text-slate-400">實際輸出：</span>
-                              <pre className="inline whitespace-pre-wrap">{result.actualOutput}</pre>
+                              <span className="font-semibold text-slate-600">實際輸出：</span>
+                              <pre className="whitespace-pre-wrap mt-0.5">
+                                {result.actualOutput}
+                              </pre>
                             </div>
                           )}
                         </div>
                       );
                     })}
                   </div>
-                )
-              )}
-              {bottomTab === "output" && (
-                latestSubmission ? (
+                ))}
+              {bottomTab === "output" &&
+                (latestSubmission ? (
                   <div className="space-y-2 text-slate-600">
                     <p>
-                      {latestSubmission.submissionType === "simple" ? "一般" : "正式"}提交：
+                      {latestSubmission.submissionType === "simple"
+                        ? "一般"
+                        : "正式"}
+                      提交：
                       {latestSubmission.status === "done"
                         ? latestSubmission.verdict
                         : latestSubmission.status}
@@ -672,10 +707,9 @@ export default function ExamPage() {
                   </div>
                 ) : (
                   <p className="text-center py-6">尚未執行</p>
-                )
-              )}
-              {bottomTab === "history" && (
-                submissions.length === 0 ? (
+                ))}
+              {bottomTab === "history" &&
+                (submissions.length === 0 ? (
                   <p className="text-center py-6">尚無提交記錄</p>
                 ) : (
                   <div className="space-y-2">
@@ -687,14 +721,17 @@ export default function ExamPage() {
                         <span>
                           {submission.orderIndex}. {submission.problemTitle}
                         </span>
-                        <span>{submission.submissionType === "simple" ? "一般" : "正式"}</span>
+                        <span>
+                          {submission.submissionType === "simple"
+                            ? "一般"
+                            : "正式"}
+                        </span>
                         <span>{submission.verdict ?? submission.status}</span>
                         <span>{submission.language}</span>
                       </div>
                     ))}
                   </div>
-                )
-              )}
+                ))}
             </div>
           </div>
         </div>

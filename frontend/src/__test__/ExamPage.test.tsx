@@ -808,7 +808,7 @@ describe("ExamPage", () => {
     // expect — "測試資料" tab shows testcase enriched with verdict and actual output
     fireEvent.click(screen.getByRole("tab", { name: "測試資料" }));
     const panel = screen.getByLabelText("底部面板");
-    expect(within(panel).getByText("測資 1")).toBeInTheDocument();
+    expect(within(panel).getByText("Test Case 1")).toBeInTheDocument();
     expect(within(panel).getByText("3")).toBeInTheDocument(); // actualOutput
     expect(within(panel).getByText("AC")).toBeInTheDocument(); // verdict
   });
@@ -825,7 +825,7 @@ describe("ExamPage", () => {
     await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 101));
     // expect — testcase shown with input and expected output
     const panel = screen.getByLabelText("底部面板");
-    expect(within(panel).getByText("測資 1")).toBeInTheDocument();
+    expect(within(panel).getByText("Test Case 1")).toBeInTheDocument();
     expect(within(panel).getByText(/hello/)).toBeInTheDocument();
     expect(within(panel).getByText(/world/)).toBeInTheDocument();
   });
