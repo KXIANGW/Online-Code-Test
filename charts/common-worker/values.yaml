@@ -1,1 +1,26 @@
-// 預設參數 (如資源限制、Probe 門檻)
+# 基礎映像檔設定
+image:
+  repository: "ghcr.io/kxiangw/oct-worker" # 🔍 請改成你們實際的倉庫網址
+  tag: "latest"                           # 預設標籤
+  pullPolicy: IfNotPresent
+
+# 副本數（Worker 預設開幾台，之後會由 KEDA 自動控管）
+replicaCount: 1
+
+# 環境變數（例如連線到 RabbitMQ 的資訊，之後可以在這加）
+env: {}
+
+# 資源限制防爆（基本框架先給個安全範圍）
+resources:
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+  requests:
+    cpu: "200m"
+    memory: "256Mi"
+
+rabbitmq:
+  url: "amqp://guest:guest@127.0.0.1:5672"
+
+database:
+  url: "postgresql://postgres:postgres@127.0.0.1:5432/oct_db" # 🔍 先填格式正確的假網址

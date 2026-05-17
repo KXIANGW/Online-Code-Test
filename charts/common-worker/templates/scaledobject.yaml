@@ -11,7 +11,7 @@ spec:
   triggers:
   - type: prometheus # 預設使用 Prometheus 指標觸發，具備高度通用性
     metadata:
-      serverAddress: [http://prometheus-operated.monitoring.svc:9090](http://prometheus-operated.monitoring.svc:9090)
-      metricName: queue_depth_average
-      threshold: '100'
-      query: sum(queue_waiting_messages{job="{{ .Release.Name }}"})
+      serverAddress: "http://prometheus-operated.monitoring.svc:9090"
+      metricName: "queue_depth_average"
+      threshold: "100"
+      query: 'sum(queue_waiting_messages{job="{{ .Release.Name }}"})'
