@@ -80,42 +80,71 @@ interface MemorySnapshot {
   };
 }
 
+interface StatsStream {
+  on(event: "data", cb: (chunk: Buffer | string) => void): void;
+  on(event: "end" | "close", cb: () => void): void;
+  on(event: "error", cb: (err: Error) => void): void;
+  destroy?(): void;
+}
+
 export interface MemorySampler {
   stop(): Promise<number | null>;
 }
 
-// Polls container.stats() until stopped, tracking peak memory usage in bytes.
-// Used by runner.ts to populate memoryKb on every verdict path (including OOMKilled).
-// On gVisor / runc differences in stats availability, falls back to inspect().State.OOMKilled
-// caller-side (MLE branch) — sampler only reports what cgroups exposes.
+// Streaming memory sampler.
+//
+// container.stats({ stream: true }) returns a ReadStream that fires a JSON
+// line every ~1 s while the container is running (Docker decides the cadence).
+// On cgroup v2 + recent Docker, memory_stats becomes an empty object once
+// the container exits, so post-exit polling cannot recover the peak — we
+// have to track it live. The stream ends naturally when the container exits.
+//
+// Returns peak memory in KB, or null if no sample arrived (e.g. container
+// died before Docker emitted the first stats payload — common for trivial
+// "exit 0" programs).
 export function startMemorySampler(
-  container: { stats(opts: { stream: false }): Promise<MemorySnapshot> },
-  intervalMs = 100
+  container: { stats(opts: { stream: true }): Promise<StatsStream> }
 ): MemorySampler {
   let peakBytes = 0;
-  let stopped = false;
+  let resolveStream: (s: StatsStream | null) => void = () => undefined;
+  const streamReady = new Promise<StatsStream | null>((r) => { resolveStream = r; });
+  let buffer = "";
 
-  async function tick(): Promise<void> {
-    while (!stopped) {
+  function handleChunk(chunk: Buffer | string): void {
+    buffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    // Each Docker stats frame is a single JSON object terminated by \n.
+    let nl: number;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      if (!line) continue;
       try {
-        const snap = await container.stats({ stream: false });
+        const snap = JSON.parse(line) as MemorySnapshot;
         const usage = snap.memory_stats?.max_usage ?? snap.memory_stats?.usage ?? 0;
         if (usage > peakBytes) peakBytes = usage;
       } catch {
-        // Container may have exited; stats() will throw — stop quietly
-        break;
+        // truncated frame; ignore
       }
-      if (stopped) break;
-      await new Promise((r) => setTimeout(r, intervalMs));
     }
   }
 
-  const pump = tick();
+  try {
+    container.stats({ stream: true })
+      .then((stream) => {
+        resolveStream(stream);
+        stream.on("data", handleChunk);
+        stream.on("error", () => undefined);
+      })
+      .catch(() => resolveStream(null));
+  } catch {
+    // stats() not implemented (mocks may omit it); proceed without sampler.
+    resolveStream(null);
+  }
 
   return {
     async stop() {
-      stopped = true;
-      await pump.catch(() => undefined);
+      const stream = await streamReady.catch(() => null);
+      stream?.destroy?.();
       return peakBytes > 0 ? Math.round(peakBytes / 1024) : null;
     },
   };

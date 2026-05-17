@@ -37,17 +37,32 @@ async function tempDir() {
   return dir;
 }
 
+function makeStatsStream(statsBytes?: number): {
+  on: (ev: string, cb: (arg?: unknown) => void) => void;
+  destroy: () => void;
+} {
+  // Flush the pre-buffered frame the moment a "data" handler attaches, so
+  // the runner sees the peak whether stop() races sampler setup or not.
+  const payload = statsBytes !== undefined
+    ? JSON.stringify({ memory_stats: { max_usage: statsBytes, usage: statsBytes } }) + "\n"
+    : null;
+  return {
+    on(ev: string, cb: (arg?: unknown) => void) {
+      if (ev === "data" && payload !== null) {
+        (cb as (chunk: Buffer | string) => void)(payload);
+      }
+    },
+    destroy() { /* no-op */ },
+  };
+}
+
 function dockerWithStatus(statusCode: number, logs = dockerLog(1, "ok\n"), statsBytes?: number) {
   const container = {
     start: vi.fn().mockResolvedValue(undefined),
     wait: vi.fn().mockResolvedValue({ StatusCode: statusCode }),
     logs: vi.fn().mockResolvedValue(logs),
     inspect: vi.fn().mockResolvedValue({ State: { OOMKilled: false } }),
-    stats: vi.fn().mockImplementation(() =>
-      statsBytes !== undefined
-        ? Promise.resolve({ memory_stats: { max_usage: statsBytes, usage: statsBytes } })
-        : Promise.reject(new Error("stats unavailable"))
-    ),
+    stats: vi.fn().mockImplementation(() => Promise.resolve(makeStatsStream(statsBytes))),
     remove: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn().mockResolvedValue(undefined),
   };
