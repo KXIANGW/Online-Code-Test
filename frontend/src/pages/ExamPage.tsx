@@ -59,6 +59,10 @@ export default function ExamPage() {
   const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
   const lsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const apiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPollRef = useRef<{
+    submissionId: number;
+    timerId: ReturnType<typeof setInterval>;
+  } | null>(null);
 
   // Load session data on mount
   useEffect(() => {
@@ -175,13 +179,42 @@ export default function ExamPage() {
     });
   }, [languages, problems]);
 
-  // Cleanup debounce timers on unmount
+  // Cleanup debounce timers and poll on unmount
   useEffect(() => {
     return () => {
       if (lsDebounceRef.current) clearTimeout(lsDebounceRef.current);
       if (apiDebounceRef.current) clearTimeout(apiDebounceRef.current);
+      stopPoll();
     };
   }, []);
+
+  function stopPoll() {
+    if (pendingPollRef.current) {
+      clearInterval(pendingPollRef.current.timerId);
+      pendingPollRef.current = null;
+    }
+  }
+
+  // Poll listSessionSubmissions every 3 s after a submission is created.
+  // This is a fallback for when the WebSocket is unavailable; if WebSocket
+  // delivers the result first, stopPoll() cancels the interval immediately.
+  function startPollForResult(submissionId: number) {
+    stopPoll();
+    const timerId = setInterval(async () => {
+      try {
+        const history = await listSessionSubmissions(sessionId);
+        const target = history.find((s) => s.id === submissionId);
+        if (!target || target.status === "done" || target.status === "system_error") {
+          setSubmissions(history);
+          setLatestSubmissionId(submissionId);
+          stopPoll();
+        }
+      } catch {
+        // network error — keep polling until unmount
+      }
+    }, 3000);
+    pendingPollRef.current = { submissionId, timerId };
+  }
 
   const timeLeft = useExamTimer(expiresAt);
 
@@ -270,6 +303,7 @@ export default function ExamPage() {
     setSubmissions((prev) => [...prev, summary]);
     setLatestSubmissionId(summary.id);
     setBottomTab(type === "simple" ? "output" : "history");
+    startPollForResult(summary.id);
   }
 
   function handleRun() {
@@ -342,6 +376,11 @@ export default function ExamPage() {
             : problem,
         ),
       );
+    }
+
+    // WebSocket delivered the result — cancel the polling fallback
+    if (pendingPollRef.current?.submissionId === message.submissionId) {
+      stopPoll();
     }
   }, []);
 

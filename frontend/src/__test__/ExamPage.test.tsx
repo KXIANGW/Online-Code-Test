@@ -736,6 +736,101 @@ describe("ExamPage", () => {
     expect(panel).toHaveTextContent("執行時間：42 ms");
   });
 
+  it("output tab updates to verdict via polling fallback when WebSocket is unavailable", async () => {
+    // given — page loads normally; after that, override mock to return done result on every poll
+    await renderExamPage();
+    mockListSessionSubmissions.mockResolvedValue([
+      {
+        id: 9001,
+        examSessionProblemId: 101,
+        problemId: 1,
+        problemTitle: "Two Sum",
+        orderIndex: 1,
+        language: "python3",
+        submissionType: "simple",
+        status: "done",
+        verdict: "AC",
+        runtimeMs: 42,
+        memoryKb: 1024,
+        submittedAt: "2026-01-01T00:10:00.000Z",
+        judgedAt: "2026-01-01T00:10:03.000Z",
+        score: 0,
+        scoreWeight: 50,
+        isFinalSubmission: false,
+      },
+    ]);
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('hi')" },
+    });
+
+    vi.useFakeTimers();
+    try {
+      // when — click Run; flush sendSubmission's async chain via microtask ticks,
+      // then advance past the 3-second poll interval (advanceTimersByTimeAsync also
+      // awaits async callbacks triggered inside the interval)
+      fireEvent.click(screen.getByRole("button", { name: "Run" }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3001);
+      });
+
+      // expect — poll picked up the done result and updated the output tab
+      const panel = screen.getByLabelText("底部面板");
+      expect(panel).toHaveTextContent("一般提交：AC");
+      expect(panel).toHaveTextContent("執行時間：42 ms");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("polling fallback stops when judge_result WebSocket message arrives first", async () => {
+    // given
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('hi')" },
+    });
+
+    vi.useFakeTimers();
+    try {
+      // when — click Run then immediately deliver WebSocket result before poll fires
+      fireEvent.click(screen.getByRole("button", { name: "Run" }));
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const callCountBeforeWs = mockListSessionSubmissions.mock.calls.length;
+
+      act(() => {
+        realtimeHandler?.({
+          type: "judge_result",
+          submissionId: 9001,
+          examSessionProblemId: 101,
+          sessionId: 42,
+          status: "done",
+          verdict: "WA",
+          runtimeMs: 10,
+          memoryKb: 512,
+          judgedAt: "2026-01-01T00:10:01.000Z",
+          submissionType: "simple",
+          score: 0,
+          testcaseResults: [],
+        });
+      });
+
+      // Advance well past the 3-second interval — poll must not fire
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3001);
+      });
+
+      // expect — poll was cancelled; no extra listSessionSubmissions call
+      expect(mockListSessionSubmissions.mock.calls.length).toBe(callCountBeforeWs);
+      // expect — output tab shows WA from WebSocket
+      expect(screen.getByLabelText("底部面板")).toHaveTextContent("一般提交：WA");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("updates pending submissions to judging from realtime lifecycle messages", async () => {
     await renderExamPage();
     fireEvent.change(screen.getByLabelText("Code editor"), {
