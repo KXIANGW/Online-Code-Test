@@ -678,19 +678,19 @@ describe("ExamPage", () => {
     );
   });
 
-  it("renders loaded submission history", async () => {
+  it("renders loaded submission history showing only formal submissions", async () => {
+    // given — backend returns both simple (WA) and formal (AC)
     mockListSessionSubmissions.mockResolvedValue(mockSubmissions);
     await renderExamPage();
-
+    // when
     fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
-
-    expect(
-      within(screen.getByLabelText("底部面板")).getAllByText("1. Two Sum"),
-    ).toHaveLength(2);
-    expect(screen.getByText("一般")).toBeInTheDocument();
-    expect(screen.getByText("正式")).toBeInTheDocument();
-    expect(screen.getByText("WA")).toBeInTheDocument();
-    expect(screen.getByText("AC")).toBeInTheDocument();
+    // expect — only the formal submission is shown; simple is filtered out
+    const panel = screen.getByLabelText("底部面板");
+    expect(within(panel).getAllByText("1. Two Sum")).toHaveLength(1);
+    expect(within(panel).getByText("正式")).toBeInTheDocument();
+    expect(within(panel).getByText("AC")).toBeInTheDocument();
+    expect(within(panel).queryByText("一般")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("WA")).not.toBeInTheDocument();
   });
 
   it("output tab shows pending submission immediately after Run with code", async () => {
@@ -740,14 +740,15 @@ describe("ExamPage", () => {
     expect(panel).toHaveTextContent("執行時間：42 ms");
   });
 
-  it("updates pending submissions to judging from realtime lifecycle messages", async () => {
+  it("updates run result to judging from realtime lifecycle messages", async () => {
+    // given
     await renderExamPage();
     fireEvent.change(screen.getByLabelText("Code editor"), {
       target: { value: "print('run')" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Run" }));
     await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalled());
-
+    // when — submission_status arrives
     act(() => {
       realtimeHandler?.({
         type: "submission_status",
@@ -757,9 +758,8 @@ describe("ExamPage", () => {
         judgedAt: null,
       });
     });
-
-    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
-    expect(screen.getByText("judging")).toBeInTheDocument();
+    // expect — output tab (not history) reflects judging status
+    expect(screen.getByLabelText("底部面板")).toHaveTextContent("一般提交：judging");
   });
 
   it("shows realtime public testcase results after judge_result arrives", async () => {
@@ -1067,5 +1067,98 @@ describe("ExamPage", () => {
 
     // expect
     expect(parseInt(panel.style.width)).toBe(700);
+  });
+
+  // ── Run vs Submit isolation ───────────────────────────────────────────────
+
+  it("clicking Run does NOT add result to 提交記錄 history", async () => {
+    // given
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('hi')" },
+    });
+    // when
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalled());
+    // expect — history tab shows empty state; simple submission is not recorded
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+    expect(screen.getByText("尚無提交記錄")).toBeInTheDocument();
+  });
+
+  it("clicking Run shows pending immediately in output tab", async () => {
+    // given
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('hi')" },
+    });
+    // when
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    // expect — output tab active and shows pending
+    await waitFor(() =>
+      expect(screen.getByLabelText("底部面板")).toHaveTextContent("一般提交：pending"),
+    );
+  });
+
+  it("WebSocket judge_result for simple updates output tab but NOT 提交記錄", async () => {
+    // given
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('hi')" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalled());
+    // when — judge_result for simple submission
+    act(() => {
+      realtimeHandler?.({
+        type: "judge_result",
+        submissionId: 9001,
+        examSessionProblemId: 101,
+        sessionId: 42,
+        status: "done",
+        verdict: "AC",
+        runtimeMs: 20,
+        memoryKb: 512,
+        judgedAt: "2026-01-01T00:10:02.000Z",
+        submissionType: "simple",
+        score: 0,
+        testcaseResults: [],
+      });
+    });
+    // expect — output tab shows verdict
+    expect(screen.getByLabelText("底部面板")).toHaveTextContent("一般提交：AC");
+    // expect — history tab stays empty
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+    expect(screen.getByText("尚無提交記錄")).toBeInTheDocument();
+  });
+
+  it("clicking Submit adds a formal submission to 提交記錄 but NOT to output tab state", async () => {
+    // given
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('submit')" },
+    });
+    // when
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalled());
+    // expect — history tab shows formal submission
+    const panel = screen.getByLabelText("底部面板");
+    expect(within(panel).getByText("正式")).toBeInTheDocument();
+    // output tab stays empty (no runResult set for formal submit)
+    fireEvent.click(screen.getByRole("tab", { name: "執行結果" }));
+    expect(screen.getByText("尚未執行")).toBeInTheDocument();
+  });
+
+  it("listSessionSubmissions filters out simple submissions on initial load", async () => {
+    // given — backend returns both simple and formal submissions
+    mockListSessionSubmissions.mockResolvedValue([
+      ...mockSubmissions, // mockSubmissions contains a simple ("一般") and a formal ("正式")
+    ]);
+    // when
+    await renderExamPage();
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+    // expect — only formal submission visible in history
+    const panel = screen.getByLabelText("底部面板");
+    expect(within(panel).getByText("正式")).toBeInTheDocument();
+    expect(within(panel).queryByText("一般")).not.toBeInTheDocument();
   });
 });
