@@ -10,6 +10,7 @@ import type {
   JudgeSocketMessage,
   Language,
   PublicTestcase,
+  SubmissionCreated,
   SubmissionSummary,
   TestcaseResult,
 } from "../types";
@@ -51,9 +52,7 @@ export default function ExamPage() {
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<ExamStatus>("not_started");
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
-  const [latestSubmissionId, setLatestSubmissionId] = useState<number | null>(
-    null,
-  );
+  const [runResult, setRunResult] = useState<SubmissionCreated | null>(null);
   const [publicResultsBySubmission, setPublicResultsBySubmission] = useState<
     Record<number, TestcaseResult[]>
   >({});
@@ -87,8 +86,7 @@ export default function ExamPage() {
         setProblems(sessionProblems);
         setLanguages(enabledLangs);
         setSessionStatus(session.status);
-        setSubmissions(history);
-        setLatestSubmissionId(history.at(-1)?.id ?? null);
+        setSubmissions(history.filter((s) => s.submissionType === "formal"));
         if (session.expiresAt) setExpiresAt(session.expiresAt);
         if (sessionProblems.length > 0)
           setActiveProblemId(sessionProblems[0].problemId);
@@ -284,19 +282,22 @@ export default function ExamPage() {
       type,
     });
 
-    const summary: SubmissionSummary = {
-      ...created,
-      problemId: activeProblem.problemId,
-      problemTitle: activeProblem.title,
-      orderIndex: activeProblem.orderIndex,
-      score: 0,
-      scoreWeight: activeProblem.scoreWeight,
-      isFinalSubmission: false,
-    };
-
-    setSubmissions((prev) => [...prev, summary]);
-    setLatestSubmissionId(summary.id);
-    setBottomTab(type === "simple" ? "output" : "history");
+    if (type === "simple") {
+      setRunResult(created);
+      setBottomTab("output");
+    } else {
+      const summary: SubmissionSummary = {
+        ...created,
+        problemId: activeProblem.problemId,
+        problemTitle: activeProblem.title,
+        orderIndex: activeProblem.orderIndex,
+        score: 0,
+        scoreWeight: activeProblem.scoreWeight,
+        isFinalSubmission: false,
+      };
+      setSubmissions((prev) => [...prev, summary]);
+      setBottomTab("history");
+    }
   }
 
   function handleRun() {
@@ -317,62 +318,73 @@ export default function ExamPage() {
 
   const reloadSubmissions = useCallback(async () => {
     const history = await listSessionSubmissions(sessionId);
-    setSubmissions(history);
-    setLatestSubmissionId(history.at(-1)?.id ?? null);
+    setSubmissions(history.filter((s) => s.submissionType === "formal"));
   }, [sessionId]);
 
   const handleJudgeSocketMessage = useCallback(
     (message: JudgeSocketMessage) => {
       if (message.type === "submission_status") {
+        setRunResult((prev) =>
+          prev?.id === message.submissionId
+            ? { ...prev, status: message.status, judgedAt: message.judgedAt }
+            : prev,
+        );
         setSubmissions((prev) =>
-          prev.map((submission) =>
-            submission.id === message.submissionId
-              ? {
-                  ...submission,
-                  status: message.status,
-                  judgedAt: message.judgedAt,
-                }
-              : submission,
+          prev.map((s) =>
+            s.id === message.submissionId
+              ? { ...s, status: message.status, judgedAt: message.judgedAt }
+              : s,
           ),
         );
-        setLatestSubmissionId(message.submissionId);
         return;
       }
 
-      setSubmissions((prev) =>
-        prev.map((submission) =>
-          submission.id === message.submissionId
+      // judge_result
+      if (message.submissionType === "simple") {
+        setRunResult((prev) =>
+          prev?.id === message.submissionId
             ? {
-                ...submission,
+                ...prev,
                 status: message.status,
                 verdict: message.verdict,
                 runtimeMs: message.runtimeMs,
                 memoryKb: message.memoryKb,
                 judgedAt: message.judgedAt,
-                score: message.score,
-                isFinalSubmission:
-                  message.submissionType === "formal" && message.score > 0,
               }
-            : submission,
-        ),
-      );
-      setLatestSubmissionId(message.submissionId);
-      setPublicResultsBySubmission((prev) => ({
-        ...prev,
-        [message.submissionId]: message.testcaseResults.filter(
-          (result) => result.isPublic,
-        ),
-      }));
-
-      if (message.submissionType === "formal") {
+            : prev,
+        );
+      } else {
+        setSubmissions((prev) =>
+          prev.map((s) =>
+            s.id === message.submissionId
+              ? {
+                  ...s,
+                  status: message.status,
+                  verdict: message.verdict,
+                  runtimeMs: message.runtimeMs,
+                  memoryKb: message.memoryKb,
+                  judgedAt: message.judgedAt,
+                  score: message.score,
+                  isFinalSubmission: message.score > 0,
+                }
+              : s,
+          ),
+        );
         setProblems((prev) =>
-          prev.map((problem) =>
-            problem.id === message.examSessionProblemId
-              ? { ...problem, score: message.score }
-              : problem,
+          prev.map((p) =>
+            p.id === message.examSessionProblemId
+              ? { ...p, score: message.score }
+              : p,
           ),
         );
       }
+
+      setPublicResultsBySubmission((prev) => ({
+        ...prev,
+        [message.submissionId]: message.testcaseResults.filter(
+          (r) => r.isPublic,
+        ),
+      }));
     },
     [],
   );
@@ -382,17 +394,18 @@ export default function ExamPage() {
   const isExpired = timeLeft !== null && timeLeft === 0;
   const isSubmitted = sessionStatus === "submitted";
   const isLocked = isExpired || isSubmitted || sessionStatus === "expired";
-  const latestSubmission =
-    submissions.find((submission) => submission.id === latestSubmissionId) ??
-    null;
 
-  const activeProblemLatestSubmission = activeProblem
+  const activeRunResult =
+    runResult?.examSessionProblemId === activeProblem?.id ? runResult : null;
+  const activeProblemLatestFormal = activeProblem
     ? (submissions
         .filter((s) => s.examSessionProblemId === activeProblem.id)
         .at(-1) ?? null)
     : null;
-  const activePublicResults: TestcaseResult[] = activeProblemLatestSubmission
-    ? (publicResultsBySubmission[activeProblemLatestSubmission.id] ?? [])
+  const activeResultId =
+    activeRunResult?.id ?? activeProblemLatestFormal?.id ?? null;
+  const activePublicResults: TestcaseResult[] = activeResultId
+    ? (publicResultsBySubmission[activeResultId] ?? [])
     : [];
   const currentTestcases: PublicTestcase[] =
     activeProblem !== undefined
@@ -716,19 +729,16 @@ export default function ExamPage() {
                   </div>
                 ))}
               {bottomTab === "output" &&
-                (latestSubmission ? (
+                (runResult ? (
                   <div className="space-y-2 text-slate-600">
                     <p>
-                      {latestSubmission.submissionType === "simple"
-                        ? "一般"
-                        : "正式"}
-                      提交：
-                      {latestSubmission.status === "done"
-                        ? latestSubmission.verdict
-                        : latestSubmission.status}
+                      一般提交：
+                      {runResult.status === "done"
+                        ? runResult.verdict
+                        : runResult.status}
                     </p>
-                    {latestSubmission.runtimeMs !== null && (
-                      <p>執行時間：{latestSubmission.runtimeMs} ms</p>
+                    {runResult.runtimeMs !== null && (
+                      <p>執行時間：{runResult.runtimeMs} ms</p>
                     )}
                   </div>
                 ) : (
