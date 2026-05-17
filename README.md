@@ -255,7 +255,31 @@ kubectl get pods -n keda
 
 ---
 
+---
+
+### 部署前置作業：配置 GitHub 私有倉庫通行證
+
+由於專案的 Docker Image 託管於 GitHub Container Registry (GHCR) 的私有倉庫，K3s 部署前必須先建立下載憑證（ImagePullSecret），否則會噴 ImagePullBackOff 錯誤。
+
+1. 請先至 GitHub 申請一個具備 read:packages 權限的 Personal Access Token (Classic)。
+
+2. 在 K3s 環境內執行以下指令建立憑證（名稱必須與 Chart 內的 imagePullSecrets 一致）：
+
+```bash
+kubectl create secret docker-registry ghcr-secret \
+  --docker-server=https://ghcr.io \
+  --docker-username="你的 GitHub 帳號" \
+  --docker-password="你的 GitHub ghp_開頭Token" \
+  --docker-email="你的電子信箱"
+```
+
+---
+
 ### 部署 Worker（Helm Chart）
+
+1. 部署前，請先打開 ./charts/common-worker/values.yaml，確認或修改你的環境變數配置（如 rabbitmq.url 與 database.url）。若本地暫時無相關服務，可先填寫正確格式的虛擬網址以通過 Node.js 的開機環境變數檢查。
+
+2. 執行部署指令：
 
 ```bash
 helm upgrade --install oct-worker ./charts/common-worker \
