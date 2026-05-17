@@ -8,6 +8,12 @@ type WsClient = {
 const OPEN = 1;
 const subscribers = new Map<number, Set<WsClient>>();
 
+export function countActiveSubscribers(): number {
+  let total = 0;
+  for (const clients of subscribers.values()) total += clients.size;
+  return total;
+}
+
 export function subscribeToSession(sessionId: number, client: WsClient): void {
   const clients = subscribers.get(sessionId) ?? new Set<WsClient>();
   clients.add(client);

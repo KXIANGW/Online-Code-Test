@@ -12,6 +12,7 @@ import {
   getChannel,
 } from "./client";
 import { publishToSession } from "../ws/hub";
+import { judgeResultPublishTotal, submissionCompletedTotal } from "../metrics";
 
 type ResultMessage = {
   submissionId: number;
@@ -145,7 +146,14 @@ export async function handleJudgeResultMessage(
     parsed.eventType === "status"
       ? await buildSubmissionStatusPayload(parsed.submissionId)
       : await buildJudgeResultPayload(parsed.submissionId);
-  if (payload) publishToSession(payload.sessionId, payload);
+  if (payload) {
+    publishToSession(payload.sessionId, payload);
+    if (parsed.eventType !== "status") {
+      const verdict = parsed.verdict ?? "unknown";
+      judgeResultPublishTotal.labels(verdict).inc();
+      if (parsed.type) submissionCompletedTotal.labels(parsed.type, verdict).inc();
+    }
+  }
   channel.ack(message);
 }
 

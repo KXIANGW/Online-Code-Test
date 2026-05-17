@@ -14,6 +14,7 @@ import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from ".
 import type { FastifyJWT } from "@fastify/jwt";
 import { publishJudgeTask } from "../mq/publisher";
 import { publishToSession } from "../ws/hub";
+import { mqPublishErrorsTotal, submissionCreatedTotal } from "../metrics";
 import {
   expireIfNeeded,
   getSessionOrThrow,
@@ -170,7 +171,13 @@ export async function createSubmission(
     })
     .returning();
 
-  await publishJudgeTask({ submissionId: submission!.id, type: data.type });
+  try {
+    await publishJudgeTask({ submissionId: submission!.id, type: data.type });
+  } catch (err) {
+    mqPublishErrorsTotal.inc();
+    throw err;
+  }
+  submissionCreatedTotal.labels(data.type, data.language).inc();
 
   publishToSession(sessionId, {
     type: "submission_status",
