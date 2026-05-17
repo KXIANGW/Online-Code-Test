@@ -7,6 +7,14 @@ import { compileInSandbox } from "../engine/compiler";
 import { findLanguage, type LanguageSpec } from "../engine/languages";
 import { runOneTestcase } from "../engine/runner";
 import {
+  judgeCompileDurationSeconds,
+  judgeDurationSeconds,
+  judgeErrorsTotal,
+  judgeInFlight,
+  judgeMemoryMaxBytes,
+  judgeVerdictsTotal,
+} from "../metrics";
+import {
   getSubmissionById,
   getTestcases,
   markSubmissionSystemError,
@@ -75,6 +83,7 @@ export async function handleJudgeMessage(
     await judgeSubmission(task, channel, languages);
   } catch (err) {
     console.error("[worker] system error", err);
+    judgeErrorsTotal.labels("system_error").inc();
     await markSubmissionSystemError(task.submissionId).catch(() => undefined);
     await publishResult(channel, {
       submissionId: task.submissionId,
@@ -97,6 +106,10 @@ async function judgeSubmission(
   if (!submission) throw new Error(`Submission not found: ${task.submissionId}`);
 
   const spec = findLanguage(languages, submission.language);
+  const language = spec.id;
+
+  judgeInFlight.inc();
+  const judgeTimer = judgeDurationSeconds.startTimer({ language });
 
   await updateSubmissionJudging(submission.id);
   await publishResult(channel, {
@@ -114,7 +127,9 @@ async function judgeSubmission(
       submission.sourceCode
     );
 
+    const compileTimer = judgeCompileDurationSeconds.startTimer({ language });
     const compileResult = await compileInSandbox({ spec, hostWorkDir });
+    compileTimer();
     const testcases = await getTestcases(submission.problemId, task.type === "simple");
 
     if (!compileResult.success) {
@@ -138,6 +153,8 @@ async function judgeSubmission(
         runtimeMs: 0,
         memoryKb: null,
       });
+      judgeVerdictsTotal.labels(language, "CE").inc();
+      judgeTimer({ verdict: "CE" });
       return;
     }
 
@@ -162,7 +179,14 @@ async function judgeSubmission(
       runtimeMs: judged.runtimeMs,
       memoryKb: judged.memoryKb,
     });
+
+    judgeVerdictsTotal.labels(language, judged.verdict).inc();
+    if (judged.memoryKb !== null) {
+      judgeMemoryMaxBytes.labels(language).observe(judged.memoryKb * 1024);
+    }
+    judgeTimer({ verdict: judged.verdict });
   } finally {
+    judgeInFlight.dec();
     await fs.remove(hostWorkDir).catch(() => undefined);
   }
 }

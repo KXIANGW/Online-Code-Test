@@ -70,4 +70,15 @@ describe("healthcheck server", () => {
 
     expect(status).toBe(404);
   });
+
+  it("exposes prometheus /metrics endpoint", async () => {
+    const state: HealthState = { rabbitConnected: true };
+    server = createHealthServer(state, 18084);
+
+    const { status, body } = await get(18084, "/metrics");
+
+    expect(status).toBe(200);
+    expect(body).toContain("judge_in_flight");
+    expect(body).toContain("judge_worker_info");
+  });
 });
