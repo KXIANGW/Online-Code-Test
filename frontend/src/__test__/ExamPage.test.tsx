@@ -689,6 +689,53 @@ describe("ExamPage", () => {
     expect(screen.getByText("AC")).toBeInTheDocument();
   });
 
+  it("output tab shows pending submission immediately after Run with code", async () => {
+    // given
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('hi')" },
+    });
+    // when
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    // expect — createSubmission resolves → latestSubmission appears in output tab
+    await waitFor(() =>
+      expect(screen.getByLabelText("底部面板")).toHaveTextContent("一般提交：pending"),
+    );
+  });
+
+  it("output tab updates to verdict when judge_result WebSocket message arrives", async () => {
+    // given
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('hi')" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("底部面板")).toHaveTextContent("一般提交：pending"),
+    );
+    // when — WebSocket delivers judge_result
+    act(() => {
+      realtimeHandler?.({
+        type: "judge_result",
+        submissionId: 9001,
+        examSessionProblemId: 101,
+        sessionId: 42,
+        status: "done",
+        verdict: "AC",
+        runtimeMs: 42,
+        memoryKb: 1024,
+        judgedAt: "2026-01-01T00:10:02.000Z",
+        submissionType: "simple",
+        score: 0,
+        testcaseResults: [],
+      });
+    });
+    // expect — output tab reflects verdict and runtime
+    const panel = screen.getByLabelText("底部面板");
+    expect(panel).toHaveTextContent("一般提交：AC");
+    expect(panel).toHaveTextContent("執行時間：42 ms");
+  });
+
   it("updates pending submissions to judging from realtime lifecycle messages", async () => {
     await renderExamPage();
     fireEvent.change(screen.getByLabelText("Code editor"), {
