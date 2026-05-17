@@ -648,18 +648,13 @@ export default function ExamPage() {
                           (r) => r.testcaseId === tc.id,
                         );
                         const isActive = idx === activeCaseIdx;
-                        const verdictColor =
-                          result?.verdict === "AC"
-                            ? isActive
-                              ? "bg-green-600 text-white border-green-600"
-                              : "border-green-400 text-green-600 hover:bg-green-50"
+                        const verdictColor = isActive
+                          ? "bg-slate-900 text-white border-transparent"
+                          : result?.verdict === "AC"
+                            ? "border-green-400 text-green-600 hover:bg-green-50"
                             : result
-                              ? isActive
-                                ? "bg-red-500 text-white border-red-500"
-                                : "border-red-400 text-red-500 hover:bg-red-50"
-                              : isActive
-                                ? "bg-blue-500 text-white border-blue-500"
-                                : "border-slate-200 text-slate-600 hover:bg-slate-50";
+                              ? "border-red-400 text-red-500 hover:bg-red-50"
+                              : "border-slate-200 text-slate-600 hover:bg-slate-50";
                         return (
                           <button
                             key={tc.id}
