@@ -37,7 +37,10 @@ scrape_configs:
     scrape_interval: 10s
 
   - job_name: rabbitmq
-    metrics_path: /metrics
+    # Default /metrics returns aggregate gauges with no `queue` label, so
+    # rabbitmq_queue_messages{queue="judge.tasks"} would always be empty.
+    # /metrics/per-object exposes per-queue series we need for KEDA.
+    metrics_path: /metrics/per-object
     static_configs:
       - targets:
           - rabbitmq:15692

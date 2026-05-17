@@ -41,7 +41,10 @@ async function http<T = Json>(
   token?: string
 ): Promise<T> {
   const url = `${BASE_URL}${pathSuffix}`;
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {};
+  // Only set Content-Type when actually sending a body; Fastify rejects
+  // POST application/json with no body otherwise (FST_ERR_CTP_EMPTY_JSON_BODY).
+  if (body) headers["Content-Type"] = "application/json";
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(url, {
     method,
