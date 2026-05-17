@@ -37,12 +37,17 @@ async function tempDir() {
   return dir;
 }
 
-function dockerWithStatus(statusCode: number, logs = dockerLog(1, "ok\n")) {
+function dockerWithStatus(statusCode: number, logs = dockerLog(1, "ok\n"), statsBytes?: number) {
   const container = {
     start: vi.fn().mockResolvedValue(undefined),
     wait: vi.fn().mockResolvedValue({ StatusCode: statusCode }),
     logs: vi.fn().mockResolvedValue(logs),
     inspect: vi.fn().mockResolvedValue({ State: { OOMKilled: false } }),
+    stats: vi.fn().mockImplementation(() =>
+      statsBytes !== undefined
+        ? Promise.resolve({ memory_stats: { max_usage: statsBytes, usage: statsBytes } })
+        : Promise.reject(new Error("stats unavailable"))
+    ),
     remove: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn().mockResolvedValue(undefined),
   };
@@ -168,6 +173,43 @@ describe("runOneTestcase", () => {
 
     expect(result.verdict).toBe("TLE");
     expect(container.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it("captures peak memory from sampler when stats are available", async () => {
+    const { docker } = dockerWithStatus(0, dockerLog(1, "ok\n"), 20 * 1024 * 1024);
+
+    const result = await runOneTestcase({
+      spec: pythonSpec,
+      hostWorkDir: await tempDir(),
+      inputData: "",
+      timeLimitMs: 1000,
+      memoryLimitMb: 64,
+      outputLimitKb: 64,
+      sandboxRuntime: "runc",
+      dockerClient: docker as never,
+    });
+
+    expect(result.verdict).toBe("AC");
+    expect(result.memoryKb).toBe(20 * 1024);
+  });
+
+  it("falls back to memory limit when OOMKilled but sampler missed peak", async () => {
+    const { docker, container } = dockerWithStatus(1);
+    container.inspect.mockResolvedValue({ State: { OOMKilled: true } });
+
+    const result = await runOneTestcase({
+      spec: pythonSpec,
+      hostWorkDir: await tempDir(),
+      inputData: "",
+      timeLimitMs: 1000,
+      memoryLimitMb: 64,
+      outputLimitKb: 64,
+      sandboxRuntime: "runc",
+      dockerClient: docker as never,
+    });
+
+    expect(result.verdict).toBe("MLE");
+    expect(result.memoryKb).toBe(64 * 1024);
   });
 
   it("maps excessive stdout to RE", async () => {

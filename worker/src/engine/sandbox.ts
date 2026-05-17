@@ -64,3 +64,51 @@ export function truncateUtf8(value: string, maxBytes: number): string {
   if (buffer.length <= maxBytes) return value;
   return buffer.subarray(0, maxBytes).toString("utf8");
 }
+
+interface MemorySnapshot {
+  memory_stats?: {
+    usage?: number;
+    max_usage?: number;
+  };
+}
+
+export interface MemorySampler {
+  stop(): Promise<number | null>;
+}
+
+// Polls container.stats() until stopped, tracking peak memory usage in bytes.
+// Used by runner.ts to populate memoryKb on every verdict path (including OOMKilled).
+// On gVisor / runc differences in stats availability, falls back to inspect().State.OOMKilled
+// caller-side (MLE branch) — sampler only reports what cgroups exposes.
+export function startMemorySampler(
+  container: { stats(opts: { stream: false }): Promise<MemorySnapshot> },
+  intervalMs = 100
+): MemorySampler {
+  let peakBytes = 0;
+  let stopped = false;
+
+  async function tick(): Promise<void> {
+    while (!stopped) {
+      try {
+        const snap = await container.stats({ stream: false });
+        const usage = snap.memory_stats?.max_usage ?? snap.memory_stats?.usage ?? 0;
+        if (usage > peakBytes) peakBytes = usage;
+      } catch {
+        // Container may have exited; stats() will throw — stop quietly
+        break;
+      }
+      if (stopped) break;
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+
+  const pump = tick();
+
+  return {
+    async stop() {
+      stopped = true;
+      await pump.catch(() => undefined);
+      return peakBytes > 0 ? Math.round(peakBytes / 1024) : null;
+    },
+  };
+}
