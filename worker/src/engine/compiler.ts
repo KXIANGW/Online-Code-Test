@@ -1,6 +1,7 @@
 import type Docker from "dockerode";
 import { docker as defaultDocker } from "../providers/docker";
 import {
+  ONE_CPU_NANOS,
   parseDockerLogs,
   prepareSandboxWorkDir,
   sandboxHostConfig,
@@ -39,6 +40,8 @@ export async function compileInSandbox(options: CompileOptions): Promise<Compile
       memoryLimitMb: 512,
       readonlyWork: false,
       pidsLimit: 256,
+      // g++ -O2 is CPU bound; 2 cores cuts compile time roughly in half.
+      cpuNanos: ONE_CPU_NANOS * 2,
     }),
   });
 

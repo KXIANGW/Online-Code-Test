@@ -101,6 +101,7 @@ describe("runOneTestcase", () => {
           CapDrop: ["ALL"],
           Memory: 64 * 1024 * 1024,
           MemorySwap: 64 * 1024 * 1024,
+          NanoCpus: 1_000_000_000,
           NetworkMode: "none",
           PidsLimit: 128,
           ReadonlyRootfs: true,

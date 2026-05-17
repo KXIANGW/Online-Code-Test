@@ -9,7 +9,13 @@ interface SandboxHostConfigOptions {
   readonlyWork: boolean;
   pidsLimit?: number;
   sandboxRuntime?: string;
+  // NanoCpus is the Docker representation of CPU quota; 1e9 = 1 core.
+  // Default: 1 core for testcase execution (PLAN.md §3.3); compiler raises to 2.
+  cpuNanos?: number;
 }
+
+// 1 core in Docker NanoCpus units.
+export const ONE_CPU_NANOS = 1_000_000_000;
 
 export async function prepareSandboxWorkDir(hostWorkDir: string): Promise<void> {
   await fs.chmod(hostWorkDir, 0o777).catch(() => undefined);
@@ -22,6 +28,7 @@ export function sandboxHostConfig(options: SandboxHostConfigOptions): Docker.Hos
     Memory: memoryBytes,
     MemorySwap: memoryBytes,
     MemorySwappiness: 0,
+    NanoCpus: options.cpuNanos ?? ONE_CPU_NANOS,
     PidsLimit: options.pidsLimit ?? 128,
     NetworkMode: "none",
     ReadonlyRootfs: true,
