@@ -1,10 +1,18 @@
 apiVersion: v2
 name: common-worker
-description: A Helm chart for OCT Worker Kubernetes deployment
+description: |
+  Online Code Test judge worker. Consumes judge.tasks from RabbitMQ,
+  runs each submission inside a per-testcase Docker / gVisor sandbox
+  container, and publishes judge.results back. Exposes Prometheus
+  metrics for KEDA-based autoscaling.
 type: application
-
-# 這是這個 Helm Chart 自身的版本號（跟你的程式版本無關，通常固定即可）
 version: 0.1.0
-
-# 這是預設的應用程式版本
-appVersion: "1.0.0"
+appVersion: "0.0.1"
+keywords:
+  - online-code-test
+  - judge
+  - sandbox
+  - keda
+home: https://github.com/KXIANGW/Online-Code-Test
+maintainers:
+  - name: Team 12

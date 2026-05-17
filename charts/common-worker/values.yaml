@@ -1,26 +1,110 @@
-# 基礎映像檔設定
+# Default values for common-worker.
+# Override at install time:
+#   helm install oct-worker ./charts/common-worker \
+#     --set image.tag=<git-sha> \
+#     --set env.RABBITMQ_URL=amqp://oct:<pass>@rabbitmq:5672 \
+#     --set env.DATABASE_URL=postgres://oct:<pass>@postgres:5432/oct
+
 image:
-  repository: "ghcr.io/kxiangw/oct-worker" # 🔍 請改成你們實際的倉庫網址
-  tag: "latest"                           # 預設標籤
+  repository: ghcr.io/kxiangw/oct-worker
+  tag: ""                    # default to .Chart.AppVersion
   pullPolicy: IfNotPresent
 
-# 副本數（Worker 預設開幾台，之後會由 KEDA 自動控管）
+# minReplicaCount in scaledobject overrides this once KEDA is installed.
 replicaCount: 1
 
-# 環境變數（例如連線到 RabbitMQ 的資訊，之後可以在這加）
-env: {}
-
-# 資源限制防爆（基本框架先給個安全範圍）
+# Pod resource requests / limits. Phase A sandbox runs at 1 CPU / 256MB
+# *per container*; worker process itself stays small (Node + dockerode).
 resources:
-  limits:
-    cpu: "500m"
-    memory: "512Mi"
   requests:
-    cpu: "200m"
-    memory: "256Mi"
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
 
-rabbitmq:
-  url: "amqp://guest:guest@127.0.0.1:5672"
+# gVisor RuntimeClass — applies to the worker pod (not to per-submission
+# sandbox containers, which are spawned via the host Docker socket).
+# Set to "" if your cluster does not have RuntimeClass=gvisor.
+runtimeClassName: ""
 
-database:
-  url: "postgresql://postgres:postgres@127.0.0.1:5432/oct_db" # 🔍 先填格式正確的假網址
+# Backend env wiring. Override via --set or values file.
+env:
+  RABBITMQ_URL: "amqp://oct:oct_dev_password@rabbitmq:5672"
+  DATABASE_URL: "postgres://oct:oct_dev_password_change_me@postgres:5432/oct"
+  HOST_WORK_DIR: "/tmp/judge"
+  SANDBOX_RUNTIME: "runc"    # set to "runsc" when host has gVisor installed
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+
+# /metrics is served from the same port as /healthz (see worker/src/healthcheck.ts).
+metrics:
+  enabled: true
+  port: 8080
+  path: /metrics
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+
+probe:
+  port: 8080
+  path: /healthz
+
+# Mount the host's Docker socket into the worker. Required: the worker
+# launches per-testcase sandbox containers via dockerode -> dockerd.
+# In multi-node clusters with a real container runtime API (CRI), this
+# should be replaced with a sidecar pattern or dind. For single-node
+# k3s + Docker shim this works.
+dockerSocket:
+  enabled: true
+  hostPath: /var/run/docker.sock
+
+# Bind-mount the host's work dir so per-submission /tmp/judge/<id> is
+# visible to spawned sandbox containers.
+hostWorkDir:
+  enabled: true
+  hostPath: /tmp/judge
+
+serviceAccount:
+  create: true
+  name: ""                   # default {{ include "common-worker.fullname" . }}
+  annotations: {}
+
+podSecurityContext:
+  runAsNonRoot: false        # node user owns docker.sock on many distros
+  fsGroup: 0
+
+securityContext:
+  privileged: false
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# ── KEDA ScaledObject ────────────────────────────────────────────────────
+# Disable if you don't have KEDA installed; default to enabled because
+# autoscaling is the whole point of this chart for the demo.
+keda:
+  enabled: true
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  pollingInterval: 5
+  cooldownPeriod: 30
+  triggers:
+    # Average sandbox CPU across all worker pods; matches loadtest watcher.
+    cpu:
+      query: avg(rate(container_cpu_usage_seconds_total{pod=~"oct-worker.*"}[30s]))*100
+      threshold: "80"
+    # Per-worker desired in-flight; >1 means workers are saturated.
+    inFlight:
+      query: sum(judge_in_flight)
+      threshold: "1"
+    # Backlog in the RabbitMQ task queue.
+    queueDepth:
+      query: sum(rabbitmq_queue_messages{queue="judge.tasks"})
+      threshold: "5"
+  prometheusAddress: http://prometheus-operated.monitoring.svc:9090
