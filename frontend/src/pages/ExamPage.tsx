@@ -207,8 +207,9 @@ export default function ExamPage() {
 
     if (apiDebounceRef.current) clearTimeout(apiDebounceRef.current);
     apiDebounceRef.current = setTimeout(() => {
+      if (sessionStatus !== "in_progress") return;
       saveExamDraft(sessionId, activeProblemId, { code, language: lang }).catch(
-        () => {},
+        (err) => console.error("[ExamPage] auto-save draft failed:", err),
       );
     }, 5000);
   }
@@ -500,10 +501,14 @@ export default function ExamPage() {
                   `oct:draft:${sessionId}:${activeProblemId}`,
                   JSON.stringify({ code, language: newLang }),
                 );
-                saveExamDraft(sessionId, activeProblemId, {
-                  code,
-                  language: newLang,
-                }).catch(() => {});
+                if (sessionStatus === "in_progress") {
+                  saveExamDraft(sessionId, activeProblemId, {
+                    code,
+                    language: newLang,
+                  }).catch((err) =>
+                    console.error("[ExamPage] auto-save draft failed:", err),
+                  );
+                }
               }}
               className="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 outline-none focus:border-blue-400"
             >

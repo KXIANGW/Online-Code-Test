@@ -484,6 +484,81 @@ describe("ExamPage", () => {
     expect(select.value).toBe("python3");
   });
 
+  // ── Auto-save draft (sessionStatus guard) ────────────────────────────────
+
+  it("does not call saveExamDraft when changing language if session is not_started", async () => {
+    // given — default session status is "not_started"
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("python3"));
+    vi.clearAllMocks();
+    // when
+    fireEvent.change(select, { target: { value: "cpp17" } });
+    // expect — draft API must not be called before exam starts
+    expect(mockSaveExamDraft).not.toHaveBeenCalled();
+  });
+
+  it("calls saveExamDraft when changing language if session is in_progress", async () => {
+    // given
+    mockGetExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "in_progress",
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("python3"));
+    vi.clearAllMocks();
+    // when
+    fireEvent.change(select, { target: { value: "cpp17" } });
+    // expect
+    expect(mockSaveExamDraft).toHaveBeenCalledWith(42, expect.any(Number), {
+      code: "",
+      language: "cpp17",
+    });
+  });
+
+  it("logs error to console when saveExamDraft rejects on language change during in_progress session", async () => {
+    // given
+    mockGetExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "in_progress",
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    mockSaveExamDraft.mockRejectedValue(new Error("404 Not Found"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("python3"));
+    // when
+    fireEvent.change(select, { target: { value: "cpp17" } });
+    // expect
+    await waitFor(() =>
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[ExamPage] auto-save draft failed:",
+        expect.any(Error),
+      ),
+    );
+    errorSpy.mockRestore();
+  });
+
+  it("does not call saveExamDraft debounce when typing code if session is not_started", async () => {
+    // given
+    await renderExamPage();
+    const editor = screen.getByLabelText("Code editor");
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    try {
+      // when
+      fireEvent.change(editor, { target: { value: "print('hello')" } });
+      vi.advanceTimersByTime(5001);
+      // expect — debounced API call must be suppressed when session not started
+      expect(mockSaveExamDraft).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // ── Bottom panel tabs ─────────────────────────────────────────────────────
 
   it("switches to output tab when '執行結果' tab is clicked", async () => {
