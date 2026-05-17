@@ -8,6 +8,7 @@ import type {
   ExamSessionProblem,
   JudgeResultMessage,
   Language,
+  PublicTestcase,
   SubmissionStatusMessage,
   SubmissionCreated,
 } from "../types";
@@ -22,6 +23,7 @@ const mockSaveExamDraft          = vi.hoisted(() => vi.fn());
 const mockCreateSubmission       = vi.hoisted(() => vi.fn());
 const mockListSessionSubmissions = vi.hoisted(() => vi.fn());
 const mockSubmitExamSession      = vi.hoisted(() => vi.fn());
+const mockGetPublicTestcases     = vi.hoisted(() => vi.fn());
 const mockUseJudgeSocket         = vi.hoisted(() => vi.fn());
 const mockNavigate               = vi.hoisted(() => vi.fn());
 
@@ -34,6 +36,7 @@ vi.mock("../api/client", () => ({
   createSubmission:       mockCreateSubmission,
   listSessionSubmissions: mockListSessionSubmissions,
   submitExamSession:      mockSubmitExamSession,
+  getPublicTestcases:     mockGetPublicTestcases,
 }));
 
 vi.mock("../hooks/useJudgeSocket", () => ({
@@ -178,6 +181,7 @@ describe("ExamPage", () => {
     mockGetExamDrafts.mockResolvedValue({});
     mockSaveExamDraft.mockResolvedValue({ ok: true });
     mockListSessionSubmissions.mockResolvedValue([]);
+    mockGetPublicTestcases.mockResolvedValue([]);
     mockSubmitExamSession.mockResolvedValue({
       ...mockExamPageSession,
       status: "submitted",
@@ -759,13 +763,20 @@ describe("ExamPage", () => {
   });
 
   it("shows realtime public testcase results after judge_result arrives", async () => {
+    // given — one public testcase loaded for problem 1 (espId 101)
+    mockGetPublicTestcases.mockResolvedValue([
+      { id: 1, orderIndex: 1, inputData: "1 2", expectedOutput: "expected_3" } satisfies PublicTestcase,
+    ]);
     await renderExamPage();
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 101));
+
     fireEvent.change(screen.getByLabelText("Code editor"), {
       target: { value: "print('run')" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Run" }));
     await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalled());
 
+    // when — WebSocket delivers judge_result
     act(() => {
       realtimeHandler?.({
         type: "judge_result",
@@ -794,9 +805,141 @@ describe("ExamPage", () => {
       });
     });
 
+    // expect — "測試資料" tab shows testcase enriched with verdict and actual output
     fireEvent.click(screen.getByRole("tab", { name: "測試資料" }));
-    expect(screen.getByText("測資 1")).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
+    const panel = screen.getByLabelText("底部面板");
+    expect(within(panel).getByText("測資 1")).toBeInTheDocument();
+    expect(within(panel).getByText("3")).toBeInTheDocument(); // actualOutput
+    expect(within(panel).getByText("AC")).toBeInTheDocument(); // verdict
+  });
+
+  // ── Public testcases ─────────────────────────────────────────────────────
+
+  it("fetches and displays public testcases for the active problem on mount", async () => {
+    // given
+    mockGetPublicTestcases.mockResolvedValue([
+      { id: 10, orderIndex: 1, inputData: "hello", expectedOutput: "world" } satisfies PublicTestcase,
+    ]);
+    // when
+    await renderExamPage();
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 101));
+    // expect — testcase shown with input and expected output
+    const panel = screen.getByLabelText("底部面板");
+    expect(within(panel).getByText("測資 1")).toBeInTheDocument();
+    expect(within(panel).getByText(/hello/)).toBeInTheDocument();
+    expect(within(panel).getByText(/world/)).toBeInTheDocument();
+  });
+
+  it("shows 暫無公開測試資料 when getPublicTestcases returns empty array", async () => {
+    // given
+    mockGetPublicTestcases.mockResolvedValue([]);
+    // when
+    await renderExamPage();
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 101));
+    // expect
+    expect(screen.getByText("暫無公開測試資料")).toBeInTheDocument();
+  });
+
+  it("shows 暫無公開測試資料 when getPublicTestcases API fails (500)", async () => {
+    // given — API error treated as silent fail
+    mockGetPublicTestcases.mockRejectedValue(new Error("500 Internal Server Error"));
+    // when
+    await renderExamPage();
+    // expect — graceful fallback, no crash
+    expect(screen.getByText("暫無公開測試資料")).toBeInTheDocument();
+  });
+
+  it("fetches testcases for a new problem when switching problem tabs", async () => {
+    // given
+    mockGetPublicTestcases.mockResolvedValue([]);
+    await renderExamPage();
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 101));
+    mockGetPublicTestcases.mockResolvedValue([
+      { id: 20, orderIndex: 1, inputData: "abc", expectedOutput: "xyz" } satisfies PublicTestcase,
+    ]);
+    // when — switch to problem 2 (espId 102)
+    fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
+    // expect — getPublicTestcases called with espId 102
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 102));
+    const panel = screen.getByLabelText("底部面板");
+    expect(within(panel).getByText(/abc/)).toBeInTheDocument();
+    expect(within(panel).getByText(/xyz/)).toBeInTheDocument();
+  });
+
+  it("does not re-fetch testcases when switching back to an already-loaded problem", async () => {
+    // given
+    mockGetPublicTestcases.mockResolvedValue([]);
+    await renderExamPage();
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 101));
+    // when — switch to problem 2 then back to problem 1
+    fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 102));
+    fireEvent.click(screen.getByRole("tab", { name: /Two Sum/ }));
+    // expect — problem 1 (espId 101) fetched exactly once despite switching back
+    expect(mockGetPublicTestcases).toHaveBeenCalledTimes(2);
+    expect(mockGetPublicTestcases).toHaveBeenNthCalledWith(1, 42, 101);
+    expect(mockGetPublicTestcases).toHaveBeenNthCalledWith(2, 42, 102);
+  });
+
+  it("does not enrich problem 1 testcases when judge_result is for a problem 2 submission", async () => {
+    // given
+    mockGetPublicTestcases.mockImplementation(
+      (_sessionId: number, espId: number): Promise<PublicTestcase[]> =>
+        Promise.resolve(
+          espId === 101
+            ? [{ id: 1, orderIndex: 1, inputData: "p1 input", expectedOutput: "p1 out" }]
+            : [{ id: 2, orderIndex: 1, inputData: "p2 input", expectedOutput: "p2 out" }],
+        ),
+    );
+    mockCreateSubmission.mockResolvedValue({
+      id: 9001,
+      examSessionProblemId: 102, // submission belongs to problem 2
+      language: "python3",
+      submissionType: "simple",
+      status: "pending",
+      verdict: null,
+      runtimeMs: null,
+      memoryKb: null,
+      submittedAt: "2026-01-01T00:10:00.000Z",
+      judgedAt: null,
+    });
+    await renderExamPage();
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 101));
+
+    // Run from problem 2 and receive judge_result for espId 102
+    fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 102));
+    fireEvent.change(screen.getByLabelText("Code editor"), { target: { value: "code" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalled());
+    act(() => {
+      realtimeHandler?.({
+        type: "judge_result",
+        submissionId: 9001,
+        examSessionProblemId: 102,
+        sessionId: 42,
+        status: "done",
+        verdict: "WA",
+        runtimeMs: 10,
+        memoryKb: 512,
+        judgedAt: "2026-01-01T00:10:02.000Z",
+        submissionType: "simple",
+        score: 0,
+        testcaseResults: [
+          { id: 99, testcaseId: 1, orderIndex: 1, isPublic: true, verdict: "WA", runtimeMs: 10, memoryKb: 512, actualOutput: "wrong" },
+        ],
+      });
+    });
+
+    // when — switch back to problem 1 and open testcases tab
+    fireEvent.click(screen.getByRole("tab", { name: /Two Sum/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "測試資料" }));
+
+    // expect — problem 1's testcase has no verdict (result was for problem 2)
+    const panel = screen.getByLabelText("底部面板");
+    expect(within(panel).queryByText("WA")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("wrong")).not.toBeInTheDocument();
+    expect(within(panel).getByText(/p1 input/)).toBeInTheDocument();
   });
 
   it("submits the exam early after confirmation", async () => {

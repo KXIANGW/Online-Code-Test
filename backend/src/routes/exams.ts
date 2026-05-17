@@ -10,6 +10,7 @@ import {
   submitExamSession,
   cancelExamSession,
   getExamSessionProblems,
+  getPublicTestcases,
 } from "../services/exam.service";
 import { saveDraft, getDrafts } from "../services/draft.service";
 import { BadRequestError } from "../errors";
@@ -91,6 +92,15 @@ export const examRoutes: FastifyPluginAsync = async (app) => {
   app.get("/:id/problems", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
     return getExamSessionProblems(request.user, parsePositiveIntParam(id, "id"));
+  });
+
+  app.get("/:id/problems/:espId/testcases", { preHandler: [authenticate] }, async (request) => {
+    const { id, espId } = request.params as { id: string; espId: string };
+    return getPublicTestcases(
+      request.user,
+      parsePositiveIntParam(id, "id"),
+      parsePositiveIntParam(espId, "espId"),
+    );
   });
 
   // PUT /:id/drafts/:problemId — save draft

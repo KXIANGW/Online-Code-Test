@@ -152,6 +152,14 @@ export interface ExamSessionProblem {
   languageLimits: LanguageLimit[];
 }
 
+// ── Public Testcase ───────────────────────────────────────────────────────────
+export interface PublicTestcase {
+  id: number;
+  orderIndex: number;
+  inputData: string;
+  expectedOutput: string;
+}
+
 // ── Submission ────────────────────────────────────────────────────────────────
 export type SubmissionStatus = "pending" | "judging" | "done" | "system_error";
 export type Verdict = "AC" | "WA" | "TLE" | "MLE" | "RE" | "CE";

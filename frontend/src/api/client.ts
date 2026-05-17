@@ -5,6 +5,7 @@ import type {
   ExamSession,
   ExamSessionProblem,
   Language,
+  PublicTestcase,
   SessionResult,
   SubmissionCreated,
   SubmissionSummary,
@@ -194,6 +195,17 @@ export async function getExamSession(id: number): Promise<ExamSession> {
 // Get problems for an exam session (with descriptionMd, languageLimits)
 export async function getExamSessionProblems(id: number): Promise<ExamSessionProblem[]> {
   const { data } = await api.get<ExamSessionProblem[]>(`/exam-sessions/${id}/problems`);
+  return data;
+}
+
+// Get public testcases for an exam session problem
+export async function getPublicTestcases(
+  sessionId: number,
+  espId: number,
+): Promise<PublicTestcase[]> {
+  const { data } = await api.get<PublicTestcase[]>(
+    `/exam-sessions/${sessionId}/problems/${espId}/testcases`,
+  );
   return data;
 }
 

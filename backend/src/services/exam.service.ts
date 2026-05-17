@@ -1,5 +1,5 @@
 import { db } from "../db/client";
-import { examSessions, examSessionProblems, problems, problemLanguageLimits, users } from "../db/schema";
+import { examSessions, examSessionProblems, problems, problemLanguageLimits, problemTestcases, users } from "../db/schema";
 import { and, eq, sql, inArray, isNull } from "drizzle-orm";
 import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
@@ -321,6 +321,48 @@ export async function getExamSessionProblems(currentUser: CurrentUser, sessionId
       .filter((l) => l.problemId === p.problemId)
     .map(({ language, timeMultiplier, memoryMultiplier }) => ({ language, timeMultiplier, memoryMultiplier })),
   }));
+}
+
+export async function getPublicTestcases(currentUser: CurrentUser, sessionId: number, espId: number) {
+  const sessionRows = await db
+    .select({ id: examSessions.id, candidateId: examSessions.candidateId, createdBy: examSessions.createdBy })
+    .from(examSessions)
+    .where(eq(examSessions.id, sessionId));
+
+  const session = sessionRows[0];
+  if (!session) throw NotFoundError("exam session");
+
+  if (!currentUser.isSuperuser) {
+    if (canManageExam(currentUser)) {
+      if (session.createdBy !== currentUser.id) throw ForbiddenError();
+    } else if (session.candidateId !== currentUser.id) {
+      throw ForbiddenError();
+    }
+  }
+
+  const espRows = await db
+    .select({ problemId: examSessionProblems.problemId })
+    .from(examSessionProblems)
+    .where(and(
+      eq(examSessionProblems.id, espId),
+      eq(examSessionProblems.examSessionId, sessionId),
+    ));
+
+  const esp = espRows[0];
+  if (!esp) throw NotFoundError("exam session problem");
+
+  return db
+    .select({
+      id: problemTestcases.id,
+      orderIndex: problemTestcases.orderIndex,
+      inputData: problemTestcases.inputData,
+      expectedOutput: problemTestcases.expectedOutput,
+    })
+    .from(problemTestcases)
+    .where(and(
+      eq(problemTestcases.problemId, esp.problemId),
+      eq(problemTestcases.isPublic, true),
+    ));
 }
 
 function assertNoDuplicates<T>(values: T[], message: string): void {

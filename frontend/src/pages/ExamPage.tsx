@@ -9,6 +9,7 @@ import type {
   ExamStatus,
   JudgeSocketMessage,
   Language,
+  PublicTestcase,
   SubmissionSummary,
   TestcaseResult,
 } from "../types";
@@ -17,6 +18,7 @@ import {
   getExamSession,
   getExamSessionProblems,
   getLanguages,
+  getPublicTestcases,
   saveExamDraft,
   getExamDrafts,
   listSessionSubmissions,
@@ -53,12 +55,14 @@ export default function ExamPage() {
   const [publicResultsBySubmission, setPublicResultsBySubmission] = useState<
     Record<number, TestcaseResult[]>
   >({});
+  const [publicTestcases, setPublicTestcases] = useState<Record<number, PublicTestcase[]>>({});
   const [leftWidth, setLeftWidth] = useState(420);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
   const lsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const apiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchedEspIds = useRef<Set<number>>(new Set());
 
   // Load session data on mount
   useEffect(() => {
@@ -182,6 +186,19 @@ export default function ExamPage() {
       if (apiDebounceRef.current) clearTimeout(apiDebounceRef.current);
     };
   }, []);
+
+  // Fetch public testcases once per exam session problem (cached by espId)
+  useEffect(() => {
+    const espId = problems.find((p) => p.problemId === activeProblemId)?.id;
+    if (espId === undefined) return;
+    if (fetchedEspIds.current.has(espId)) return;
+    fetchedEspIds.current.add(espId);
+    getPublicTestcases(sessionId, espId)
+      .then((testcases) =>
+        setPublicTestcases((prev) => ({ ...prev, [espId]: testcases })),
+      )
+      .catch(() => {});
+  }, [problems, activeProblemId, sessionId]);
 
   const timeLeft = useExamTimer(expiresAt);
 
@@ -353,8 +370,15 @@ export default function ExamPage() {
   const isLocked = isExpired || isSubmitted || sessionStatus === "expired";
   const latestSubmission =
     submissions.find((submission) => submission.id === latestSubmissionId) ?? null;
-  const latestPublicResults =
-    latestSubmissionId !== null ? publicResultsBySubmission[latestSubmissionId] ?? [] : [];
+
+  const activeProblemLatestSubmission = activeProblem
+    ? submissions.filter((s) => s.examSessionProblemId === activeProblem.id).at(-1) ?? null
+    : null;
+  const activePublicResults: TestcaseResult[] = activeProblemLatestSubmission
+    ? publicResultsBySubmission[activeProblemLatestSubmission.id] ?? []
+    : [];
+  const currentTestcases: PublicTestcase[] =
+    activeProblem !== undefined ? publicTestcases[activeProblem.id] ?? [] : [];
 
   if (Number.isNaN(sessionId)) {
     return (
@@ -594,20 +618,42 @@ export default function ExamPage() {
             {/* Tab content */}
             <div className="flex-1 overflow-y-auto px-4 py-3 text-xs text-slate-400">
               {bottomTab === "testcases" && (
-                latestPublicResults.length === 0 ? (
+                currentTestcases.length === 0 ? (
                   <p className="text-center py-6">暫無公開測試資料</p>
                 ) : (
-                  <div className="space-y-2">
-                    {latestPublicResults.map((result) => (
-                      <div
-                        key={result.id}
-                        className="flex items-center justify-between rounded-md border border-slate-100 px-3 py-2 text-slate-600"
-                      >
-                        <span>測資 {result.orderIndex}</span>
-                        <span>{result.verdict}</span>
-                        <span>{result.actualOutput ?? "—"}</span>
-                      </div>
-                    ))}
+                  <div className="space-y-3">
+                    {currentTestcases.map((tc) => {
+                      const result = activePublicResults.find((r) => r.testcaseId === tc.id);
+                      return (
+                        <div
+                          key={tc.id}
+                          className="rounded-md border border-slate-100 px-3 py-2 text-slate-600 space-y-1"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">測資 {tc.orderIndex}</span>
+                            {result && (
+                              <span className={result.verdict === "AC" ? "text-green-600" : "text-red-500"}>
+                                {result.verdict}
+                              </span>
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-slate-400">輸入：</span>
+                            <pre className="inline whitespace-pre-wrap">{tc.inputData}</pre>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">預期輸出：</span>
+                            <pre className="inline whitespace-pre-wrap">{tc.expectedOutput}</pre>
+                          </div>
+                          {result?.actualOutput != null && (
+                            <div>
+                              <span className="text-slate-400">實際輸出：</span>
+                              <pre className="inline whitespace-pre-wrap">{result.actualOutput}</pre>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )
               )}

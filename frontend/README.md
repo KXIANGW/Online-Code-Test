@@ -67,6 +67,7 @@ frontend/
 | POST | `/api/auth/login`               | LoginPage                                |
 | GET  | `/api/exam-sessions`            | DashboardPage、InterviewerDashboardPage  |
 | GET  | `/api/exam-sessions/:id/result` | InterviewerDashboardPage、ExamResultPage |
+| GET  | `/api/exam-sessions/:id/problems/:espId/testcases` | ExamPage（公開測試資料）  |
 
 所有請求透過 `src/api/client.ts` 的 axios 實例發出，interceptor 自動附加 `Authorization: Bearer <token>`，token 存於 `sessionStorage`（per-tab 隔離，防止跨分頁 token 污染）。
 
@@ -114,6 +115,7 @@ npm run coverage  # 產生覆蓋率報告
 | `DashboardPage.test.tsx`            | 考試 session 分類顯示、空狀態、導航                      |
 | `InterviewerDashboardPage.test.tsx` | 候選人 card 顯示、狀態 tab 過濾、頁面刷新重取、登出      |
 | `ExamResultPage.test.tsx`           | 結果載入、題目與測資結果顯示、返回導航                   |
+| `ExamPage.test.tsx`                 | 考試作答頁：語言選擇、代碼持久化、提交流程、公開測資顯示與判題結果渲染 |
 | `authStore.test.ts`                 | login/logout state、sessionStorage 讀寫、跨分頁隔離驗證  |
 | `jwt.test.ts`                       | decodeJwt 正常與邊界條件（格式錯誤、非陣列 permissions） |
 
@@ -174,10 +176,6 @@ docker compose up -d --build
 
 | 項目                                 | 說明                                                  |
 | ------------------------------------ | ----------------------------------------------------- |
-| **ExamPage**                         | 提交流程、倒數計時                                    |
-| **editorStore / submissionStore**    | 編輯器與提交狀態的 Zustand store                      |
-| **API 串接**                         | startExam、submitCode、getSubmission、getExamDetail   |
-| **useExamTimer**                     | 考試倒數計時 hook                                     |
-| **WebSocket**                        | `/api/ws?token=JWT`，訂閱 sessionId，即時顯示判題結果 |
+| **Judge Worker**                     | 後端 Worker 尚未實作，WebSocket judge_result 尚無法觸發 |
 | **DisplayProblem in ExamresultPage** | interviewer 在查看面試者考試結果時可以看題目預覽      |
 | **Interviewer Account Management**   | interviewer 在要有他所建立的 candidate 的帳號密碼總覽 |
