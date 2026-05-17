@@ -119,7 +119,7 @@ export default function ExamPage() {
           .filter((p) => initialCodes[p.problemId] === undefined)
           .map((p) => p.problemId);
 
-        if (missingIds.length > 0) {
+        if (missingIds.length > 0 && session.status === "in_progress") {
           try {
             const drafts = await getExamDrafts(sessionId);
             for (const [pidStr, draft] of Object.entries(drafts)) {

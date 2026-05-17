@@ -469,7 +469,13 @@ describe("ExamPage", () => {
   });
 
   it("all problems have a valid default language even when Redis draft only partially restores", async () => {
-    // given — Redis returns a draft for problem 1 (cpp17) but nothing for problem 2
+    // given — session must be in_progress for Redis restore to run;
+    //          Redis returns a draft for problem 1 (cpp17) but nothing for problem 2
+    mockGetExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "in_progress",
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
     mockGetExamDrafts.mockResolvedValue({
       "1": { code: "int main() {}", language: "cpp17" },
     });
@@ -482,6 +488,29 @@ describe("ExamPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
     // expect: problem 2 falls back to the default language (python3), not empty string
     expect(select.value).toBe("python3");
+  });
+
+  // ── Draft restore (sessionStatus guard) ──────────────────────────────────
+
+  it("does not call getExamDrafts when session is not_started", async () => {
+    // given — default session status is "not_started"; no localStorage so missingIds is non-empty
+    // when
+    await renderExamPage();
+    // expect — Redis restore must be skipped before exam starts
+    expect(mockGetExamDrafts).not.toHaveBeenCalled();
+  });
+
+  it("calls getExamDrafts when session is in_progress and localStorage is empty", async () => {
+    // given
+    mockGetExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "in_progress",
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    // when
+    await renderExamPage();
+    // expect — Redis restore should run for in_progress sessions
+    expect(mockGetExamDrafts).toHaveBeenCalledWith(42);
   });
 
   // ── Auto-save draft (sessionStatus guard) ────────────────────────────────
