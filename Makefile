@@ -75,6 +75,7 @@ sandbox-images:
 DEMO_VUS ?= 100
 DEMO_N ?= 100
 DEMO_BASE_URL ?= http://localhost:3000/api
+DEMO_FIXTURE ?= ac.py
 
 demo-up: bootstrap sandbox-images
 	docker compose up -d --build
@@ -87,6 +88,7 @@ demo-load:
 	  -v $(PWD)/loadtest:/scripts \
 	  -e BASE_URL=http://backend:3000/api \
 	  -e VUS=$(DEMO_VUS) \
+	  -e FIXTURE=$(DEMO_FIXTURE) \
 	  grafana/k6 run /scripts/k6-submit.js
 
 demo-watch:

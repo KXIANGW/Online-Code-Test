@@ -26,7 +26,11 @@ const sessions = new SharedArray("sessions", () => {
 
 const BASE_URL = __ENV.BASE_URL ?? "http://localhost:3000/api";
 const SUBMISSION_TYPE = __ENV.SUBMISSION_TYPE ?? "formal";
-const SOURCE = open("./fixtures/ac.py");
+// FIXTURE selects which Python source to submit. Defaults to ac.py
+// (Two Sum AC). Use FIXTURE=tle.py to force long-running TLE work,
+// which actually triggers the scale-watcher under default thresholds.
+const FIXTURE = __ENV.FIXTURE ?? "ac.py";
+const SOURCE = open(`./fixtures/${FIXTURE}`);
 
 export const options = {
   scenarios: {
