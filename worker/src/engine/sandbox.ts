@@ -29,7 +29,8 @@ export function sandboxHostConfig(options: SandboxHostConfigOptions): Docker.Hos
     MemorySwap: memoryBytes,
     MemorySwappiness: 0,
     NanoCpus: options.cpuNanos ?? ONE_CPU_NANOS,
-    PidsLimit: options.pidsLimit ?? 128,
+    // PLAN.md §3.3: pids.max=64 for testcase execution; compiler overrides to 256.
+    PidsLimit: options.pidsLimit ?? 64,
     NetworkMode: "none",
     ReadonlyRootfs: true,
     Tmpfs: { "/tmp": "rw,nosuid,nodev,size=64m" },

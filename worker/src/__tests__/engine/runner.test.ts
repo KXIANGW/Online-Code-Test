@@ -103,7 +103,7 @@ describe("runOneTestcase", () => {
           MemorySwap: 64 * 1024 * 1024,
           NanoCpus: 1_000_000_000,
           NetworkMode: "none",
-          PidsLimit: 128,
+          PidsLimit: 64,
           ReadonlyRootfs: true,
           Runtime: "runsc",
           SecurityOpt: ["no-new-privileges"],
