@@ -199,4 +199,39 @@ describe("Sandbox Security", () => {
     // And the container's /etc/passwd starts with "root" from the base image
     expect(r.stdout?.trim().startsWith("root") || r.stdout?.includes("nobody")).toBe(true);
   });
+
+  it("[ReadonlyRootfs] write-to-rootfs → all writes outside /tmp blocked", async () => {
+    const r = await judgeOne(pythonSpec, "python/write-to-rootfs.py", "hello", 1, 5000);
+    // ReadonlyRootfs: true makes /etc /usr /bin read-only at the kernel level.
+    // Every attempt to write there must fail with an OSError (no WRITE_SUCCEEDED line).
+    expect(r.stdout).not.toContain("WRITE_SUCCEEDED");
+    // The sandbox explicitly mounts /tmp as a writable tmpfs; that must still work.
+    expect(r.stdout).toContain("tmp_write_ok");
+  });
+
+  it("[CapDrop ALL] privilege escalation → all capability-gated ops blocked", async () => {
+    const r = await judgeOne(pythonSpec, "python/cap-check.py", "hello", 1, 5000);
+    // CapDrop: ["ALL"] removes every Linux capability before the process runs.
+    // sethostname (CAP_SYS_ADMIN) and raw sockets (CAP_NET_RAW) must both fail.
+    expect(r.stdout).not.toContain("SUCCEEDED");
+    expect(r.stdout).toContain("sethostname_blocked");
+    expect(r.stdout).toContain("raw_socket_blocked");
+  });
+
+  it("[env isolation] worker secrets not leaked into sandbox container", async () => {
+    const r = await judgeOne(pythonSpec, "python/env-leak.py", "hello", 1, 5000);
+    // The sandbox container is created with no inherited environment from the worker
+    // process — DATABASE_URL, RABBITMQ_URL, JWT_SECRET etc. must be absent.
+    expect(r.stdout).not.toContain("LEAKED:");
+    expect(r.stdout).toContain("safe:DATABASE_URL");
+    expect(r.stdout).toContain("safe:JWT_SECRET");
+  });
+
+  it("[non-root] executed as uid=1000, not root", async () => {
+    const r = await judgeOne(pythonSpec, "python/whoami.py", "hello", 1, 5000);
+    // User: "1000:1000" is set in sandboxHostConfig; the process must never run as root.
+    expect(r.stdout).toContain("uid=1000");
+    expect(r.stdout).toContain("is_root=NO");
+    expect(r.stdout).not.toContain("uid=0");
+  });
 });
