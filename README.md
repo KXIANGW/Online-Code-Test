@@ -1,14 +1,16 @@
-# Online Code Test — M2 非同步判題
+# Online Code Test — M5 Observability & Demo
 
-NTHU 1142 雲原生 HW2 / Team 12。本版本已從 M1 mock judge 升級為 M2 非同步判題架構：frontend、backend、PostgreSQL、RabbitMQ、judge worker，以及 Docker/gVisor 沙箱執行流程。
+NTHU 1142 雲原生 HW2 / Team 12。M1 → M5 累進疊加：非同步判題（M2）→ Ownership 強化（M3）→ Redis cache + draft auto-save（M4）→ Sandbox 強化 + Prometheus / Grafana 可觀測性 + 100 並發 demo（M5）。
 
 各 component 詳細說明與測試指南：
 
 - [Testing_README.md](./Testing_README.md) — 完整測試指南（環境建置、各 component 自動/手動測試）
 - [backend/README.md](./backend/README.md) — Backend API 設計、endpoints 規格、測試覆蓋
 - [frontend/README.md](./frontend/README.md) — Frontend 架構與開發環境設定
-- [worker/README.md](./worker/README.md) — Judge worker 架構、RabbitMQ 協定、gVisor sandbox 設計
+- [worker/README.md](./worker/README.md) — Judge worker 架構、RabbitMQ 協定、gVisor sandbox 設計、Prometheus metrics
 - [infra/postgres/README.md](./infra/postgres/README.md) — Database schema、init scripts、RBAC 設計
+- [infra/redis/README.md](./infra/redis/README.md) — Redis cache key 規格、TTL、降級行為
+- [loadtest/README.md](./loadtest/README.md) — 100 並發 demo 操作手冊（seed / k6 / scale-watcher）
 
 ## 一鍵部署
 
@@ -30,8 +32,12 @@ make ps
 |------|------|
 | 前端 | <http://localhost:5173> |
 | 後端健康檢查 | <http://localhost:3000/api/health> |
+| 後端 Prometheus metrics | <http://localhost:3000/api/metrics> |
 | RabbitMQ Management UI | <http://localhost:15672> (`oct` / `oct_dev_password`) |
 | PostgreSQL | `localhost:5432` |
+| Prometheus | <http://localhost:9090> |
+| Grafana | <http://localhost:3001> (`admin` / `oct_dev_grafana`；匿名 viewer 已開放）|
+| cAdvisor | <http://localhost:8081> |
 
 如果本機尚未安裝 gVisor，可在 `.env` 暫時改用普通 Docker runtime：
 
@@ -44,15 +50,24 @@ SANDBOX_RUNTIME=runc
 ## 常用 Makefile 指令
 
 ```bash
+# 基本操作
 make bootstrap       # 產生 .env
-make sandbox-images  # 單獨重建 oct-sandbox-cpp:12 / oct-sandbox-python:3.11
-make up              # 先確保 sandbox images 存在，再 docker compose up -d --build
-make ps              # 查看服務健康狀態
+make sandbox-images  # 重建 oct-sandbox-cpp:12 / oct-sandbox-python:3.11
+make up              # docker compose up -d --build（含 prometheus / grafana / cadvisor）
+make ps              # 查看所有服務健康狀態
 make logs            # 追蹤所有服務 log
 make down            # 停止服務
 make clean           # 停止服務並刪除 volumes
 make rebuild         # clean + up
 make psql            # 進入 psql shell
+
+# 100 並發 demo（需先 make up）
+make demo-seed       # 建立 100 個 candidate 帳號 + session（需要 Node.js 20+）
+make demo-load       # k6 burst：100 VU 同時送出 submission
+make demo-watch      # 啟動 scale-watcher：依 Prometheus 指標自動調整 worker 數量
+make demo-100        # 上述三步驟一次完成
+make demo-down       # 停止並清除 demo 資料
+make demo-urls       # 列出 Grafana / Prometheus / RabbitMQ 等入口
 ```
 
 ## 服務一覽
@@ -60,10 +75,14 @@ make psql            # 進入 psql shell
 | Service | 說明 | Host port |
 |---------|------|-----------|
 | `postgres` | PostgreSQL 16 | 5432 |
-| `rabbitmq` | RabbitMQ + Management UI | 5672 / 15672 |
-| `backend` | Fastify API、WebSocket、RabbitMQ result consumer | 3000 |
-| `worker` | Judge worker，透過 Docker/gVisor 執行判題 | internal |
+| `rabbitmq` | RabbitMQ + Management UI + Prometheus exporter | 5672 / 15672 / 15692 |
+| `redis` | 快取（語言/題目/使用者）+ 考試草稿儲存 | 6379 |
+| `backend` | Fastify API、WebSocket、RabbitMQ consumer、`/api/metrics` | 3000 |
+| `worker` | Judge worker（Docker/gVisor sandbox）、`/metrics`、`/healthz` | internal (8080) |
 | `frontend` | Vite build，由 nginx 提供靜態檔 | 5173 |
+| `prometheus` | 抓取 backend / worker / cadvisor / rabbitmq metrics | 9090 |
+| `grafana` | 自動載入「OCT Demo — 100 concurrent」13-panel dashboard | 3001 |
+| `cadvisor` | Container CPU / memory 即時監控（供 KEDA scaling 用） | 8081 |
 
 ## 判題流程
 
@@ -86,9 +105,14 @@ make psql            # 進入 psql shell
 | `JWT_SECRET` | dev secret | JWT 簽章密鑰，正式部署必改 |
 | `RABBITMQ_USER` / `RABBITMQ_PASS` | `oct` / `oct_dev_password` | RabbitMQ 帳號與密碼 |
 | `RABBITMQ_URL` | `amqp://oct:oct_dev_password@rabbitmq:5672` | Backend / worker 使用的 RabbitMQ 連線字串 |
+| `REDIS_URL` | `redis://redis:6379` | Backend Redis 連線字串（cache + draft）|
 | `HOST_WORK_DIR` | `/tmp/judge` | Worker 與 host Docker 共用的工作目錄 |
 | `SANDBOX_RUNTIME` | `runsc` | 沙箱 runtime；本機無 gVisor 時可暫改 `runc` |
-| `HOST_*_PORT` | 見 `.env.example` | Host port mapping |
+| `HOST_PROMETHEUS_PORT` | `9090` | Prometheus host port |
+| `HOST_GRAFANA_PORT` | `3001` | Grafana host port |
+| `HOST_CADVISOR_PORT` | `8081` | cAdvisor host port |
+| `GRAFANA_PASSWORD` | `oct_dev_grafana` | Grafana admin 密碼 |
+| `HOST_*_PORT` | 見 `.env.example` | 其餘 host port mapping |
 
 ## 測試與排錯
 
@@ -303,9 +327,10 @@ kubectl get scaledobject  # 查看 KEDA 自動擴縮設定
 開發者 push 到 develop（或任意分支）
         ↓
 CI（.github/workflows/ci.yml）自動觸發
-  frontend: lint → test → build
-  backend:  lint → test（含 DB integration）
-  build-images: build & push image 到 ghcr.io（tag: commit SHA 前 10 碼）
+  frontend:            lint → test → build
+  backend:             lint → test（含 DB integration）
+  build-images:        build & push backend / frontend / worker → ghcr.io (SHA tag)
+  build-sandbox-images: build & push oct-sandbox-cpp / oct-sandbox-python → ghcr.io (SHA tag)
         ↓
 開發者開 PR，目標分支為 release/x.y.z
         ↓

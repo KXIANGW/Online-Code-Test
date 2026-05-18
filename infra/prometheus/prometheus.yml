@@ -1,0 +1,54 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+  external_labels:
+    monitor: oct-demo
+
+scrape_configs:
+  - job_name: backend
+    metrics_path: /api/metrics
+    static_configs:
+      - targets:
+          - backend:3000
+        labels:
+          app: backend
+
+  - job_name: worker
+    metrics_path: /metrics
+    # docker compose service DNS: each `worker` replica is reachable via
+    # `tasks.worker` (swarm) or by repeated A records on `worker`.
+    # On `docker compose up --scale worker=N`, the `worker` hostname resolves
+    # to all N container IPs; Prometheus picks them up via dns_sd_configs.
+    dns_sd_configs:
+      - names: ['tasks.worker', 'worker']
+        type: A
+        port: 8080
+        refresh_interval: 10s
+    relabel_configs:
+      - source_labels: [__meta_dns_name]
+        target_label: dns_name
+
+  - job_name: cadvisor
+    static_configs:
+      - targets:
+          - cadvisor:8080
+        labels:
+          app: cadvisor
+    scrape_interval: 10s
+
+  - job_name: rabbitmq
+    # Default /metrics returns aggregate gauges with no `queue` label, so
+    # rabbitmq_queue_messages{queue="judge.tasks"} would always be empty.
+    # /metrics/per-object exposes per-queue series we need for KEDA.
+    metrics_path: /metrics/per-object
+    static_configs:
+      - targets:
+          - rabbitmq:15692
+        labels:
+          app: rabbitmq
+    scrape_interval: 10s
+
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090

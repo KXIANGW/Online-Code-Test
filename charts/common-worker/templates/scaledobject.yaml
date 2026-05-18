@@ -1,17 +1,34 @@
-# KEDA 配置
+{{- if .Values.keda.enabled -}}
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: {{ .Release.Name }}-scaler
+  name: {{ include "common-worker.fullname" . }}
+  labels:
+    {{- include "common-worker.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
-    name: {{ .Release.Name }}
-  minReplicaCount: 1
-  maxReplicaCount: 5 # 本地演示建議設小，避免資源崩潰
+    name: {{ include "common-worker.fullname" . }}
+  minReplicaCount: {{ .Values.keda.minReplicaCount }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
+  pollingInterval: {{ .Values.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
   triggers:
-  - type: prometheus # 預設使用 Prometheus 指標觸發，具備高度通用性
-    metadata:
-      serverAddress: "http://prometheus-operated.monitoring.svc:9090"
-      metricName: "queue_depth_average"
-      threshold: "100"
-      query: 'sum(queue_waiting_messages{job="{{ .Release.Name }}"})'
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.prometheusAddress | quote }}
+        metricName: judge_cpu_avg
+        query: {{ .Values.keda.triggers.cpu.query | quote }}
+        threshold: {{ .Values.keda.triggers.cpu.threshold | quote }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.prometheusAddress | quote }}
+        metricName: judge_in_flight
+        query: {{ .Values.keda.triggers.inFlight.query | quote }}
+        threshold: {{ .Values.keda.triggers.inFlight.threshold | quote }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.prometheusAddress | quote }}
+        metricName: judge_queue_depth
+        query: {{ .Values.keda.triggers.queueDepth.query | quote }}
+        threshold: {{ .Values.keda.triggers.queueDepth.threshold | quote }}
+{{- end }}

@@ -1,40 +1,83 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}
+  name: {{ include "common-worker.fullname" . }}
   labels:
-    app: {{ .Release.Name }}
+    {{- include "common-worker.labels" . | nindent 4 }}
 spec:
-  # 💡 這裡不寫死 replicas: 1，而是交給 values.yaml 控制，後續會被 KEDA 動態覆蓋
-  replicas: {{ .Values.replicaCount | default 1 }}
+  # KEDA's ScaledObject takes over replicas once it's reconciled; this
+  # field is only honoured for the brief window before the first scale.
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: {{ .Release.Name }}
+      {{- include "common-worker.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        app: {{ .Release.Name }}
+        {{- include "common-worker.selectorLabels" . | nindent 8 }}
+      {{- with .Values.metrics.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
-      imagePullSecrets:
-        - name: ghcr-secret
+      serviceAccountName: {{ include "common-worker.serviceAccountName" . }}
+      {{- if .Values.runtimeClassName }}
+      runtimeClassName: {{ .Values.runtimeClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: 60
       containers:
         - name: worker
-          # 核心：動態組合你在 values.yaml 寫的 repository 和指令帶入的 tag
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
-          
-          # 這裡可以放 Worker 執行時需要的環境變數（暫時留空，之後可以在 values.yaml 加）
-          envFrom: []
+          image: {{ include "common-worker.imageRef" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           env:
-            - name: RABBITMQ_URL
-              value: {{ .Values.rabbitmq.url | quote }}
-            - name: DATABASE_URL
-              value: {{ .Values.database.url | quote }}
-          # 防爆資源限制，直接對齊 values.yaml 裡設定的數值
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.probe.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probe.path }}
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probe.path }}
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
           resources:
-            limits:
-              cpu: {{ .Values.resources.limits.cpu | quote }}
-              memory: {{ .Values.resources.limits.memory | quote }}
-            requests:
-              cpu: {{ .Values.resources.requests.cpu | quote }}
-              memory: {{ .Values.resources.requests.memory | quote }}
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.dockerSocket.enabled }}
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+            {{- end }}
+            {{- if .Values.hostWorkDir.enabled }}
+            - name: host-work
+              mountPath: {{ .Values.env.HOST_WORK_DIR | default "/tmp/judge" }}
+            {{- end }}
+      volumes:
+        {{- if .Values.dockerSocket.enabled }}
+        - name: docker-sock
+          hostPath:
+            path: {{ .Values.dockerSocket.hostPath }}
+            type: Socket
+        {{- end }}
+        {{- if .Values.hostWorkDir.enabled }}
+        - name: host-work
+          hostPath:
+            path: {{ .Values.hostWorkDir.hostPath }}
+            type: DirectoryOrCreate
+        {{- end }}

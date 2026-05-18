@@ -2,15 +2,24 @@
 
 ## 目前狀態
 
-M2 已完成：Backend Mock Judge 已移除，替換為真實非同步判題系統。Backend 收到 submission 後發布到 RabbitMQ，立即回傳 202；Judge Worker 非同步消費任務，在 gVisor sandbox 執行程式碼，結果透過 RabbitMQ 回傳給 Backend，再由 WebSocket 推送到前端。
+M5 已完成：非同步判題（M2）基礎上強化 sandbox 資源限制，並新增 Prometheus metrics endpoint。
 
 **已確認的設計決策：**
-- 沙箱隔離：gVisor runtime（`--runtime=runsc`），Worker 掛載 Docker socket
-- Docker/cgroups 防護：無網路、no swap、PID limit、唯讀 rootfs、tmpfs `/tmp`、drop capabilities、no-new-privileges、非 root UID 執行
-- C++ 編譯：普通 Docker container（無 gVisor），執行才用 gVisor；編譯失敗立即回傳 CE
-- Worker 並發：單一 Worker container，一次一個 task（RabbitMQ prefetch=1）
-- 提交類型：`simple`（public 測資）/ `formal`（全部測資，AC 才更新分數）
-- 無 gVisor 環境：設 `SANDBOX_RUNTIME=runc` 退回普通 Docker（僅限開發）
+
+| 面向 | 決策 |
+|------|------|
+| 沙箱 runtime | gVisor（`--runtime=runsc`）；`SANDBOX_RUNTIME=runc` 可退回普通 Docker（開發用）|
+| CPU 限制 | testcase container **NanoCpus = 1 × 10⁹**（= 1 core）；compile container = 2 core（`-O2` 需求）|
+| Memory 限制 | 由題目設定（預設 256 MB）；`MemorySwap = Memory`，`MemorySwappiness = 0` 禁用 swap |
+| PID 限制 | testcase container **PidsLimit = 64**（防 fork bomb）；compile container = 256 |
+| 網路隔離 | `NetworkMode = "none"` |
+| 檔案系統 | `ReadonlyRootfs = true`；tmpfs `/tmp`（64 MB, nosuid, nodev）；`/code` bind-mount ro |
+| 權限 | `CapDrop = ["ALL"]`、`no-new-privileges`、uid `1000:1000`（非 root）|
+| Memory 量測 | 用 Docker stats streaming API 追蹤 peak，寫入 `submissions.memory_kb` |
+| 並發 | 單一 Worker container、`prefetch=1`（一次一個 task）；透過 `docker compose --scale` 水平擴 |
+| 提交類型 | `simple`（public 測資，不更新分數）/ `formal`（全部測資，AC 才更新分數）|
+| Observability | Worker 在 `:8080` 同時提供 `/healthz`（健康檢查）與 `/metrics`（Prometheus）|
+| Sandbox images | `oct-sandbox-cpp:12`（gcc:12-bookworm）/ `oct-sandbox-python:3.11`（python:3.11-slim）；CI 自動 push 到 ghcr.io |
 
 ---
 
@@ -64,27 +73,35 @@ M2 已完成：Backend Mock Judge 已移除，替換為真實非同步判題系�
 
 ```text
 worker/
-├── Dockerfile                  # node:20-alpine + docker-cli（偵錯用）；執行 dist/index.js
+├── Dockerfile                  # node:20-alpine + docker-cli；執行 dist/index.js
 ├── sandbox/
-│   ├── cpp/Dockerfile          # oct-sandbox-cpp:12 image（gcc:12-bookworm）
-│   └── python/Dockerfile       # oct-sandbox-python:3.11 image（python:3.11-slim）
+│   ├── languages.yaml          # 語言 plugin spec（image / compile cmd / run cmd）
+│   ├── cpp/Dockerfile          # oct-sandbox-cpp:12（gcc:12-bookworm）
+│   └── python/Dockerfile       # oct-sandbox-python:3.11（python:3.11-slim）
 └── src/
-    ├── index.ts                # 入口：連線 RabbitMQ、assert exchange/queue、設定 prefetch=1、啟動 consumer
+    ├── index.ts                # 入口：MQ 連線、assert topology、prefetch=1、啟動 consumer
+    ├── healthcheck.ts          # GET :8080/healthz（DB + RabbitMQ 健康）與 /metrics（Prometheus）
+    ├── metrics.ts              # prom-client Registry：judge_in_flight / judge_verdicts_total /
+    │                           #   judge_duration_seconds / judge_memory_max_bytes /
+    │                           #   judge_compile_duration_seconds / judge_errors_total /
+    │                           #   judge_worker_info
     ├── config/
     │   └── index.ts            # 環境變數（RABBITMQ_URL、DATABASE_URL、HOST_WORK_DIR、SANDBOX_RUNTIME）
     ├── providers/
-    │   ├── docker.ts           # Dockerode client（連接 /var/run/docker.sock）
-    │   └── storage.ts          # 佔位（未來物件儲存整合）
+    │   ├── docker.ts           # Dockerode client（/var/run/docker.sock）
+    │   └── storage.ts          # 佔位（未來 MinIO 整合）
     ├── db/
     │   ├── client.ts           # PostgreSQL Pool（node-postgres）
-    │   └── queries.ts          # getSubmissionById、getTestcases、updateSubmissionJudging、writeJudgeResults
+    │   └── queries.ts          # getSubmissionById / getTestcases / updateSubmissionJudging / writeJudgeResults
     ├── engine/
-    │   ├── sandbox.ts          # 共用 Docker sandbox 設定、log parsing、stdout 截斷
-    │   ├── compiler.ts         # C++ 編譯：在普通 Docker container 執行 g++，回傳成功/CE errorLog
-    │   ├── runner.ts           # 單一 testcase 執行：gVisor sandbox，監控 TLE/MLE/RE，回傳 verdict + stdout
-    │   └── checker.ts          # 輸出比對：去除尾端空白/換行差異，回傳 AC 或 WA
+    │   ├── sandbox.ts          # sandboxHostConfig()（cgroups / caps / mounts）+ startMemorySampler()
+    │   ├── compiler.ts         # C++ 編譯（普通 Docker，NanoCpus=2e9, PidsLimit=256）
+    │   ├── runner.ts           # 單一 testcase 執行（gVisor, NanoCpus=1e9, PidsLimit=64）+ memory sampling
+    │   ├── checker.ts          # 輸出比對（trailing whitespace / CRLF tolerant）
+    │   └── languages.ts        # loadLanguages()：從 languages.yaml 動態載入語言 spec
     └── consumers/
-        └── judge.consumer.ts   # 主要判題邏輯：消費 MQ → compiler → runner × testcases → DB transaction → publish results
+        └── judge.consumer.ts   # 判題主流程：MQ → compiler → runner × testcases → DB → publish results
+                                #   嵌入 Prometheus metrics：in-flight gauge、duration timer、verdict counter
 ```
 
 **分層設計理由：**
@@ -273,8 +290,27 @@ npm run lint
 
 ---
 
+## Prometheus Metrics（M5 新增）
+
+Worker 在 `:8080/metrics` 提供 Prometheus exposition format，同一 port 也服務 `/healthz`。
+
+| Metric | Type | Labels | 說明 |
+|--------|------|--------|------|
+| `judge_in_flight` | Gauge | — | 當前正在執行的判題數（KEDA scaling signal）|
+| `judge_verdicts_total` | Counter | `language`, `verdict` | 各語言各 verdict 累計次數 |
+| `judge_duration_seconds` | Histogram | `language`, `verdict` | 單次提交整體判題時間（buckets: 0.5/1/2/5/10/30s）|
+| `judge_memory_max_bytes` | Histogram | `language` | sandbox container peak memory（streaming stats 量測）|
+| `judge_compile_duration_seconds` | Histogram | `language` | 編譯時間（僅編譯型語言）|
+| `judge_errors_total` | Counter | `kind` | worker 端系統錯誤（`system_error` / `mq_disconnect`）|
+| `judge_worker_info` | Gauge=1 | `version`, `hostname` | 用於計算 worker replica 數 |
+| process_* | — | — | Node.js process CPU / memory / event loop lag（prom-client 預設）|
+
+---
+
 ## 剩餘工作
 
-- **Worker 端到端整合測試**：目前已有真實 PostgreSQL 的 `db/queries` integration tests；仍可補充真實 RabbitMQ + Docker sandbox 的 E2E worker 測試，驗證從 `judge.tasks` 到 `judge.results` 的完整鏈路。
-- **gVisor CI 安裝策略**：gVisor 需在 host 安裝，CI runner 需要支援巢狀虛擬化；目前 CI 用 `SANDBOX_RUNTIME=runc`，需評估是否引入 gVisor 專屬 CI 環境。
-- **Sandbox image 版本管理**：`oct-sandbox-cpp:12` / `oct-sandbox-python:3.11` 目前需手動 build；整合進 docker-compose build 或 registry push 流程。
+- **Worker E2E 整合測試**：目前已有 mock-based consumer tests 與 PostgreSQL integration tests；可補充真實 RabbitMQ + Docker sandbox E2E（`judge.tasks` → `judge.results` 完整鏈路）。
+- **gVisor CI 策略**：CI 目前用 `SANDBOX_RUNTIME=runc`；gVisor 需要巢狀虛擬化的 runner，需評估是否引入專屬 CI 環境。
+- **Seccomp profile 顯式宣告**：目前吃 Docker default seccomp；建議加 `SecurityOpt: ["seccomp=runtime/default"]` 並補攻擊 test（ptrace / mknod 等危險 syscall）。
+- **Sandbox image digest pin**：CI 已 push 到 ghcr.io，下一步把 `languages.yaml` 改用 ghcr.io 路徑並寫入 sha256 digest，防 supply-chain 攻擊。
+- **多語言 runner**：plugin 機制（`languages.yaml`）已就位，新增語言只需加 Dockerfile + yaml 一段；Java 21 / Go 1.22 / Rust 1.78 尚未實作。

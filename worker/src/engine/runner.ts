@@ -7,6 +7,7 @@ import {
   prepareSandboxWorkDir,
   sandboxHostConfig,
   SANDBOX_USER,
+  startMemorySampler,
   truncateUtf8,
 } from "./sandbox";
 import type { LanguageSpec } from "./languages";
@@ -59,9 +60,20 @@ export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResu
   const startedAt = Date.now();
   let timedOut = false;
   let timeout: NodeJS.Timeout | undefined;
+  let sampler: ReturnType<typeof startMemorySampler> | undefined;
+  let memoryKb: number | null = null;
+
+  async function stopSampler(): Promise<number | null> {
+    if (!sampler) return memoryKb;
+    const peak = await sampler.stop();
+    sampler = undefined;
+    if (peak !== null) memoryKb = peak;
+    return memoryKb;
+  }
 
   try {
     await container.start();
+    sampler = startMemorySampler(container);
 
     const waitPromise = container.wait();
     const timeoutPromise = new Promise<{ StatusCode: number }>((resolve) => {
@@ -74,9 +86,10 @@ export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResu
 
     const waitResult = await Promise.race([waitPromise, timeoutPromise]);
     const runtimeMs = Math.max(0, Date.now() - startedAt);
+    memoryKb = await stopSampler();
 
     if (timedOut) {
-      return { verdict: "TLE", stdout: "", stderr: "", runtimeMs: options.timeLimitMs, memoryKb: null };
+      return { verdict: "TLE", stdout: "", stderr: "", runtimeMs: options.timeLimitMs, memoryKb };
     }
 
     const logs = await container.logs({ stdout: true, stderr: true });
@@ -85,11 +98,19 @@ export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResu
     const oomKilled = inspected?.State?.OOMKilled === true;
 
     if (oomKilled || waitResult.StatusCode === 137) {
-      return { verdict: "MLE", stdout, stderr, runtimeMs, memoryKb: null };
+      // OOMKilled: cgroups peak likely equals limit, but if sampler missed it, fall back.
+      const memoryLimitKb = options.memoryLimitMb * 1024;
+      return {
+        verdict: "MLE",
+        stdout,
+        stderr,
+        runtimeMs,
+        memoryKb: memoryKb ?? memoryLimitKb,
+      };
     }
 
     if (waitResult.StatusCode !== 0) {
-      return { verdict: "RE", stdout, stderr, runtimeMs, memoryKb: null };
+      return { verdict: "RE", stdout, stderr, runtimeMs, memoryKb };
     }
 
     const outputLimitBytes = options.outputLimitKb * 1024;
@@ -99,19 +120,20 @@ export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResu
         stdout: truncateUtf8(stdout, outputLimitBytes),
         stderr: stderr || "Output limit exceeded",
         runtimeMs,
-        memoryKb: null,
+        memoryKb,
       };
     }
 
-    return { verdict: "AC", stdout, stderr, runtimeMs, memoryKb: null };
+    return { verdict: "AC", stdout, stderr, runtimeMs, memoryKb };
   } catch (err) {
+    const finalMemoryKb = await stopSampler();
     if (timedOut || (err instanceof Error && err.message === "TLE")) {
       return {
         verdict: "TLE",
         stdout: "",
         stderr: "",
         runtimeMs: options.timeLimitMs,
-        memoryKb: null,
+        memoryKb: finalMemoryKb,
       };
     }
 
@@ -120,10 +142,11 @@ export async function runOneTestcase(options: RunOneOptions): Promise<RunOneResu
       stdout: "",
       stderr: err instanceof Error ? err.message : String(err),
       runtimeMs: Math.max(0, Date.now() - startedAt),
-      memoryKb: null,
+      memoryKb: finalMemoryKb,
     };
   } finally {
     if (timeout) clearTimeout(timeout);
+    await stopSampler();
     await container.remove({ force: true }).catch(() => undefined);
   }
 }

@@ -4,7 +4,9 @@ import websocket from "@fastify/websocket";
 import { env } from "./env";
 import { pool } from "./db/client";
 import { healthRoutes } from "./routes/health";
+import { metricsRoutes } from "./routes/metrics";
 import { pingRoutes } from "./routes/ping";
+import { httpRequestDurationSeconds } from "./metrics";
 import { jwtPlugin } from "./plugins/jwt";
 import { authRoutes } from "./routes/auth";
 import { userRoutes } from "./routes/users";
@@ -32,8 +34,19 @@ export async function buildApp() {
   await app.register(websocket);
   await app.register(jwtPlugin);
 
+  // Record HTTP RED metrics for every request. Uses the matched route URL
+  // (e.g. /api/exam-sessions/:sessionId/submissions) so cardinality is bounded.
+  app.addHook("onResponse", async (request, reply) => {
+    const route = request.routeOptions?.url ?? request.url;
+    const status = String(Math.floor(reply.statusCode / 100)) + "xx";
+    httpRequestDurationSeconds
+      .labels(route, request.method, status)
+      .observe(reply.elapsedTime / 1000);
+  });
+
   await app.register(async (api) => {
     await api.register(healthRoutes);
+    await api.register(metricsRoutes);
     await api.register(pingRoutes);
     await api.register(authRoutes, { prefix: "/auth" });
     await api.register(userRoutes, { prefix: "/users" });

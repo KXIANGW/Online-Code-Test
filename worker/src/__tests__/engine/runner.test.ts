@@ -37,12 +37,32 @@ async function tempDir() {
   return dir;
 }
 
-function dockerWithStatus(statusCode: number, logs = dockerLog(1, "ok\n")) {
+function makeStatsStream(statsBytes?: number): {
+  on: (ev: string, cb: (arg?: unknown) => void) => void;
+  destroy: () => void;
+} {
+  // Flush the pre-buffered frame the moment a "data" handler attaches, so
+  // the runner sees the peak whether stop() races sampler setup or not.
+  const payload = statsBytes !== undefined
+    ? JSON.stringify({ memory_stats: { max_usage: statsBytes, usage: statsBytes } }) + "\n"
+    : null;
+  return {
+    on(ev: string, cb: (arg?: unknown) => void) {
+      if (ev === "data" && payload !== null) {
+        (cb as (chunk: Buffer | string) => void)(payload);
+      }
+    },
+    destroy() { /* no-op */ },
+  };
+}
+
+function dockerWithStatus(statusCode: number, logs = dockerLog(1, "ok\n"), statsBytes?: number) {
   const container = {
     start: vi.fn().mockResolvedValue(undefined),
     wait: vi.fn().mockResolvedValue({ StatusCode: statusCode }),
     logs: vi.fn().mockResolvedValue(logs),
     inspect: vi.fn().mockResolvedValue({ State: { OOMKilled: false } }),
+    stats: vi.fn().mockImplementation(() => Promise.resolve(makeStatsStream(statsBytes))),
     remove: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn().mockResolvedValue(undefined),
   };
@@ -96,8 +116,9 @@ describe("runOneTestcase", () => {
           CapDrop: ["ALL"],
           Memory: 64 * 1024 * 1024,
           MemorySwap: 64 * 1024 * 1024,
+          NanoCpus: 1_000_000_000,
           NetworkMode: "none",
-          PidsLimit: 128,
+          PidsLimit: 64,
           ReadonlyRootfs: true,
           Runtime: "runsc",
           SecurityOpt: ["no-new-privileges"],
@@ -168,6 +189,43 @@ describe("runOneTestcase", () => {
 
     expect(result.verdict).toBe("TLE");
     expect(container.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it("captures peak memory from sampler when stats are available", async () => {
+    const { docker } = dockerWithStatus(0, dockerLog(1, "ok\n"), 20 * 1024 * 1024);
+
+    const result = await runOneTestcase({
+      spec: pythonSpec,
+      hostWorkDir: await tempDir(),
+      inputData: "",
+      timeLimitMs: 1000,
+      memoryLimitMb: 64,
+      outputLimitKb: 64,
+      sandboxRuntime: "runc",
+      dockerClient: docker as never,
+    });
+
+    expect(result.verdict).toBe("AC");
+    expect(result.memoryKb).toBe(20 * 1024);
+  });
+
+  it("falls back to memory limit when OOMKilled but sampler missed peak", async () => {
+    const { docker, container } = dockerWithStatus(1);
+    container.inspect.mockResolvedValue({ State: { OOMKilled: true } });
+
+    const result = await runOneTestcase({
+      spec: pythonSpec,
+      hostWorkDir: await tempDir(),
+      inputData: "",
+      timeLimitMs: 1000,
+      memoryLimitMb: 64,
+      outputLimitKb: 64,
+      sandboxRuntime: "runc",
+      dockerClient: docker as never,
+    });
+
+    expect(result.verdict).toBe("MLE");
+    expect(result.memoryKb).toBe(64 * 1024);
   });
 
   it("maps excessive stdout to RE", async () => {
