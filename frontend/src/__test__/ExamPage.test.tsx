@@ -398,20 +398,18 @@ describe("ExamPage", () => {
   });
 
   it("falls back to the first enabled language when a restored draft language is disabled", async () => {
-    // given
+    // given — python3 disabled; last-used language key points to python3
     mockGetLanguages.mockResolvedValue([
       { ...mockExamPageLanguages[0], isEnabled: false },
       mockExamPageLanguages[1],
     ]);
-    localStorage.setItem(
-      "oct:draft:42:1",
-      JSON.stringify({ code: "print('stale')", language: "python3" }),
-    );
+    localStorage.setItem("oct:lang:42:1", "python3");
+    localStorage.setItem("oct:draft:42:1:python3", "print('stale')");
 
     // when
     await renderExamPage();
 
-    // expect
+    // expect — disabled language is rejected; selector shows first enabled (cpp17)
     const select = screen.getByLabelText("語言") as HTMLSelectElement;
     expect(select.value).toBe("cpp17");
     expect(screen.getByLabelText("Code editor")).toHaveAttribute("data-language", "cpp");
@@ -474,24 +472,104 @@ describe("ExamPage", () => {
 
   it("all problems have a valid default language even when Redis draft only partially restores", async () => {
     // given — session must be in_progress for Redis restore to run;
-    //          Redis returns a draft for problem 1 (cpp17) but nothing for problem 2
+    //          Redis returns a draft for problem 1 (cpp17 code) but nothing for problem 2
     mockGetExamSession.mockResolvedValue({
       ...mockExamPageSession,
       status: "in_progress",
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     });
+    // New format: key = "problemId:language", value = code string
     mockGetExamDrafts.mockResolvedValue({
-      "1": { code: "int main() {}", language: "cpp17" },
+      "1:cpp17": "int main() {}",
     });
     // when
     await renderExamPage();
     const select = screen.getByLabelText("語言") as HTMLSelectElement;
-    // expect: active problem 1 (Two Sum) shows cpp17 restored from Redis
-    await waitFor(() => expect(select.value).toBe("cpp17"));
+    // expect: selected language stays at defaultLang (python3); Redis restore only
+    //         populates the code for that language, it does not change the selector
+    await waitFor(() => expect(select.value).toBe("python3"));
+    // when — switch to cpp17 to verify code was restored from Redis
+    fireEvent.change(select, { target: { value: "cpp17" } });
+    expect(screen.getByLabelText("Code editor")).toHaveValue("int main() {}");
     // when — switch to problem 2 (Binary Search, problemId: 2 — not in Redis)
     fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
     // expect: problem 2 falls back to the default language (python3), not empty string
     expect(select.value).toBe("python3");
+  });
+
+  // ── Per-language draft isolation ──────────────────────────────────────────
+
+  it("switching language preserves per-language code independently", async () => {
+    // given
+    await renderExamPage();
+    const editor = screen.getByLabelText("Code editor") as HTMLTextAreaElement;
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("python3"));
+
+    // when: write python code
+    fireEvent.change(editor, { target: { value: "print('py')" } });
+    // switch to cpp17
+    fireEvent.change(select, { target: { value: "cpp17" } });
+    // expect: editor is empty for cpp17 (new language has no code)
+    expect(screen.getByLabelText("Code editor")).toHaveValue("");
+
+    // when: write cpp code
+    fireEvent.change(screen.getByLabelText("Code editor"), { target: { value: "int main() {}" } });
+    // switch back to python3
+    fireEvent.change(select, { target: { value: "python3" } });
+    // expect: python code is restored
+    expect(screen.getByLabelText("Code editor")).toHaveValue("print('py')");
+
+    // when: switch back to cpp17
+    fireEvent.change(select, { target: { value: "cpp17" } });
+    // expect: cpp code is also restored
+    expect(screen.getByLabelText("Code editor")).toHaveValue("int main() {}");
+  });
+
+  it("restores per-language code from localStorage on page load", async () => {
+    // given — both python3 and cpp17 have saved code in localStorage
+    localStorage.setItem("oct:draft:42:1:python3", "restored_py");
+    localStorage.setItem("oct:draft:42:1:cpp17", "restored_cpp");
+    localStorage.setItem("oct:lang:42:1", "cpp17"); // last used was cpp17
+    // when
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    // expect: last-used language (cpp17) is selected on load
+    await waitFor(() => expect(select.value).toBe("cpp17"));
+    expect(screen.getByLabelText("Code editor")).toHaveValue("restored_cpp");
+    // when: switch to python3
+    fireEvent.change(select, { target: { value: "python3" } });
+    // expect: python3 code also restored
+    expect(screen.getByLabelText("Code editor")).toHaveValue("restored_py");
+  });
+
+  it("per-language draft localStorage key is written on code change", async () => {
+    // given
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("python3"));
+    vi.useFakeTimers();
+    try {
+      // when: type code and advance debounce
+      fireEvent.change(screen.getByLabelText("Code editor"), { target: { value: "new_code" } });
+      vi.advanceTimersByTime(1001);
+      // expect: localStorage key includes language
+      expect(localStorage.getItem("oct:draft:42:1:python3")).toBe("new_code");
+      expect(localStorage.getItem("oct:draft:42:1")).toBeNull(); // old format must not exist
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("oct:lang key is updated when language is switched", async () => {
+    // given
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("python3"));
+    // when
+    fireEvent.change(select, { target: { value: "cpp17" } });
+    // expect: last-used language stored for this session+problem
+    expect(localStorage.getItem("oct:lang:42:1")).toBe("cpp17");
   });
 
   // ── Draft restore (sessionStatus guard) ──────────────────────────────────
@@ -531,8 +609,8 @@ describe("ExamPage", () => {
     expect(mockSaveExamDraft).not.toHaveBeenCalled();
   });
 
-  it("calls saveExamDraft when changing language if session is in_progress", async () => {
-    // given
+  it("does not call saveExamDraft when switching to a language with no existing code", async () => {
+    // given — in_progress session, but cpp17 has no code in localStorage
     mockGetExamSession.mockResolvedValue({
       ...mockExamPageSession,
       status: "in_progress",
@@ -542,22 +620,40 @@ describe("ExamPage", () => {
     const select = screen.getByLabelText("語言") as HTMLSelectElement;
     await waitFor(() => expect(select.value).toBe("python3"));
     vi.clearAllMocks();
-    // when
+    // when — switch to cpp17 which has no code
     fireEvent.change(select, { target: { value: "cpp17" } });
-    // expect
-    expect(mockSaveExamDraft).toHaveBeenCalledWith(42, expect.any(Number), {
-      code: "",
-      language: "cpp17",
-    });
+    // expect — no code to sync so saveExamDraft must not be called
+    expect(mockSaveExamDraft).not.toHaveBeenCalled();
   });
 
-  it("logs error to console when saveExamDraft rejects on language change during in_progress session", async () => {
-    // given
+  it("calls saveExamDraft when changing to a language with existing localStorage code during in_progress session", async () => {
+    // given — cpp17 has pre-existing code in localStorage
     mockGetExamSession.mockResolvedValue({
       ...mockExamPageSession,
       status: "in_progress",
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     });
+    localStorage.setItem("oct:draft:42:1:cpp17", "int main() {}");
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("python3"));
+    vi.clearAllMocks();
+    // when
+    fireEvent.change(select, { target: { value: "cpp17" } });
+    // expect — existing code is synced to Redis
+    expect(mockSaveExamDraft).toHaveBeenCalledWith(42, 1, "cpp17", {
+      code: "int main() {}",
+    });
+  });
+
+  it("logs error to console when saveExamDraft rejects on language change during in_progress session", async () => {
+    // given — cpp17 has code so saveExamDraft will be triggered on language switch
+    mockGetExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "in_progress",
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    localStorage.setItem("oct:draft:42:1:cpp17", "int main() {}");
     mockSaveExamDraft.mockRejectedValue(new Error("404 Not Found"));
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     await renderExamPage();

@@ -18,7 +18,6 @@ import { parsePositiveIntParam } from "./params";
 
 const saveDraftBody = z.object({
   code: z.string().max(65536),
-  language: z.string().min(1).max(32),
 });
 
 const manualSessionBody = z.object({
@@ -103,17 +102,19 @@ export const examRoutes: FastifyPluginAsync = async (app) => {
     );
   });
 
-  // PUT /:id/drafts/:problemId — save draft
-  app.put("/:id/drafts/:problemId", { preHandler: [authenticate] }, async (request, reply) => {
-    const { id, problemId } = request.params as { id: string; problemId: string };
+  // PUT /:id/drafts/:problemId/:language — save draft keyed by problem + language
+  app.put("/:id/drafts/:problemId/:language", { preHandler: [authenticate] }, async (request) => {
+    const { id, problemId, language } = request.params as { id: string; problemId: string; language: string };
     const sessionId = parsePositiveIntParam(id, "id");
     const pid = parsePositiveIntParam(problemId, "problemId");
+
+    if (!language || language.length === 0 || language.length > 32) throw BadRequestError("invalid language");
 
     const body = request.body as Record<string, unknown>;
     const result = saveDraftBody.safeParse(body);
     if (!result.success) throw BadRequestError(result.error.message);
 
-    return saveDraft(request.user, sessionId, pid, result.data);
+    return saveDraft(request.user, sessionId, pid, language, result.data.code);
   });
 
   // GET /:id/drafts — get all drafts for session

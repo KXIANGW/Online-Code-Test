@@ -215,20 +215,22 @@ export async function getLanguages(): Promise<Language[]> {
   return data;
 }
 
-// Auto-save draft to Redis via backend
+// Auto-save draft to Redis via backend (keyed by problem + language)
 export async function saveExamDraft(
   sessionId: number,
   problemId: number,
-  draft: { code: string; language: string },
+  language: string,
+  draft: { code: string },
 ): Promise<void> {
-  await api.put(`/exam-sessions/${sessionId}/drafts/${problemId}`, draft);
+  await api.put(`/exam-sessions/${sessionId}/drafts/${problemId}/${language}`, draft);
 }
 
 // Get all drafts for a session (restore from Redis on page load)
+// Returns Record<"problemId:language", code>
 export async function getExamDrafts(
   sessionId: number,
-): Promise<Record<string, { code: string; language: string }>> {
-  const { data } = await api.get<Record<number, { code: string; language: string }>>(
+): Promise<Record<string, string>> {
+  const { data } = await api.get<Record<string, string>>(
     `/exam-sessions/${sessionId}/drafts`,
   );
   return data;

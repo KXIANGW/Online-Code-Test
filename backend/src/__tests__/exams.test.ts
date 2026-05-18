@@ -739,9 +739,9 @@ describe("PUT /api/exam-sessions/:id/drafts/:problemId and GET /:id/drafts", () 
   it("candidate can save a draft for their in-progress session", async () => {
     const res = await app.inject({
       method: "PUT",
-      url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}`,
+      url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}/python3`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: { code: "print('hello')", language: "python3" },
+      payload: { code: "print('hello')" },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ ok: boolean }>().ok).toBe(true);
@@ -750,9 +750,9 @@ describe("PUT /api/exam-sessions/:id/drafts/:problemId and GET /:id/drafts", () 
   it("save draft rejects non-owner (interviewer) → 404", async () => {
     const res = await app.inject({
       method: "PUT",
-      url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}`,
+      url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}/cpp17`,
       headers: { authorization: `Bearer ${aliceToken}` },
-      payload: { code: "// interviewer", language: "cpp17" },
+      payload: { code: "// interviewer" },
     });
     expect(res.statusCode).toBe(404);
   });
@@ -760,9 +760,9 @@ describe("PUT /api/exam-sessions/:id/drafts/:problemId and GET /:id/drafts", () 
   it("save draft rejects a problemId not in the session → 404", async () => {
     const res = await app.inject({
       method: "PUT",
-      url: `/api/exam-sessions/${sessionId}/drafts/999999`,
+      url: `/api/exam-sessions/${sessionId}/drafts/999999/python3`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: { code: "print('x')", language: "python3" },
+      payload: { code: "print('x')" },
     });
     expect(res.statusCode).toBe(404);
   });
@@ -770,9 +770,9 @@ describe("PUT /api/exam-sessions/:id/drafts/:problemId and GET /:id/drafts", () 
   it("candidate can read back a previously saved draft", async () => {
     await app.inject({
       method: "PUT",
-      url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}`,
+      url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}/python3`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: { code: "saved = True", language: "python3" },
+      payload: { code: "saved = True" },
     });
     const res = await app.inject({
       method: "GET",
@@ -780,9 +780,34 @@ describe("PUT /api/exam-sessions/:id/drafts/:problemId and GET /:id/drafts", () 
       headers: { authorization: `Bearer ${candToken}` },
     });
     expect(res.statusCode).toBe(200);
-    const body = res.json<Record<string, { code: string; language: string }>>();
-    expect(body[String(easyProblemId)]).toEqual({ code: "saved = True", language: "python3" });
-    expect(body[String(mediumProblemId)]).toBeUndefined();
+    // Response is Record<"problemId:language", code>
+    const body = res.json<Record<string, string>>();
+    expect(body[`${easyProblemId}:python3`]).toBe("saved = True");
+    expect(body[`${mediumProblemId}:python3`]).toBeUndefined();
+  });
+
+  it("drafts for same problem with different languages are stored independently", async () => {
+    await app.inject({
+      method: "PUT",
+      url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}/python3`,
+      headers: { authorization: `Bearer ${candToken}` },
+      payload: { code: "python code" },
+    });
+    await app.inject({
+      method: "PUT",
+      url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}/cpp17`,
+      headers: { authorization: `Bearer ${candToken}` },
+      payload: { code: "cpp code" },
+    });
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/drafts`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<Record<string, string>>();
+    expect(body[`${easyProblemId}:python3`]).toBe("python code");
+    expect(body[`${easyProblemId}:cpp17`]).toBe("cpp code");
   });
 
   it("get drafts for a session belonging to another candidate → 404", async () => {

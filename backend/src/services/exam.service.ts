@@ -261,7 +261,7 @@ export async function cancelExamSession(currentUser: CurrentUser, id: number) {
   db.select({ problemId: examSessionProblems.problemId })
     .from(examSessionProblems)
     .where(eq(examSessionProblems.examSessionId, id))
-    .then((esps) => clearSessionDrafts(id, esps.map((e) => e.problemId)))
+    .then(() => clearSessionDrafts(id))
     .catch(() => {});
 
   return updated[0]!;

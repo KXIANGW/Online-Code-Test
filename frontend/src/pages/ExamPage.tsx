@@ -47,7 +47,8 @@ export default function ExamPage() {
   const [selectedLangs, setSelectedLangs] = useState<Record<number, string>>(
     {},
   );
-  const [codes, setCodes] = useState<Record<number, string>>({});
+  // codes keyed by composite "${problemId}:${language}" to preserve per-language drafts
+  const [codes, setCodes] = useState<Record<string, string>>({});
   const [bottomTab, setBottomTab] = useState<BottomTab>("testcases");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<ExamStatus>("not_started");
@@ -92,63 +93,49 @@ export default function ExamPage() {
           setActiveProblemId(sessionProblems[0].problemId);
 
         const defaultLang = enabledLangs[0]?.language ?? "";
-        const initialCodes: Record<number, string> = {};
+        // codes keyed by "${problemId}:${language}"
+        const initialCodes: Record<string, string> = {};
         const initialLangs: Record<number, string> = {};
 
         for (const p of sessionProblems) {
-          const lsKey = `oct:draft:${sessionId}:${p.problemId}`;
-          const lsRaw = localStorage.getItem(lsKey);
-          if (lsRaw) {
-            try {
-              const parsed = JSON.parse(lsRaw) as {
-                code?: string;
-                language?: string;
-              };
-              if (parsed.code !== undefined)
-                initialCodes[p.problemId] = parsed.code;
-              initialLangs[p.problemId] =
-                parsed.language && enabledLanguageIds.has(parsed.language)
-                  ? parsed.language
-                  : defaultLang;
-            } catch {
-              initialLangs[p.problemId] = defaultLang;
+          // Restore code for each enabled language from per-language localStorage keys
+          for (const lang of enabledLangs) {
+            const lsKey = `oct:draft:${sessionId}:${p.problemId}:${lang.language}`;
+            const code = localStorage.getItem(lsKey);
+            if (code !== null) {
+              initialCodes[`${p.problemId}:${lang.language}`] = code;
             }
-          } else {
-            initialLangs[p.problemId] = defaultLang;
           }
+          // Restore the last-used language from a separate key
+          const lastLang = localStorage.getItem(`oct:lang:${sessionId}:${p.problemId}`);
+          initialLangs[p.problemId] =
+            lastLang && enabledLanguageIds.has(lastLang) ? lastLang : defaultLang;
         }
 
         setCodes(initialCodes);
         setSelectedLangs(initialLangs);
 
-        // Restore from Redis for problems not found in localStorage
+        // Restore from Redis for problems with no localStorage data for any language
         const missingIds = sessionProblems
-          .filter((p) => initialCodes[p.problemId] === undefined)
+          .filter((p) =>
+            enabledLangs.every(
+              (lang) => initialCodes[`${p.problemId}:${lang.language}`] === undefined,
+            ),
+          )
           .map((p) => p.problemId);
 
         if (missingIds.length > 0 && session.status === "in_progress") {
           try {
+            // drafts: Record<"problemId:language", code>
             const drafts = await getExamDrafts(sessionId);
-            for (const [pidStr, draft] of Object.entries(drafts)) {
-              const pid = Number(pidStr);
-              if (missingIds.includes(pid)) {
-                setCodes((prev) => ({ ...prev, [pid]: draft.code }));
-                setSelectedLangs((prev) => ({
-                  ...prev,
-                  [pid]: enabledLanguageIds.has(draft.language)
-                    ? draft.language
-                    : defaultLang,
-                }));
-                localStorage.setItem(
-                  `oct:draft:${sessionId}:${pid}`,
-                  JSON.stringify({
-                    ...draft,
-                    language: enabledLanguageIds.has(draft.language)
-                      ? draft.language
-                      : defaultLang,
-                  }),
-                );
-              }
+            for (const [key, code] of Object.entries(drafts)) {
+              const colonIdx = key.indexOf(":");
+              const pid = Number(key.slice(0, colonIdx));
+              const lang = key.slice(colonIdx + 1);
+              if (!missingIds.includes(pid)) continue;
+              if (!enabledLanguageIds.has(lang)) continue;
+              setCodes((prev) => ({ ...prev, [`${pid}:${lang}`]: code }));
+              localStorage.setItem(`oct:draft:${sessionId}:${pid}:${lang}`, code);
             }
           } catch {
             // Redis restore failed — draft code may be missing, editor will be empty
@@ -211,41 +198,40 @@ export default function ExamPage() {
   const timeLeft = useExamTimer(expiresAt);
 
   const activeProblem = problems.find((p) => p.problemId === activeProblemId);
-  const currentCode = codes[activeProblemId] ?? "";
   const currentLang =
     selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
+  const currentCode = codes[`${activeProblemId}:${currentLang}`] ?? "";
   const monacoLang = currentLang
     ? (MONACO_LANG[currentLang] ?? currentLang)
     : "plaintext";
 
   function handleCodeChange(value: string | undefined) {
     const code = value ?? "";
-    setCodes((prev) => ({ ...prev, [activeProblemId]: code }));
-
     const lang = selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
-    const lsKey = `oct:draft:${sessionId}:${activeProblemId}`;
+    setCodes((prev) => ({ ...prev, [`${activeProblemId}:${lang}`]: code }));
+
+    const lsKey = `oct:draft:${sessionId}:${activeProblemId}:${lang}`;
 
     if (lsDebounceRef.current) clearTimeout(lsDebounceRef.current);
     lsDebounceRef.current = setTimeout(() => {
-      localStorage.setItem(lsKey, JSON.stringify({ code, language: lang }));
+      localStorage.setItem(lsKey, code);
     }, 1000);
 
     if (apiDebounceRef.current) clearTimeout(apiDebounceRef.current);
     apiDebounceRef.current = setTimeout(() => {
       if (sessionStatus !== "in_progress") return;
-      saveExamDraft(sessionId, activeProblemId, { code, language: lang }).catch(
+      saveExamDraft(sessionId, activeProblemId, lang, { code }).catch(
         (err) => console.error("[ExamPage] auto-save draft failed:", err),
       );
     }, 5000);
   }
 
   function handleTabSwitch(problemId: number) {
-    // Flush current draft to localStorage immediately before switching
+    // Flush active language's draft to localStorage immediately before switching problems
     const lang = selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
-    const lsKey = `oct:draft:${sessionId}:${activeProblemId}`;
     localStorage.setItem(
-      lsKey,
-      JSON.stringify({ code: codes[activeProblemId] ?? "", language: lang }),
+      `oct:draft:${sessionId}:${activeProblemId}:${lang}`,
+      codes[`${activeProblemId}:${lang}`] ?? "",
     );
     setActiveProblemId(problemId);
   }
@@ -549,19 +535,38 @@ export default function ExamPage() {
               value={currentLang}
               onChange={(e) => {
                 const newLang = e.target.value;
+
+                // Flush current language's code to localStorage before switching
+                localStorage.setItem(
+                  `oct:draft:${sessionId}:${activeProblemId}:${currentLang}`,
+                  currentCode,
+                );
+
+                // Load new language's code from localStorage (or empty)
+                const newCode =
+                  localStorage.getItem(
+                    `oct:draft:${sessionId}:${activeProblemId}:${newLang}`,
+                  ) ?? "";
+                setCodes((prev) => ({
+                  ...prev,
+                  [`${activeProblemId}:${newLang}`]: newCode,
+                }));
+
+                // Persist last-used language for this problem
+                localStorage.setItem(
+                  `oct:lang:${sessionId}:${activeProblemId}`,
+                  newLang,
+                );
+
                 setSelectedLangs((prev) => ({
                   ...prev,
                   [activeProblemId]: newLang,
                 }));
-                const code = codes[activeProblemId] ?? "";
-                localStorage.setItem(
-                  `oct:draft:${sessionId}:${activeProblemId}`,
-                  JSON.stringify({ code, language: newLang }),
-                );
-                if (sessionStatus === "in_progress") {
-                  saveExamDraft(sessionId, activeProblemId, {
-                    code,
-                    language: newLang,
+
+                // Sync new language's draft to Redis if there is code to restore
+                if (newCode && sessionStatus === "in_progress") {
+                  saveExamDraft(sessionId, activeProblemId, newLang, {
+                    code: newCode,
                   }).catch((err) =>
                     console.error("[ExamPage] auto-save draft failed:", err),
                   );
