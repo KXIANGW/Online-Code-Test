@@ -1165,6 +1165,77 @@ describe("ExamPage", () => {
     expect(parseInt(panel.style.width)).toBe(700);
   });
 
+  // ── Vertical resizable divider (editor / bottom panel) ───────────────────
+
+  it("renders a vertical drag divider separator between editor and bottom panel", async () => {
+    // given
+    await renderExamPage();
+    // expect
+    expect(screen.getByRole("separator", { name: "調整底部面板高度" })).toBeInTheDocument();
+  });
+
+  it("dragging vertical divider upward increases bottom panel height", async () => {
+    // given
+    await renderExamPage();
+    const divider = screen.getByRole("separator", { name: "調整底部面板高度" });
+    const panel = screen.getByLabelText("底部面板") as HTMLElement;
+    const initialHeight = parseInt(panel.style.height); // default 208
+
+    // when: drag 100px upward (clientY decreases)
+    fireEvent.mouseDown(divider, { clientY: 600 });
+    fireEvent.mouseMove(document, { clientY: 500 });
+    fireEvent.mouseUp(document);
+
+    // expect: height increased by 100
+    expect(parseInt(panel.style.height)).toBe(initialHeight + 100);
+  });
+
+  it("dragging vertical divider downward decreases bottom panel height", async () => {
+    // given
+    await renderExamPage();
+    const divider = screen.getByRole("separator", { name: "調整底部面板高度" });
+    const panel = screen.getByLabelText("底部面板") as HTMLElement;
+    const initialHeight = parseInt(panel.style.height);
+
+    // when: drag 50px downward
+    fireEvent.mouseDown(divider, { clientY: 600 });
+    fireEvent.mouseMove(document, { clientY: 650 });
+    fireEvent.mouseUp(document);
+
+    // expect: height decreased by 50
+    expect(parseInt(panel.style.height)).toBe(initialHeight - 50);
+  });
+
+  it("clamps bottom panel height to minimum 80px", async () => {
+    // given
+    await renderExamPage();
+    const divider = screen.getByRole("separator", { name: "調整底部面板高度" });
+    const panel = screen.getByLabelText("底部面板") as HTMLElement;
+
+    // when: drag far downward
+    fireEvent.mouseDown(divider, { clientY: 600 });
+    fireEvent.mouseMove(document, { clientY: 9999 });
+    fireEvent.mouseUp(document);
+
+    // expect
+    expect(parseInt(panel.style.height)).toBe(80);
+  });
+
+  it("clamps bottom panel height to maximum 600px", async () => {
+    // given
+    await renderExamPage();
+    const divider = screen.getByRole("separator", { name: "調整底部面板高度" });
+    const panel = screen.getByLabelText("底部面板") as HTMLElement;
+
+    // when: drag far upward
+    fireEvent.mouseDown(divider, { clientY: 600 });
+    fireEvent.mouseMove(document, { clientY: 0 });
+    fireEvent.mouseUp(document);
+
+    // expect
+    expect(parseInt(panel.style.height)).toBe(600);
+  });
+
   // ── Run vs Submit isolation ───────────────────────────────────────────────
 
   it("clicking Run does NOT add result to 提交記錄 history", async () => {

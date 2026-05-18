@@ -62,9 +62,11 @@ export default function ExamPage() {
   >({});
   const [activeCaseIdx, setActiveCaseIdx] = useState(0);
   const [leftWidth, setLeftWidth] = useState(420);
+  const [bottomHeight, setBottomHeight] = useState(208);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
+  const vertDragState = useRef<{ startY: number; startHeight: number } | null>(null);
   const lsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const apiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchedEspIds = useRef<Set<number>>(new Set());
@@ -250,6 +252,28 @@ export default function ExamPage() {
 
     function onMouseUp() {
       dragState.current = null;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    }
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }
+
+  function handleVertDividerMouseDown(e: React.MouseEvent) {
+    e.preventDefault();
+    vertDragState.current = { startY: e.clientY, startHeight: bottomHeight };
+
+    function onMouseMove(ev: MouseEvent) {
+      if (!vertDragState.current) return;
+      const delta = vertDragState.current.startY - ev.clientY;
+      setBottomHeight(
+        Math.min(600, Math.max(80, vertDragState.current.startHeight + delta)),
+      );
+    }
+
+    function onMouseUp() {
+      vertDragState.current = null;
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
     }
@@ -601,9 +625,18 @@ export default function ExamPage() {
             />
           </div>
 
+          {/* Vertical drag divider */}
+          <div
+            onMouseDown={handleVertDividerMouseDown}
+            className="h-1 shrink-0 bg-slate-200 hover:bg-blue-400 active:bg-blue-500 cursor-row-resize transition-colors select-none"
+            role="separator"
+            aria-label="調整底部面板高度"
+          />
+
           {/* Bottom panel */}
           <div
-            className="h-52 shrink-0 border-t border-slate-200 bg-white flex flex-col"
+            className="shrink-0 border-slate-200 bg-white flex flex-col overflow-hidden"
+            style={{ height: bottomHeight }}
             aria-label="底部面板"
           >
             {/* Tab bar + action buttons */}
