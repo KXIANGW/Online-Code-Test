@@ -49,6 +49,7 @@ function renderDashboard() {
 describe("DashboardPage()", () => {
   beforeEach(() => {
     vi.useRealTimers();
+    localStorage.clear();
     mockNavigate.mockReset();
     mockLogout.mockReset();
     mockUseAuthStore.mockReset();
@@ -249,5 +250,70 @@ describe("DashboardPage()", () => {
     // expect
     expect(mockLogout).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith("/login");
+  });
+
+  it("clicking 開始考試 clears all draft and lang localStorage keys for that session", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[0]!]);
+    mockStartExamSession.mockResolvedValue({
+      ...mockExamSessions[0]!,
+      status: "in_progress",
+      actualStartAt: "2026-05-10T08:00:00.000Z",
+      expiresAt: "2026-05-10T09:30:00.000Z",
+    });
+    localStorage.setItem("oct:draft:1:10:python3", "print('hello')");
+    localStorage.setItem("oct:draft:1:10:cpp17", "int main(){}");
+    localStorage.setItem("oct:lang:1:10", "python3");
+    renderDashboard();
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+
+    // expect
+    expect(localStorage.getItem("oct:draft:1:10:python3")).toBeNull();
+    expect(localStorage.getItem("oct:draft:1:10:cpp17")).toBeNull();
+    expect(localStorage.getItem("oct:lang:1:10")).toBeNull();
+  });
+
+  it("clicking 開始考試 does not clear localStorage keys belonging to other sessions", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[0]!]);
+    mockStartExamSession.mockResolvedValue({
+      ...mockExamSessions[0]!,
+      status: "in_progress",
+      actualStartAt: "2026-05-10T08:00:00.000Z",
+      expiresAt: "2026-05-10T09:30:00.000Z",
+    });
+    localStorage.setItem("oct:draft:1:10:python3", "print('hello')");
+    localStorage.setItem("oct:draft:99:10:python3", "other session draft");
+    localStorage.setItem("oct:lang:99:10", "python3");
+    renderDashboard();
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+
+    // expect: session 1 keys cleared, session 99 keys untouched
+    expect(localStorage.getItem("oct:draft:1:10:python3")).toBeNull();
+    expect(localStorage.getItem("oct:draft:99:10:python3")).toBe("other session draft");
+    expect(localStorage.getItem("oct:lang:99:10")).toBe("python3");
+  });
+
+  it("clicking 開始考試 succeeds even when there are no existing localStorage keys", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[0]!]);
+    mockStartExamSession.mockResolvedValue({
+      ...mockExamSessions[0]!,
+      status: "in_progress",
+      actualStartAt: "2026-05-10T08:00:00.000Z",
+      expiresAt: "2026-05-10T09:30:00.000Z",
+    });
+    renderDashboard();
+
+    // when / expect: no throw
+    await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    expect(mockNavigate).toHaveBeenCalledWith("/exam/1");
   });
 });

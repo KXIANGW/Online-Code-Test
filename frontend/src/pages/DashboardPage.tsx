@@ -104,8 +104,22 @@ export default function DashboardPage() {
     getExamSessions().then((data) => setSessions(data));
   }, []);
 
+  function clearSessionLocalStorage(sessionId: number) {
+    const prefix = `oct:draft:${sessionId}:`;
+    const langPrefix = `oct:lang:${sessionId}:`;
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith(prefix) || key.startsWith(langPrefix))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  }
+
   async function handleStart(sessionId: number) {
     const started = await startExamSession(sessionId);
+    clearSessionLocalStorage(sessionId);
     setSessions(sessions.map((session) => (session.id === sessionId ? started : session)));
     navigate(`/exam/${sessionId}`);
   }

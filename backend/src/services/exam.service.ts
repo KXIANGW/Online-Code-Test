@@ -213,6 +213,9 @@ export async function startExamSession(currentUser: CurrentUser, id: number) {
     .from(examSessions)
     .where(eq(examSessions.id, id));
 
+  // Clear stale drafts from previous attempts (fire-and-forget, non-fatal)
+  clearSessionDrafts(id).catch(() => {});
+
   return updated[0]!;
 }
 
