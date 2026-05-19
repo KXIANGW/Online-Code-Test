@@ -62,12 +62,12 @@ frontend/
 
 ## API 串接
 
-| 方法 | 路徑                            | 使用頁面                                 |
-| ---- | ------------------------------- | ---------------------------------------- |
-| POST | `/api/auth/login`               | LoginPage                                |
-| GET  | `/api/exam-sessions`            | DashboardPage、InterviewerDashboardPage  |
-| GET  | `/api/exam-sessions/:id/result` | InterviewerDashboardPage、ExamResultPage |
-| GET  | `/api/exam-sessions/:id/problems/:espId/testcases` | ExamPage（公開測試資料）  |
+| 方法 | 路徑                                               | 使用頁面                                 |
+| ---- | -------------------------------------------------- | ---------------------------------------- |
+| POST | `/api/auth/login`                                  | LoginPage                                |
+| GET  | `/api/exam-sessions`                               | DashboardPage、InterviewerDashboardPage  |
+| GET  | `/api/exam-sessions/:id/result`                    | InterviewerDashboardPage、ExamResultPage |
+| GET  | `/api/exam-sessions/:id/problems/:espId/testcases` | ExamPage（公開測試資料）                 |
 
 所有請求透過 `src/api/client.ts` 的 axios 實例發出，interceptor 自動附加 `Authorization: Bearer <token>`，token 存於 `sessionStorage`（per-tab 隔離，防止跨分頁 token 污染）。
 
@@ -109,15 +109,15 @@ npm test          # 執行全部測試
 npm run coverage  # 產生覆蓋率報告
 ```
 
-| 測試檔                              | 涵蓋範圍                                                 |
-| ----------------------------------- | -------------------------------------------------------- |
-| `LoginPage.test.tsx`                | 表單驗證、API 呼叫、登入後角色導向                       |
-| `DashboardPage.test.tsx`            | 考試 session 分類顯示、空狀態、導航                      |
-| `InterviewerDashboardPage.test.tsx` | 候選人 card 顯示、狀態 tab 過濾、頁面刷新重取、登出      |
-| `ExamResultPage.test.tsx`           | 結果載入、題目與測資結果顯示、返回導航                   |
+| 測試檔                              | 涵蓋範圍                                                               |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| `LoginPage.test.tsx`                | 表單驗證、API 呼叫、登入後角色導向                                     |
+| `DashboardPage.test.tsx`            | 考試 session 分類顯示、空狀態、導航                                    |
+| `InterviewerDashboardPage.test.tsx` | 候選人 card 顯示、狀態 tab 過濾、頁面刷新重取、登出                    |
+| `ExamResultPage.test.tsx`           | 結果載入、題目與測資結果顯示、返回導航                                 |
 | `ExamPage.test.tsx`                 | 考試作答頁：語言選擇、代碼持久化、提交流程、公開測資顯示與判題結果渲染 |
-| `authStore.test.ts`                 | login/logout state、sessionStorage 讀寫、跨分頁隔離驗證  |
-| `jwt.test.ts`                       | decodeJwt 正常與邊界條件（格式錯誤、非陣列 permissions） |
+| `authStore.test.ts`                 | login/logout state、sessionStorage 讀寫、跨分頁隔離驗證                |
+| `jwt.test.ts`                       | decodeJwt 正常與邊界條件（格式錯誤、非陣列 permissions）               |
 
 ---
 
@@ -140,7 +140,7 @@ npm test           # vitest 執行測試
 
 ```bash
 cd ..
-docker compose up -d postgres backend
+docker compose up -d postgres rabbitmq redis backend worker
 cd frontend
 npm install
 npm run dev
@@ -174,8 +174,8 @@ docker compose up -d --build
 
 ## 剩餘工作
 
-| 項目                                 | 說明                                                  |
-| ------------------------------------ | ----------------------------------------------------- |
+| 項目                                 | 說明                                                    |
+| ------------------------------------ | ------------------------------------------------------- |
 | **Judge Worker**                     | 後端 Worker 尚未實作，WebSocket judge_result 尚無法觸發 |
-| **DisplayProblem in ExamresultPage** | interviewer 在查看面試者考試結果時可以看題目預覽      |
-| **Interviewer Account Management**   | interviewer 在要有他所建立的 candidate 的帳號密碼總覽 |
+| **DisplayProblem in ExamresultPage** | interviewer 在查看面試者考試結果時可以看題目預覽        |
+| **Interviewer Account Management**   | interviewer 在要有他所建立的 candidate 的帳號密碼總覽   |
