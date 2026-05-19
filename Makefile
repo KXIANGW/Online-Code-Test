@@ -1,12 +1,13 @@
 SHELL := /bin/bash
 
-.PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images test help \
+.PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images dev test help \
         demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls
 
 help:
 	@echo "Online Code Test — M2 async judge"
 	@echo ""
 	@echo "  make bootstrap      Copy .env.example to .env (idempotent)"
+	@echo "  make dev            Build sandbox images, then start core services only (no monitoring)"
 	@echo "  make up             Build sandbox images, then docker compose up -d --build"
 	@echo "  make down           docker compose down"
 	@echo "  make logs           Tail logs from all services"
@@ -62,6 +63,9 @@ test:
 
 sandbox-images:
 	$(MAKE) -C worker build-sandbox-images
+
+dev: bootstrap sandbox-images
+	docker compose up -d postgres rabbitmq redis backend worker
 
 # ── Demo: 100 concurrent observability ────────────────────────────────────
 # Pre-req:
