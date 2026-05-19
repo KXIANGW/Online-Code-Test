@@ -44,67 +44,70 @@ export async function buildApp() {
       .observe(reply.elapsedTime / 1000);
   });
 
-  await app.register(async (api) => {
-    await api.register(healthRoutes);
-    await api.register(metricsRoutes);
-    await api.register(pingRoutes);
-    await api.register(authRoutes, { prefix: "/auth" });
-    await api.register(userRoutes, { prefix: "/users" });
-    await api.register(problemRoutes, { prefix: "/problems" });
-    await api.register(submissionRoutes, { prefix: "/exam-sessions" });
-    await api.register(examRoutes, { prefix: "/exam-sessions" });
-    await api.register(languageRoutes, { prefix: "/languages" });
+  await app.register(
+    async (api) => {
+      await api.register(healthRoutes);
+      await api.register(metricsRoutes);
+      await api.register(pingRoutes);
+      await api.register(authRoutes, { prefix: "/auth" });
+      await api.register(userRoutes, { prefix: "/users" });
+      await api.register(problemRoutes, { prefix: "/problems" });
+      await api.register(submissionRoutes, { prefix: "/exam-sessions" });
+      await api.register(examRoutes, { prefix: "/exam-sessions" });
+      await api.register(languageRoutes, { prefix: "/languages" });
 
-    api.get("/ws", { websocket: true }, async (connection, request) => {
-      const socket = connection.socket;
-      const { token } = request.query as { token?: string };
+      api.get("/ws", { websocket: true }, async (connection, request) => {
+        const socket = connection.socket;
+        const { token } = request.query as { token?: string };
 
-      if (!token) {
-        socket.close();
-        return;
-      }
-
-      let currentUser: { id: number; isSuperuser: boolean; permissions: string[] };
-      try {
-        const payload = await app.jwt.verify<{
-          sub: number;
-          isSuperuser: boolean;
-          permissions: string[];
-        }>(token);
-        currentUser = {
-          id: payload.sub,
-          isSuperuser: payload.isSuperuser,
-          permissions: payload.permissions,
-        };
-      } catch {
-        socket.close();
-        return;
-      }
-
-      socket.on("message", async (raw: unknown) => {
-        try {
-          const message = JSON.parse(String(raw));
-          if (
-            message?.type !== "subscribe" ||
-            typeof message.sessionId !== "number" ||
-            !Number.isInteger(message.sessionId)
-          ) {
-            socket.send(JSON.stringify({ type: "error", message: "Invalid message" }));
-            return;
-          }
-
-          await assertSessionResultAccess(currentUser, message.sessionId);
-          subscribeToSession(message.sessionId, socket);
-          socket.send(JSON.stringify({ type: "subscribed", sessionId: message.sessionId }));
-        } catch {
-          socket.send(JSON.stringify({ type: "error", message: "Forbidden" }));
+        if (!token) {
+          socket.close();
+          return;
         }
-      });
 
-      socket.on("close", () => unsubscribeClient(socket));
-      socket.on("error", () => unsubscribeClient(socket));
-    });
-  }, { prefix: "/api" });
+        let currentUser: { id: number; isSuperuser: boolean; permissions: string[] };
+        try {
+          const payload = await app.jwt.verify<{
+            sub: number;
+            isSuperuser: boolean;
+            permissions: string[];
+          }>(token);
+          currentUser = {
+            id: payload.sub,
+            isSuperuser: payload.isSuperuser,
+            permissions: payload.permissions,
+          };
+        } catch {
+          socket.close();
+          return;
+        }
+
+        socket.on("message", async (raw: unknown) => {
+          try {
+            const message = JSON.parse(String(raw));
+            if (
+              message?.type !== "subscribe" ||
+              typeof message.sessionId !== "number" ||
+              !Number.isInteger(message.sessionId)
+            ) {
+              socket.send(JSON.stringify({ type: "error", message: "Invalid message" }));
+              return;
+            }
+
+            await assertSessionResultAccess(currentUser, message.sessionId);
+            subscribeToSession(message.sessionId, socket);
+            socket.send(JSON.stringify({ type: "subscribed", sessionId: message.sessionId }));
+          } catch {
+            socket.send(JSON.stringify({ type: "error", message: "Forbidden" }));
+          }
+        });
+
+        socket.on("close", () => unsubscribeClient(socket));
+        socket.on("error", () => unsubscribeClient(socket));
+      });
+    },
+    { prefix: "/api" },
+  );
 
   if (env.NODE_ENV !== "test") {
     app.addHook("onReady", async () => {

@@ -27,14 +27,12 @@ vi.mock("../api/client", () => ({
 
 function setupAuthStore(username = "candidate01") {
   mockUseAuthStore.mockImplementation((sel: any) =>
-    sel({ token: "tok", username, login: vi.fn(), logout: mockLogout })
+    sel({ token: "tok", username, login: vi.fn(), logout: mockLogout }),
   );
 }
 
 function setupExamStore(sessions: ExamSession[] = [], setSessions = vi.fn()) {
-  mockUseExamStore.mockImplementation((sel: any) =>
-    sel({ sessions, setSessions })
-  );
+  mockUseExamStore.mockImplementation((sel: any) => sel({ sessions, setSessions }));
   return setSessions;
 }
 
@@ -42,7 +40,7 @@ function renderDashboard() {
   return render(
     <MemoryRouter>
       <DashboardPage />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 

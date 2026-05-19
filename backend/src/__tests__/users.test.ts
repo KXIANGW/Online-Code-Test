@@ -16,9 +16,24 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await truncateTestTables();
-  await seedUser({ username: "root", password: "Root@1234", displayName: "Root", isSuperuser: true });
-  await seedUser({ username: "alice", password: "Test@1234", displayName: "Alice", roleNames: ["interviewer"] });
-  await seedUser({ username: "candidate1", password: "Cand@1234", displayName: "Candidate 1", roleNames: ["candidate"] });
+  await seedUser({
+    username: "root",
+    password: "Root@1234",
+    displayName: "Root",
+    isSuperuser: true,
+  });
+  await seedUser({
+    username: "alice",
+    password: "Test@1234",
+    displayName: "Alice",
+    roleNames: ["interviewer"],
+  });
+  await seedUser({
+    username: "candidate1",
+    password: "Cand@1234",
+    displayName: "Candidate 1",
+    roleNames: ["candidate"],
+  });
 });
 
 // ── GET /api/users ─────────────────────────────────────────────────────────────
@@ -44,7 +59,11 @@ describe("GET /api/users", () => {
       method: "POST",
       url: "/api/users",
       headers: { authorization: `Bearer ${aliceToken}` },
-      payload: { username: "alice_cand", password: "Password123", displayName: "Alice's Candidate" },
+      payload: {
+        username: "alice_cand",
+        password: "Password123",
+        displayName: "Alice's Candidate",
+      },
     });
     expect(createRes.statusCode).toBe(201);
 
@@ -416,7 +435,9 @@ describe("DELETE /api/users/:id", () => {
       url: "/api/users",
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(listRes.json<{ username: string }[]>().find((u) => u.username === "alice")).toBeUndefined();
+    expect(
+      listRes.json<{ username: string }[]>().find((u) => u.username === "alice"),
+    ).toBeUndefined();
 
     const getRes = await app.inject({
       method: "GET",

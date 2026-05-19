@@ -17,7 +17,10 @@ const server = setupServer(
       method: request.method,
       body: await request.json(),
     };
-    return HttpResponse.json({ id: Number(params.id), roles: (capturedRolesRequest.body as { roleNames: string[] }).roleNames });
+    return HttpResponse.json({
+      id: Number(params.id),
+      roles: (capturedRolesRequest.body as { roleNames: string[] }).roleNames,
+    });
   }),
 );
 
@@ -57,8 +60,7 @@ describe("api request interceptor", () => {
   // Boundary: token value is forwarded verbatim
   it("forwards the stored token value exactly without modification", async () => {
     // given
-    const token =
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature";
+    const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature";
     sessionStorage.setItem("oct_token", token);
 
     // when

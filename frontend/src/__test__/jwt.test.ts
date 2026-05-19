@@ -3,7 +3,7 @@ import { decodeJwt } from "../utils/jwt";
 
 function makeToken(payload: object): string {
   const header = btoa(JSON.stringify({ alg: "HS256" }));
-  const body   = btoa(JSON.stringify(payload));
+  const body = btoa(JSON.stringify(payload));
   return `${header}.${body}.sig`;
 }
 

@@ -1,17 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import {
-  getSessionResult,
-  getSubmissionDetail,
-  listSessionSubmissions,
-} from "../api/client";
+import { getSessionResult, getSubmissionDetail, listSessionSubmissions } from "../api/client";
 import { NavBar } from "../components/NavBar";
-import type {
-  ExamStatus,
-  SessionResult,
-  SubmissionSummary,
-  TestcaseResult,
-} from "../types";
+import type { ExamStatus, SessionResult, SubmissionSummary, TestcaseResult } from "../types";
 
 const STATUS_LABEL: Record<ExamStatus, string> = {
   not_started: "待考",
@@ -58,12 +49,10 @@ export default function ExamResultPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [expandedEspId, setExpandedEspId] = useState<Set<number>>(new Set());
-  const [tcCache, setTcCache] = useState<
-    Record<number, TestcaseResult[] | "loading" | "error">
-  >({});
-  const [expandedSubmissionId, setExpandedSubmissionId] = useState<Set<number>>(
-    new Set(),
+  const [tcCache, setTcCache] = useState<Record<number, TestcaseResult[] | "loading" | "error">>(
+    {},
   );
+  const [expandedSubmissionId, setExpandedSubmissionId] = useState<Set<number>>(new Set());
   const [historyTcCache, setHistoryTcCache] = useState<
     Record<number, TestcaseResult[] | "loading" | "error">
   >({});
@@ -95,9 +84,7 @@ export default function ExamResultPage() {
 
     setTcCache((prev) => ({ ...prev, [espId]: "loading" }));
     getSubmissionDetail(Number(id), submissionId)
-      .then((detail) =>
-        setTcCache((prev) => ({ ...prev, [espId]: detail.testcaseResults })),
-      )
+      .then((detail) => setTcCache((prev) => ({ ...prev, [espId]: detail.testcaseResults })))
       .catch(() => setTcCache((prev) => ({ ...prev, [espId]: "error" })));
   }
 
@@ -122,9 +109,7 @@ export default function ExamResultPage() {
           [submissionId]: detail.testcaseResults.filter((tc) => tc.isPublic),
         })),
       )
-      .catch(() =>
-        setHistoryTcCache((prev) => ({ ...prev, [submissionId]: "error" })),
-      );
+      .catch(() => setHistoryTcCache((prev) => ({ ...prev, [submissionId]: "error" })));
   }
 
   return (
@@ -138,15 +123,9 @@ export default function ExamResultPage() {
           ← 返回考試管理
         </button>
 
-        {loading && (
-          <p className="text-sm text-slate-400 text-center py-12">載入中...</p>
-        )}
+        {loading && <p className="text-sm text-slate-400 text-center py-12">載入中...</p>}
 
-        {error && (
-          <p className="text-sm text-red-500 text-center py-12">
-            無法載入考試結果
-          </p>
-        )}
+        {error && <p className="text-sm text-red-500 text-center py-12">無法載入考試結果</p>}
 
         {result && (
           <div className="space-y-6">
@@ -156,9 +135,7 @@ export default function ExamResultPage() {
                   <p className="font-medium text-slate-800">
                     {result.candidate.displayName ?? result.candidate.username}
                   </p>
-                  <p className="text-xs text-slate-400">
-                    @{result.candidate.username}
-                  </p>
+                  <p className="text-xs text-slate-400">@{result.candidate.username}</p>
                 </div>
                 <span
                   className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLOR[result.status]}`}
@@ -202,9 +179,7 @@ export default function ExamResultPage() {
                               VERDICT_COLOR[p.latestStatus] ?? "text-slate-400"
                             }`}
                           >
-                            {p.latestStatus === "no_submission"
-                              ? "未作答"
-                              : p.latestStatus}
+                            {p.latestStatus === "no_submission" ? "未作答" : p.latestStatus}
                           </p>
                         </div>
                         <div className="flex items-center gap-3">
@@ -215,10 +190,7 @@ export default function ExamResultPage() {
                             <button
                               type="button"
                               onClick={() =>
-                                toggleDetail(
-                                  p.examSessionProblemId,
-                                  p.finalSubmissionId!,
-                                )
+                                toggleDetail(p.examSessionProblemId, p.finalSubmissionId!)
                               }
                               className="text-xs text-blue-600 hover:text-blue-800 transition-colors whitespace-nowrap"
                             >
@@ -231,9 +203,7 @@ export default function ExamResultPage() {
                       {isExpanded && (
                         <div className="border-t border-slate-100 bg-slate-50 px-5 pb-4">
                           {tcState === "loading" && (
-                            <p className="py-3 text-center text-xs text-slate-400">
-                              載入測資中...
-                            </p>
+                            <p className="py-3 text-center text-xs text-slate-400">載入測資中...</p>
                           )}
                           {tcState === "error" && (
                             <p className="py-3 text-center text-xs text-red-500">
@@ -244,18 +214,10 @@ export default function ExamResultPage() {
                             <table className="mt-3 w-full text-xs">
                               <thead>
                                 <tr className="border-b border-slate-200 text-slate-400">
-                                  <th className="py-2 text-left font-medium">
-                                    #
-                                  </th>
-                                  <th className="py-2 text-left font-medium">
-                                    判決
-                                  </th>
-                                  <th className="py-2 text-left font-medium">
-                                    執行時間
-                                  </th>
-                                  <th className="py-2 text-left font-medium">
-                                    記憶體
-                                  </th>
+                                  <th className="py-2 text-left font-medium">#</th>
+                                  <th className="py-2 text-left font-medium">判決</th>
+                                  <th className="py-2 text-left font-medium">執行時間</th>
+                                  <th className="py-2 text-left font-medium">記憶體</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
@@ -263,26 +225,21 @@ export default function ExamResultPage() {
                                   .filter((tc) => !tc.isPublic)
                                   .map((tc) => (
                                     <tr key={tc.id}>
-                                      <td className="py-2 text-slate-600">
-                                        測資 {tc.orderIndex}
-                                      </td>
+                                      <td className="py-2 text-slate-600">測資 {tc.orderIndex}</td>
                                       <td
                                         className={`py-2 font-medium ${
-                                          TC_VERDICT_COLOR[tc.verdict] ??
-                                          "text-slate-600"
+                                          TC_VERDICT_COLOR[tc.verdict] ?? "text-slate-600"
                                         }`}
                                       >
                                         {tc.verdict}
                                       </td>
                                       <td className="py-2 text-slate-600">
-                                        {tc.verdict === "skipped" ||
-                                        tc.runtimeMs === null
+                                        {tc.verdict === "skipped" || tc.runtimeMs === null
                                           ? "—"
                                           : `${tc.runtimeMs} ms`}
                                       </td>
                                       <td className="py-2 text-slate-600">
-                                        {tc.verdict === "skipped" ||
-                                        tc.memoryKb === null
+                                        {tc.verdict === "skipped" || tc.memoryKb === null
                                           ? "—"
                                           : `${tc.memoryKb} KB`}
                                       </td>
@@ -320,9 +277,7 @@ export default function ExamResultPage() {
                                 {submission.orderIndex}. {submission.problemTitle}
                               </p>
                               <span className="text-xs rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">
-                                {submission.submissionType === "simple"
-                                  ? "一般"
-                                  : "正式"}
+                                {submission.submissionType === "simple" ? "一般" : "正式"}
                               </span>
                               {submission.isFinalSubmission && (
                                 <span className="text-xs rounded-full bg-green-50 px-2 py-0.5 text-green-600">
@@ -331,18 +286,12 @@ export default function ExamResultPage() {
                               )}
                             </div>
                             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
-                              <span
-                                className={
-                                  VERDICT_COLOR[verdict] ?? "text-slate-500"
-                                }
-                              >
+                              <span className={VERDICT_COLOR[verdict] ?? "text-slate-500"}>
                                 {verdict}
                               </span>
                               <span>{submission.language}</span>
                               <span>
-                                {new Date(submission.submittedAt).toLocaleString(
-                                  "zh-TW",
-                                )}
+                                {new Date(submission.submittedAt).toLocaleString("zh-TW")}
                               </span>
                             </div>
                           </div>
@@ -377,18 +326,10 @@ export default function ExamResultPage() {
                               <table className="mt-3 w-full text-xs">
                                 <thead>
                                   <tr className="border-b border-slate-200 text-slate-400">
-                                    <th className="py-2 text-left font-medium">
-                                      #
-                                    </th>
-                                    <th className="py-2 text-left font-medium">
-                                      判決
-                                    </th>
-                                    <th className="py-2 text-left font-medium">
-                                      執行時間
-                                    </th>
-                                    <th className="py-2 text-left font-medium">
-                                      記憶體
-                                    </th>
+                                    <th className="py-2 text-left font-medium">#</th>
+                                    <th className="py-2 text-left font-medium">判決</th>
+                                    <th className="py-2 text-left font-medium">執行時間</th>
+                                    <th className="py-2 text-left font-medium">記憶體</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -399,21 +340,18 @@ export default function ExamResultPage() {
                                       </td>
                                       <td
                                         className={`py-2 font-medium ${
-                                          TC_VERDICT_COLOR[tc.verdict] ??
-                                          "text-slate-600"
+                                          TC_VERDICT_COLOR[tc.verdict] ?? "text-slate-600"
                                         }`}
                                       >
                                         {tc.verdict}
                                       </td>
                                       <td className="py-2 text-slate-600">
-                                        {tc.verdict === "skipped" ||
-                                        tc.runtimeMs === null
+                                        {tc.verdict === "skipped" || tc.runtimeMs === null
                                           ? "—"
                                           : `${tc.runtimeMs} ms`}
                                       </td>
                                       <td className="py-2 text-slate-600">
-                                        {tc.verdict === "skipped" ||
-                                        tc.memoryKb === null
+                                        {tc.verdict === "skipped" || tc.memoryKb === null
                                           ? "—"
                                           : `${tc.memoryKb} KB`}
                                       </td>

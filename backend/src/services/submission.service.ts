@@ -34,7 +34,7 @@ function canTakeExam(user: CurrentUser): boolean {
 
 function requireResultAccess(
   currentUser: CurrentUser,
-  session: { candidateId: number; createdBy: number }
+  session: { candidateId: number; createdBy: number },
 ): void {
   if (currentUser.isSuperuser) return;
 
@@ -55,7 +55,7 @@ type ExamSession = ExamSessionRecord;
 
 export async function assertSessionResultAccess(
   currentUser: CurrentUser,
-  sessionId: number
+  sessionId: number,
 ): Promise<ExamSession> {
   const session = await expireIfNeeded(await getSessionOrThrow(sessionId));
   requireResultAccess(currentUser, session);
@@ -84,16 +84,15 @@ async function getSubmissionRowsForSession(sessionId: number) {
       finalSubmissionId: examSessionProblems.finalSubmissionId,
     })
     .from(submissions)
-    .innerJoin(
-      examSessionProblems,
-      eq(submissions.examSessionProblemId, examSessionProblems.id)
-    )
+    .innerJoin(examSessionProblems, eq(submissions.examSessionProblemId, examSessionProblems.id))
     .innerJoin(problems, eq(examSessionProblems.problemId, problems.id))
     .where(eq(examSessionProblems.examSessionId, sessionId))
     .orderBy(asc(submissions.submittedAt), asc(submissions.id));
 }
 
-function mapSubmissionSummary(row: Awaited<ReturnType<typeof getSubmissionRowsForSession>>[number]) {
+function mapSubmissionSummary(
+  row: Awaited<ReturnType<typeof getSubmissionRowsForSession>>[number],
+) {
   return {
     id: row.id,
     examSessionProblemId: row.examSessionProblemId,
@@ -122,7 +121,7 @@ export async function createSubmission(
     language: string;
     sourceCode: string;
     type: SubmissionType;
-  }
+  },
 ) {
   if (currentUser.isSuperuser || !canTakeExam(currentUser) || canManageExam(currentUser)) {
     throw ForbiddenError();
@@ -141,8 +140,8 @@ export async function createSubmission(
     .where(
       and(
         eq(examSessionProblems.id, data.examSessionProblemId),
-        eq(examSessionProblems.examSessionId, sessionId)
-      )
+        eq(examSessionProblems.examSessionId, sessionId),
+      ),
     );
 
   if (!sessionProblem) throw NotFoundError("exam session problem");
@@ -150,12 +149,7 @@ export async function createSubmission(
   const [language] = await db
     .select({ language: languageDefaults.language })
     .from(languageDefaults)
-    .where(
-      and(
-        eq(languageDefaults.language, data.language),
-        eq(languageDefaults.isEnabled, true)
-      )
-    );
+    .where(and(eq(languageDefaults.language, data.language), eq(languageDefaults.isEnabled, true)));
 
   if (!language) throw BadRequestError("Unsupported language");
 
@@ -210,7 +204,7 @@ export async function listSessionSubmissions(currentUser: CurrentUser, sessionId
 export async function getSubmissionDetail(
   currentUser: CurrentUser,
   sessionId: number,
-  submissionId: number
+  submissionId: number,
 ) {
   await assertSessionResultAccess(currentUser, sessionId);
 
@@ -236,17 +230,9 @@ export async function getSubmissionDetail(
       finalSubmissionId: examSessionProblems.finalSubmissionId,
     })
     .from(submissions)
-    .innerJoin(
-      examSessionProblems,
-      eq(submissions.examSessionProblemId, examSessionProblems.id)
-    )
+    .innerJoin(examSessionProblems, eq(submissions.examSessionProblemId, examSessionProblems.id))
     .innerJoin(problems, eq(examSessionProblems.problemId, problems.id))
-    .where(
-      and(
-        eq(submissions.id, submissionId),
-        eq(examSessionProblems.examSessionId, sessionId)
-      )
-    );
+    .where(and(eq(submissions.id, submissionId), eq(examSessionProblems.examSessionId, sessionId)));
 
   if (!submission) throw NotFoundError("submission");
 
@@ -344,9 +330,7 @@ export async function getSessionResult(currentUser: CurrentUser, sessionId: numb
     problems: sessionProblems.map((sessionProblem) => {
       const latest = latestByProblem.get(sessionProblem.examSessionProblemId);
       const latestStatus =
-        latest?.status === "done"
-          ? latest.verdict
-          : latest?.status ?? "no_submission";
+        latest?.status === "done" ? latest.verdict : (latest?.status ?? "no_submission");
 
       return {
         examSessionProblemId: sessionProblem.examSessionProblemId,

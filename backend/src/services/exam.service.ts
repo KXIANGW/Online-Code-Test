@@ -1,5 +1,12 @@
 import { db } from "../db/client";
-import { examSessions, examSessionProblems, problems, problemLanguageLimits, problemTestcases, users } from "../db/schema";
+import {
+  examSessions,
+  examSessionProblems,
+  problems,
+  problemLanguageLimits,
+  problemTestcases,
+  users,
+} from "../db/schema";
 import { and, eq, sql, inArray, isNull } from "drizzle-orm";
 import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
@@ -28,11 +35,17 @@ export async function createExamSession(
     candidateId: number;
     durationMinutes: number;
     problems: { problemId: number; scoreWeight: number; orderIndex: number }[];
-  }
+  },
 ) {
   if (!canManageExam(currentUser)) throw ForbiddenError();
-  assertNoDuplicates(data.problems.map((p) => p.problemId), "Duplicate problem assignment");
-  assertNoDuplicates(data.problems.map((p) => p.orderIndex), "Duplicate problem orderIndex");
+  assertNoDuplicates(
+    data.problems.map((p) => p.problemId),
+    "Duplicate problem assignment",
+  );
+  assertNoDuplicates(
+    data.problems.map((p) => p.orderIndex),
+    "Duplicate problem orderIndex",
+  );
 
   const { createdBy: candidateCreatedBy } = await assertCandidateExists(data.candidateId);
   if (!currentUser.isSuperuser && candidateCreatedBy !== currentUser.id) throw ForbiddenError();
@@ -57,7 +70,7 @@ export async function createExamSession(
         problemId: p.problemId,
         orderIndex: p.orderIndex,
         scoreWeight: p.scoreWeight,
-      }))
+      })),
     );
 
     return session;
@@ -72,7 +85,7 @@ export async function createExamSessionRandom(
     durationMinutes: number;
     distribution: { easy?: number; medium?: number; hard?: number };
     scoreWeight: number;
-  }
+  },
 ) {
   if (!canManageExam(currentUser)) throw ForbiddenError();
   const { createdBy: candidateCreatedBy } = await assertCandidateExists(data.candidateId);
@@ -105,14 +118,21 @@ export async function createExamSessionRandom(
         WHERE p.difficulty = ${level}::difficulty_level
           AND p.deleted_at IS NULL
           AND p.id NOT IN (SELECT problem_id FROM used)
-          ${pickedIds.length > 0 ? sql`AND p.id NOT IN (${sql.join(pickedIds.map((id) => sql`${id}`), sql`, `)})` : sql``}
+          ${
+            pickedIds.length > 0
+              ? sql`AND p.id NOT IN (${sql.join(
+                  pickedIds.map((id) => sql`${id}`),
+                  sql`, `,
+                )})`
+              : sql``
+          }
         ORDER BY RANDOM()
         LIMIT 1
       `);
 
       if (rows.rows.length === 0) {
         throw ConflictError(
-          `Not enough ${level} problems available for this candidate. Please add more problems.`
+          `Not enough ${level} problems available for this candidate. Please add more problems.`,
         );
       }
       pickedIds.push(rows.rows[0]!.id);
@@ -140,7 +160,7 @@ export async function createExamSessionRandom(
         problemId,
         orderIndex: idx + 1,
         scoreWeight: data.scoreWeight,
-      }))
+      })),
     );
 
     return session;
@@ -208,10 +228,7 @@ export async function startExamSession(currentUser: CurrentUser, id: number) {
     throw ConflictError(`Cannot start exam session: current status is '${session.status}'`);
   }
 
-  const updated = await db
-    .select()
-    .from(examSessions)
-    .where(eq(examSessions.id, id));
+  const updated = await db.select().from(examSessions).where(eq(examSessions.id, id));
 
   // Clear stale drafts from previous attempts (fire-and-forget, non-fatal)
   clearSessionDrafts(id).catch(() => {});
@@ -272,7 +289,11 @@ export async function cancelExamSession(currentUser: CurrentUser, id: number) {
 
 export async function getExamSessionProblems(currentUser: CurrentUser, sessionId: number) {
   const sessionRows = await db
-    .select({ id: examSessions.id, candidateId: examSessions.candidateId, createdBy: examSessions.createdBy })
+    .select({
+      id: examSessions.id,
+      candidateId: examSessions.candidateId,
+      createdBy: examSessions.createdBy,
+    })
     .from(examSessions)
     .where(eq(examSessions.id, sessionId));
 
@@ -322,13 +343,25 @@ export async function getExamSessionProblems(currentUser: CurrentUser, sessionId
     ...p,
     languageLimits: allLangLimits
       .filter((l) => l.problemId === p.problemId)
-    .map(({ language, timeMultiplier, memoryMultiplier }) => ({ language, timeMultiplier, memoryMultiplier })),
+      .map(({ language, timeMultiplier, memoryMultiplier }) => ({
+        language,
+        timeMultiplier,
+        memoryMultiplier,
+      })),
   }));
 }
 
-export async function getPublicTestcases(currentUser: CurrentUser, sessionId: number, espId: number) {
+export async function getPublicTestcases(
+  currentUser: CurrentUser,
+  sessionId: number,
+  espId: number,
+) {
   const sessionRows = await db
-    .select({ id: examSessions.id, candidateId: examSessions.candidateId, createdBy: examSessions.createdBy })
+    .select({
+      id: examSessions.id,
+      candidateId: examSessions.candidateId,
+      createdBy: examSessions.createdBy,
+    })
     .from(examSessions)
     .where(eq(examSessions.id, sessionId));
 
@@ -346,10 +379,9 @@ export async function getPublicTestcases(currentUser: CurrentUser, sessionId: nu
   const espRows = await db
     .select({ problemId: examSessionProblems.problemId })
     .from(examSessionProblems)
-    .where(and(
-      eq(examSessionProblems.id, espId),
-      eq(examSessionProblems.examSessionId, sessionId),
-    ));
+    .where(
+      and(eq(examSessionProblems.id, espId), eq(examSessionProblems.examSessionId, sessionId)),
+    );
 
   const esp = espRows[0];
   if (!esp) throw NotFoundError("exam session problem");
@@ -362,10 +394,7 @@ export async function getPublicTestcases(currentUser: CurrentUser, sessionId: nu
       expectedOutput: problemTestcases.expectedOutput,
     })
     .from(problemTestcases)
-    .where(and(
-      eq(problemTestcases.problemId, esp.problemId),
-      eq(problemTestcases.isPublic, true),
-    ));
+    .where(and(eq(problemTestcases.problemId, esp.problemId), eq(problemTestcases.isPublic, true)));
 }
 
 function assertNoDuplicates<T>(values: T[], message: string): void {

@@ -21,6 +21,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - run: npm ci
+      - run: npm run format:check
       - run: npm run lint
       - run: npm test
       - run: npm run build
@@ -67,6 +68,7 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       - run: npm ci
+      - run: npm run format:check
 
       # Apply schema in order before running tests
       - name: Apply database schema

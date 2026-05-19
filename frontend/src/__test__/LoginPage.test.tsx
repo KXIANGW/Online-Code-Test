@@ -27,7 +27,7 @@ function renderLoginPage() {
   return render(
     <MemoryRouter>
       <LoginPage />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -133,9 +133,7 @@ describe("LoginPage", () => {
     // LoginPage always navigates to "/" with replace:true after login.
     // Role-based redirection (/ → /interviewer, /admin, etc.) is handled by
     // RoleRedirect in App.tsx, not by LoginPage itself.
-    await waitFor(() =>
-      expect(mockLogin).toHaveBeenCalledWith("candidate01", "password")
-    );
+    await waitFor(() => expect(mockLogin).toHaveBeenCalledWith("candidate01", "password"));
     expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true });
   });
 
@@ -152,9 +150,7 @@ describe("LoginPage", () => {
     await user.click(getSubmitBtn());
 
     // expect
-    await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true })
-    );
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true }));
   });
 
   // Edge case: double-click during loading must not fire a second API call
@@ -165,7 +161,7 @@ describe("LoginPage", () => {
     mockLogin.mockReturnValueOnce(
       new Promise<void>((resolve) => {
         resolveLogin = resolve;
-      })
+      }),
     );
     renderLoginPage();
 
@@ -196,9 +192,7 @@ describe("LoginPage", () => {
     await user.click(getSubmitBtn());
 
     // expect
-    await waitFor(() =>
-      expect(screen.getByRole("alert")).toHaveTextContent("帳號或密碼錯誤")
-    );
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("帳號或密碼錯誤"));
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
@@ -206,9 +200,7 @@ describe("LoginPage", () => {
   it("clears previous error when re-submitting", async () => {
     // given
     const user = userEvent.setup();
-    mockLogin
-      .mockRejectedValueOnce(new Error("Unauthorized"))
-      .mockResolvedValueOnce(undefined);
+    mockLogin.mockRejectedValueOnce(new Error("Unauthorized")).mockResolvedValueOnce(undefined);
     renderLoginPage();
 
     // when
@@ -222,9 +214,7 @@ describe("LoginPage", () => {
     await user.click(getSubmitBtn());
 
     // expect
-    await waitFor(() =>
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
   });
 
   // Loading state
@@ -235,7 +225,7 @@ describe("LoginPage", () => {
     mockLogin.mockReturnValueOnce(
       new Promise<void>((resolve) => {
         resolveLogin = resolve;
-      })
+      }),
     );
     renderLoginPage();
 
@@ -260,7 +250,7 @@ describe("LoginPage", () => {
     mockLogin.mockReturnValueOnce(
       new Promise<void>((resolve) => {
         resolveLogin = resolve;
-      })
+      }),
     );
     renderLoginPage();
 

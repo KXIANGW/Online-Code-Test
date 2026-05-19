@@ -3,7 +3,13 @@ import amqp, { type Channel, type ChannelModel } from "amqplib";
 import type { FastifyInstance } from "fastify";
 import type { InjectOptions } from "light-my-request";
 import { buildApp } from "../server";
-import { assertJudgeTopology, closeMq, JUDGE_DLQ, JUDGE_RESULTS_BACKEND_QUEUE, JUDGE_TASKS_QUEUE } from "../mq/client";
+import {
+  assertJudgeTopology,
+  closeMq,
+  JUDGE_DLQ,
+  JUDGE_RESULTS_BACKEND_QUEUE,
+  JUDGE_TASKS_QUEUE,
+} from "../mq/client";
 import { startJudgeResultConsumer } from "../mq/consumer";
 import { pool as backendPool } from "../db/client";
 import { loginAs, seedUser, truncateTestTables } from "../__tests__/helpers/db";
@@ -193,493 +199,549 @@ beforeEach(async () => {
 }, E2E_HOOK_TIMEOUT_MS);
 
 describe("Postgres + RabbitMQ + backend + worker end-to-end judging", () => {
-  it("runs multiple full three-problem candidate sessions and lets the interviewer inspect results", async () => {
-    const stack = await createStack();
-    const plans = [
-      {
-        candidate: stack.candidates.perfect,
-        expectedScore: 100,
-        expectedLatest: ["AC", "AC", "AC"],
-        attempts: problemSpecs.map((spec) => ({ key: spec.key, source: spec.correctSource })),
-      },
-      {
-        candidate: stack.candidates.retryToPerfect,
-        expectedScore: 100,
-        expectedLatest: ["AC", "AC", "AC"],
-        attempts: problemSpecs.flatMap((spec) => [
-          { key: spec.key, source: spec.wrongSource },
-          { key: spec.key, source: spec.correctSource },
-        ]),
-      },
-      {
-        candidate: stack.candidates.allWrong,
-        expectedScore: 0,
-        expectedLatest: ["WA", "WA", "WA"],
-        attempts: problemSpecs.map((spec) => ({ key: spec.key, source: spec.wrongSource })),
-      },
-      {
-        candidate: stack.candidates.oneCorrect,
-        expectedScore: 30,
-        expectedLatest: ["AC", "WA", "WA"],
-        attempts: [
-          { key: "sum" as const, source: problemSpecs[0]!.correctSource },
-          { key: "product" as const, source: problemSpecs[1]!.wrongSource },
-          { key: "reverse" as const, source: problemSpecs[2]!.wrongSource },
-        ],
-      },
-    ];
+  it(
+    "runs multiple full three-problem candidate sessions and lets the interviewer inspect results",
+    async () => {
+      const stack = await createStack();
+      const plans = [
+        {
+          candidate: stack.candidates.perfect,
+          expectedScore: 100,
+          expectedLatest: ["AC", "AC", "AC"],
+          attempts: problemSpecs.map((spec) => ({ key: spec.key, source: spec.correctSource })),
+        },
+        {
+          candidate: stack.candidates.retryToPerfect,
+          expectedScore: 100,
+          expectedLatest: ["AC", "AC", "AC"],
+          attempts: problemSpecs.flatMap((spec) => [
+            { key: spec.key, source: spec.wrongSource },
+            { key: spec.key, source: spec.correctSource },
+          ]),
+        },
+        {
+          candidate: stack.candidates.allWrong,
+          expectedScore: 0,
+          expectedLatest: ["WA", "WA", "WA"],
+          attempts: problemSpecs.map((spec) => ({ key: spec.key, source: spec.wrongSource })),
+        },
+        {
+          candidate: stack.candidates.oneCorrect,
+          expectedScore: 30,
+          expectedLatest: ["AC", "WA", "WA"],
+          attempts: [
+            { key: "sum" as const, source: problemSpecs[0]!.correctSource },
+            { key: "product" as const, source: problemSpecs[1]!.wrongSource },
+            { key: "reverse" as const, source: problemSpecs[2]!.wrongSource },
+          ],
+        },
+      ];
 
-    const submittedIds: number[] = [];
-    const sessions: {
-      candidate: Actor;
-      sessionId: number;
-      expectedScore: number;
-      expectedLatest: string[];
-    }[] = [];
+      const submittedIds: number[] = [];
+      const sessions: {
+        candidate: Actor;
+        sessionId: number;
+        expectedScore: number;
+        expectedLatest: string[];
+      }[] = [];
 
-    for (const plan of plans) {
-      const session = await createSession(stack.interviewer.token, plan.candidate, stack.problemIds);
-      await startSession(session.sessionId, plan.candidate.token);
-      sessions.push({
-        candidate: plan.candidate,
-        sessionId: session.sessionId,
-        expectedScore: plan.expectedScore,
-        expectedLatest: plan.expectedLatest,
+      for (const plan of plans) {
+        const session = await createSession(
+          stack.interviewer.token,
+          plan.candidate,
+          stack.problemIds,
+        );
+        await startSession(session.sessionId, plan.candidate.token);
+        sessions.push({
+          candidate: plan.candidate,
+          sessionId: session.sessionId,
+          expectedScore: plan.expectedScore,
+          expectedLatest: plan.expectedLatest,
+        });
+
+        for (const attempt of plan.attempts) {
+          const sessionProblem = session.problemsByKey[attempt.key];
+          const submission = await submitCode(
+            session.sessionId,
+            sessionProblem.id,
+            plan.candidate.token,
+            attempt.source,
+          );
+          submittedIds.push(submission.id);
+        }
+      }
+
+      await waitForSubmissionsDone(submittedIds);
+
+      for (const session of sessions) {
+        const result = await api<SessionResult>(
+          "GET",
+          `/api/exam-sessions/${session.sessionId}/result`,
+          stack.interviewer.token,
+        );
+
+        expect(result.maxScore).toBe(100);
+        expect(result.totalScore).toBe(session.expectedScore);
+        expect(result.problems.map((problem) => problem.latestStatus)).toEqual(
+          session.expectedLatest,
+        );
+        expect(result.problems.every((problem) => problem.finalSubmissionId !== null)).toBe(true);
+
+        for (const problem of result.problems) {
+          const detail = await api<SubmissionDetail>(
+            "GET",
+            `/api/exam-sessions/${session.sessionId}/submissions/${problem.finalSubmissionId}`,
+            stack.interviewer.token,
+          );
+          expect(detail.status).toBe("done");
+          expect(detail.verdict).toBe(problem.latestStatus);
+          expect(detail.isFinalSubmission).toBe(true);
+          expect(detail.testcaseResults).toHaveLength(2);
+          expect(detail.testcaseResults.find((tc) => !tc.isPublic)).not.toHaveProperty(
+            "actualOutput",
+          );
+        }
+
+        const candidateView = await api<SessionResult>(
+          "GET",
+          `/api/exam-sessions/${session.sessionId}/result`,
+          session.candidate.token,
+        );
+        expect(candidateView.totalScore).toBe(session.expectedScore);
+      }
+    },
+    E2E_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps same-time candidate submissions pending behind the active job because the worker consumes one task at a time",
+    async () => {
+      const stack = await createStack();
+      const firstSession = await createSession(stack.interviewer.token, stack.candidates.perfect, {
+        sum: stack.problemIds.sum,
+      });
+      const secondSession = await createSession(
+        stack.interviewer.token,
+        stack.candidates.oneCorrect,
+        {
+          sum: stack.problemIds.sum,
+        },
+      );
+
+      await startSession(firstSession.sessionId, stack.candidates.perfect.token);
+      await startSession(secondSession.sessionId, stack.candidates.oneCorrect.token);
+
+      const slowSubmission = await submitCode(
+        firstSession.sessionId,
+        firstSession.problemsByKey.sum.id,
+        stack.candidates.perfect.token,
+        "import time\ntime.sleep(2.0)\nprint(sum(map(int, input().split())))\n",
+      );
+      const fastSubmission = await submitCode(
+        secondSession.sessionId,
+        secondSession.problemsByKey.sum.id,
+        stack.candidates.oneCorrect.token,
+        problemSpecs[0]!.correctSource,
+      );
+
+      await waitForSubmissionStatus(
+        firstSession.sessionId,
+        slowSubmission.id,
+        stack.candidates.perfect.token,
+        "judging",
+      );
+
+      const queuedBehind = await api<SubmissionDetail>(
+        "GET",
+        `/api/exam-sessions/${secondSession.sessionId}/submissions/${fastSubmission.id}`,
+        stack.candidates.oneCorrect.token,
+      );
+      expect(queuedBehind.status).toBe("pending");
+
+      await waitForSubmissionsDone([slowSubmission.id, fastSubmission.id]);
+
+      const slowDone = await api<SubmissionDetail>(
+        "GET",
+        `/api/exam-sessions/${firstSession.sessionId}/submissions/${slowSubmission.id}`,
+        stack.interviewer.token,
+      );
+      const fastDone = await api<SubmissionDetail>(
+        "GET",
+        `/api/exam-sessions/${secondSession.sessionId}/submissions/${fastSubmission.id}`,
+        stack.interviewer.token,
+      );
+
+      expect(slowDone.verdict).toBe("AC");
+      expect(fastDone.verdict).toBe("AC");
+      expect(new Date(slowDone.judgedAt!).getTime()).toBeLessThanOrEqual(
+        new Date(fastDone.judgedAt!).getTime(),
+      );
+    },
+    E2E_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps simple submissions from changing formal score or final submission",
+    async () => {
+      const stack = await createStack();
+      const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
+        sum: stack.problemIds.sum,
+      });
+      await startSession(session.sessionId, stack.candidates.perfect.token);
+
+      const simpleAc = await submitCode(
+        session.sessionId,
+        session.problemsByKey.sum.id,
+        stack.candidates.perfect.token,
+        problemSpecs[0]!.correctSource,
+        { type: "simple" },
+      );
+      await waitForSubmissionsDone([simpleAc.id]);
+
+      let result = await api<SessionResult>(
+        "GET",
+        `/api/exam-sessions/${session.sessionId}/result`,
+        stack.interviewer.token,
+      );
+      expect(result.totalScore).toBe(0);
+      expect(result.problems[0]!.finalSubmissionId).toBeNull();
+
+      const formalAc = await submitCode(
+        session.sessionId,
+        session.problemsByKey.sum.id,
+        stack.candidates.perfect.token,
+        problemSpecs[0]!.correctSource,
+      );
+      await waitForSubmissionsDone([formalAc.id]);
+
+      const simpleWa = await submitCode(
+        session.sessionId,
+        session.problemsByKey.sum.id,
+        stack.candidates.perfect.token,
+        problemSpecs[0]!.wrongSource,
+        { type: "simple" },
+      );
+      await waitForSubmissionsDone([simpleWa.id]);
+
+      result = await api<SessionResult>(
+        "GET",
+        `/api/exam-sessions/${session.sessionId}/result`,
+        stack.interviewer.token,
+      );
+      expect(result.totalScore).toBe(100);
+      expect(result.problems[0]).toMatchObject({
+        latestStatus: "WA",
+        finalSubmissionId: formalAc.id,
       });
 
-      for (const attempt of plan.attempts) {
-        const sessionProblem = session.problemsByKey[attempt.key];
-        const submission = await submitCode(
-          session.sessionId,
-          sessionProblem.id,
-          plan.candidate.token,
-          attempt.source
-        );
-        submittedIds.push(submission.id);
-      }
-    }
+      const finalDetail = await api<SubmissionDetail>(
+        "GET",
+        `/api/exam-sessions/${session.sessionId}/submissions/${formalAc.id}`,
+        stack.interviewer.token,
+      );
+      expect(finalDetail.isFinalSubmission).toBe(true);
+      expect(finalDetail.score).toBe(100);
+    },
+    E2E_TEST_TIMEOUT_MS,
+  );
 
-    await waitForSubmissionsDone(submittedIds);
+  it(
+    "lets a later formal WA override a previous formal AC and reset the score",
+    async () => {
+      const stack = await createStack();
+      const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
+        sum: stack.problemIds.sum,
+      });
+      await startSession(session.sessionId, stack.candidates.perfect.token);
 
-    for (const session of sessions) {
+      const ac = await submitCode(
+        session.sessionId,
+        session.problemsByKey.sum.id,
+        stack.candidates.perfect.token,
+        problemSpecs[0]!.correctSource,
+      );
+      await waitForSubmissionsDone([ac.id]);
+
+      const wa = await submitCode(
+        session.sessionId,
+        session.problemsByKey.sum.id,
+        stack.candidates.perfect.token,
+        problemSpecs[0]!.wrongSource,
+      );
+      await waitForSubmissionsDone([wa.id]);
+
       const result = await api<SessionResult>(
         "GET",
         `/api/exam-sessions/${session.sessionId}/result`,
-        stack.interviewer.token
+        stack.interviewer.token,
+      );
+      expect(result.totalScore).toBe(0);
+      expect(result.problems[0]).toMatchObject({
+        latestStatus: "WA",
+        finalSubmissionId: wa.id,
+        score: 0,
+      });
+
+      const oldAc = await api<SubmissionDetail>(
+        "GET",
+        `/api/exam-sessions/${session.sessionId}/submissions/${ac.id}`,
+        stack.interviewer.token,
+      );
+      expect(oldAc.isFinalSubmission).toBe(false);
+      expect(oldAc.score).toBe(0);
+    },
+    E2E_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "rejects submissions after a session expires and marks the result expired",
+    async () => {
+      const stack = await createStack();
+      const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
+        sum: stack.problemIds.sum,
+      });
+      await startSession(session.sessionId, stack.candidates.perfect.token);
+      await backendPool.query(
+        "UPDATE exam_sessions SET expires_at = NOW() - INTERVAL '1 second' WHERE id = $1",
+        [session.sessionId],
       );
 
-      expect(result.maxScore).toBe(100);
-      expect(result.totalScore).toBe(session.expectedScore);
-      expect(result.problems.map((problem) => problem.latestStatus)).toEqual(session.expectedLatest);
-      expect(result.problems.every((problem) => problem.finalSubmissionId !== null)).toBe(true);
+      await api(
+        "POST",
+        `/api/exam-sessions/${session.sessionId}/submissions`,
+        stack.candidates.perfect.token,
+        {
+          examSessionProblemId: session.problemsByKey.sum.id,
+          language: "python3",
+          sourceCode: problemSpecs[0]!.correctSource,
+          type: "formal",
+        },
+        409,
+      );
 
-      for (const problem of result.problems) {
-        const detail = await api<SubmissionDetail>(
-          "GET",
-          `/api/exam-sessions/${session.sessionId}/submissions/${problem.finalSubmissionId}`,
-          stack.interviewer.token
-        );
-        expect(detail.status).toBe("done");
-        expect(detail.verdict).toBe(problem.latestStatus);
-        expect(detail.isFinalSubmission).toBe(true);
-        expect(detail.testcaseResults).toHaveLength(2);
-        expect(detail.testcaseResults.find((tc) => !tc.isPublic)).not.toHaveProperty("actualOutput");
-      }
-
-      const candidateView = await api<SessionResult>(
+      const result = await api<SessionResult>(
         "GET",
         `/api/exam-sessions/${session.sessionId}/result`,
-        session.candidate.token
+        stack.interviewer.token,
       );
-      expect(candidateView.totalScore).toBe(session.expectedScore);
-    }
-  }, E2E_TEST_TIMEOUT_MS);
+      expect(result.status).toBe("expired");
+      expect(result.totalScore).toBe(0);
+    },
+    E2E_TEST_TIMEOUT_MS,
+  );
 
-  it("keeps same-time candidate submissions pending behind the active job because the worker consumes one task at a time", async () => {
-    const stack = await createStack();
-    const firstSession = await createSession(stack.interviewer.token, stack.candidates.perfect, {
-      sum: stack.problemIds.sum,
-    });
-    const secondSession = await createSession(stack.interviewer.token, stack.candidates.oneCorrect, {
-      sum: stack.problemIds.sum,
-    });
+  it(
+    "prevents another interviewer from inspecting someone else's session result",
+    async () => {
+      const stack = await createStack();
+      const otherInterviewer = await createUser(
+        await loginAs(app, "root", "Root@1234"),
+        "e2e_interviewer_other",
+        ["interviewer"],
+      );
+      const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
+        sum: stack.problemIds.sum,
+      });
+      await startSession(session.sessionId, stack.candidates.perfect.token);
 
-    await startSession(firstSession.sessionId, stack.candidates.perfect.token);
-    await startSession(secondSession.sessionId, stack.candidates.oneCorrect.token);
+      await api(
+        "GET",
+        `/api/exam-sessions/${session.sessionId}/result`,
+        otherInterviewer.token,
+        undefined,
+        403,
+      );
 
-    const slowSubmission = await submitCode(
-      firstSession.sessionId,
-      firstSession.problemsByKey.sum.id,
-      stack.candidates.perfect.token,
-      "import time\ntime.sleep(2.0)\nprint(sum(map(int, input().split())))\n"
-    );
-    const fastSubmission = await submitCode(
-      secondSession.sessionId,
-      secondSession.problemsByKey.sum.id,
-      stack.candidates.oneCorrect.token,
-      problemSpecs[0]!.correctSource
-    );
+      const ownerView = await api<SessionResult>(
+        "GET",
+        `/api/exam-sessions/${session.sessionId}/result`,
+        stack.interviewer.token,
+      );
+      expect(ownerView.id).toBe(session.sessionId);
+    },
+    E2E_TEST_TIMEOUT_MS,
+  );
 
-    await waitForSubmissionStatus(
-      firstSession.sessionId,
-      slowSubmission.id,
-      stack.candidates.perfect.token,
-      "judging"
-    );
+  it(
+    "records TLE when sandbox execution exceeds the time limit",
+    async () => {
+      const stack = await createStack();
+      const tleProblemId = await createProblem(stack.problemSetter.token, {
+        title: "E2E TLE Probe",
+        descriptionMd: "Intentionally tiny time limit.",
+        difficulty: "easy",
+        timeLimitMs: 300,
+        memoryLimitMb: 128,
+        outputLimitKb: 64,
+        testcases: [
+          { orderIndex: 1, isPublic: true, inputData: "1\n", expectedOutput: "1" },
+          { orderIndex: 2, isPublic: false, inputData: "2\n", expectedOutput: "2" },
+        ],
+        languageLimits: [{ language: "python3", timeMultiplier: 1, memoryMultiplier: 1 }],
+      });
+      const session = await createManualSession(stack.interviewer.token, stack.candidates.perfect, [
+        { problemId: tleProblemId, scoreWeight: 100, orderIndex: 1 },
+      ]);
+      await startSession(session.sessionId, stack.candidates.perfect.token);
 
-    const queuedBehind = await api<SubmissionDetail>(
-      "GET",
-      `/api/exam-sessions/${secondSession.sessionId}/submissions/${fastSubmission.id}`,
-      stack.candidates.oneCorrect.token
-    );
-    expect(queuedBehind.status).toBe("pending");
+      const submission = await submitCode(
+        session.sessionId,
+        session.problemIds[tleProblemId]!.id,
+        stack.candidates.perfect.token,
+        "while True:\n    pass\n",
+      );
+      await waitForSubmissionsDone([submission.id]);
 
-    await waitForSubmissionsDone([slowSubmission.id, fastSubmission.id]);
+      const detail = await api<SubmissionDetail>(
+        "GET",
+        `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
+        stack.interviewer.token,
+      );
+      expect(detail.verdict).toBe("TLE");
+      expect(detail.testcaseResults[0]).toMatchObject({ isPublic: true, verdict: "TLE" });
+      expect(detail.testcaseResults[1]).toMatchObject({ isPublic: false, verdict: "skipped" });
+    },
+    E2E_TEST_TIMEOUT_MS,
+  );
 
-    const slowDone = await api<SubmissionDetail>(
-      "GET",
-      `/api/exam-sessions/${firstSession.sessionId}/submissions/${slowSubmission.id}`,
-      stack.interviewer.token
-    );
-    const fastDone = await api<SubmissionDetail>(
-      "GET",
-      `/api/exam-sessions/${secondSession.sessionId}/submissions/${fastSubmission.id}`,
-      stack.interviewer.token
-    );
+  it(
+    "records RE when submitted code raises at runtime",
+    async () => {
+      const stack = await createStack();
+      const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
+        sum: stack.problemIds.sum,
+      });
+      await startSession(session.sessionId, stack.candidates.perfect.token);
 
-    expect(slowDone.verdict).toBe("AC");
-    expect(fastDone.verdict).toBe("AC");
-    expect(new Date(slowDone.judgedAt!).getTime()).toBeLessThanOrEqual(
-      new Date(fastDone.judgedAt!).getTime()
-    );
-  }, E2E_TEST_TIMEOUT_MS);
+      const submission = await submitCode(
+        session.sessionId,
+        session.problemsByKey.sum.id,
+        stack.candidates.perfect.token,
+        "raise RuntimeError('boom')\n",
+      );
+      await waitForSubmissionsDone([submission.id]);
 
-  it("keeps simple submissions from changing formal score or final submission", async () => {
-    const stack = await createStack();
-    const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
-      sum: stack.problemIds.sum,
-    });
-    await startSession(session.sessionId, stack.candidates.perfect.token);
+      const detail = await api<SubmissionDetail>(
+        "GET",
+        `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
+        stack.interviewer.token,
+      );
+      expect(detail.verdict).toBe("RE");
+      expect(detail.testcaseResults[0]).toMatchObject({ isPublic: true, verdict: "RE" });
+      expect(detail.testcaseResults[1]).toMatchObject({ isPublic: false, verdict: "skipped" });
+    },
+    E2E_TEST_TIMEOUT_MS,
+  );
 
-    const simpleAc = await submitCode(
-      session.sessionId,
-      session.problemsByKey.sum.id,
-      stack.candidates.perfect.token,
-      problemSpecs[0]!.correctSource,
-      { type: "simple" }
-    );
-    await waitForSubmissionsDone([simpleAc.id]);
+  it(
+    "records CE for invalid C++ submissions without testcase rows",
+    async () => {
+      const stack = await createStack();
+      const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
+        sum: stack.problemIds.sum,
+      });
+      await startSession(session.sessionId, stack.candidates.perfect.token);
 
-    let result = await api<SessionResult>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/result`,
-      stack.interviewer.token
-    );
-    expect(result.totalScore).toBe(0);
-    expect(result.problems[0]!.finalSubmissionId).toBeNull();
+      const submission = await submitCode(
+        session.sessionId,
+        session.problemsByKey.sum.id,
+        stack.candidates.perfect.token,
+        "int main(\n",
+        { language: "cpp17" },
+      );
+      await waitForSubmissionsDone([submission.id]);
 
-    const formalAc = await submitCode(
-      session.sessionId,
-      session.problemsByKey.sum.id,
-      stack.candidates.perfect.token,
-      problemSpecs[0]!.correctSource
-    );
-    await waitForSubmissionsDone([formalAc.id]);
+      const detail = await api<SubmissionDetail>(
+        "GET",
+        `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
+        stack.interviewer.token,
+      );
+      expect(detail.verdict).toBe("CE");
+      expect(detail.testcaseResults).toHaveLength(0);
+      expect(detail.score).toBe(0);
+    },
+    E2E_TEST_TIMEOUT_MS,
+  );
 
-    const simpleWa = await submitCode(
-      session.sessionId,
-      session.problemsByKey.sum.id,
-      stack.candidates.perfect.token,
-      problemSpecs[0]!.wrongSource,
-      { type: "simple" }
-    );
-    await waitForSubmissionsDone([simpleWa.id]);
+  it(
+    "accepts valid C++ submissions end-to-end",
+    async () => {
+      const stack = await createStack();
+      const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
+        sum: stack.problemIds.sum,
+      });
+      await startSession(session.sessionId, stack.candidates.perfect.token);
 
-    result = await api<SessionResult>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/result`,
-      stack.interviewer.token
-    );
-    expect(result.totalScore).toBe(100);
-    expect(result.problems[0]).toMatchObject({
-      latestStatus: "WA",
-      finalSubmissionId: formalAc.id,
-    });
+      const submission = await submitCode(
+        session.sessionId,
+        session.problemsByKey.sum.id,
+        stack.candidates.perfect.token,
+        [
+          "#include <iostream>",
+          "int main() {",
+          "  long long a, b;",
+          "  std::cin >> a >> b;",
+          "  std::cout << (a + b) << '\\n';",
+          "  return 0;",
+          "}",
+          "",
+        ].join("\n"),
+        { language: "cpp17" },
+      );
+      await waitForSubmissionsDone([submission.id]);
 
-    const finalDetail = await api<SubmissionDetail>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/submissions/${formalAc.id}`,
-      stack.interviewer.token
-    );
-    expect(finalDetail.isFinalSubmission).toBe(true);
-    expect(finalDetail.score).toBe(100);
-  }, E2E_TEST_TIMEOUT_MS);
+      const detail = await api<SubmissionDetail>(
+        "GET",
+        `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
+        stack.interviewer.token,
+      );
+      expect(detail.verdict).toBe("AC");
+      expect(detail.score).toBe(30);
+    },
+    E2E_TEST_TIMEOUT_MS,
+  );
 
-  it("lets a later formal WA override a previous formal AC and reset the score", async () => {
-    const stack = await createStack();
-    const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
-      sum: stack.problemIds.sum,
-    });
-    await startSession(session.sessionId, stack.candidates.perfect.token);
+  it(
+    "keeps tasks durable while no worker is consuming and processes them after worker restart",
+    async () => {
+      await workerChannel.close();
+      await waitForJudgeConsumerCount(0, 5000);
 
-    const ac = await submitCode(
-      session.sessionId,
-      session.problemsByKey.sum.id,
-      stack.candidates.perfect.token,
-      problemSpecs[0]!.correctSource
-    );
-    await waitForSubmissionsDone([ac.id]);
+      const stack = await createStack();
+      const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
+        sum: stack.problemIds.sum,
+      });
+      await startSession(session.sessionId, stack.candidates.perfect.token);
 
-    const wa = await submitCode(
-      session.sessionId,
-      session.problemsByKey.sum.id,
-      stack.candidates.perfect.token,
-      problemSpecs[0]!.wrongSource
-    );
-    await waitForSubmissionsDone([wa.id]);
+      const submission = await submitCode(
+        session.sessionId,
+        session.problemsByKey.sum.id,
+        stack.candidates.perfect.token,
+        problemSpecs[0]!.correctSource,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 250));
 
-    const result = await api<SessionResult>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/result`,
-      stack.interviewer.token
-    );
-    expect(result.totalScore).toBe(0);
-    expect(result.problems[0]).toMatchObject({
-      latestStatus: "WA",
-      finalSubmissionId: wa.id,
-      score: 0,
-    });
+      const pending = await api<SubmissionDetail>(
+        "GET",
+        `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
+        stack.candidates.perfect.token,
+      );
+      expect(pending.status).toBe("pending");
 
-    const oldAc = await api<SubmissionDetail>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/submissions/${ac.id}`,
-      stack.interviewer.token
-    );
-    expect(oldAc.isFinalSubmission).toBe(false);
-    expect(oldAc.score).toBe(0);
-  }, E2E_TEST_TIMEOUT_MS);
+      workerChannel = await rabbitConnection.createChannel();
+      await startJudgeConsumer(workerChannel);
+      await waitForSubmissionsDone([submission.id]);
 
-  it("rejects submissions after a session expires and marks the result expired", async () => {
-    const stack = await createStack();
-    const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
-      sum: stack.problemIds.sum,
-    });
-    await startSession(session.sessionId, stack.candidates.perfect.token);
-    await backendPool.query(
-      "UPDATE exam_sessions SET expires_at = NOW() - INTERVAL '1 second' WHERE id = $1",
-      [session.sessionId]
-    );
-
-    await api(
-      "POST",
-      `/api/exam-sessions/${session.sessionId}/submissions`,
-      stack.candidates.perfect.token,
-      {
-        examSessionProblemId: session.problemsByKey.sum.id,
-        language: "python3",
-        sourceCode: problemSpecs[0]!.correctSource,
-        type: "formal",
-      },
-      409
-    );
-
-    const result = await api<SessionResult>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/result`,
-      stack.interviewer.token
-    );
-    expect(result.status).toBe("expired");
-    expect(result.totalScore).toBe(0);
-  }, E2E_TEST_TIMEOUT_MS);
-
-  it("prevents another interviewer from inspecting someone else's session result", async () => {
-    const stack = await createStack();
-    const otherInterviewer = await createUser(await loginAs(app, "root", "Root@1234"), "e2e_interviewer_other", [
-      "interviewer",
-    ]);
-    const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
-      sum: stack.problemIds.sum,
-    });
-    await startSession(session.sessionId, stack.candidates.perfect.token);
-
-    await api(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/result`,
-      otherInterviewer.token,
-      undefined,
-      403
-    );
-
-    const ownerView = await api<SessionResult>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/result`,
-      stack.interviewer.token
-    );
-    expect(ownerView.id).toBe(session.sessionId);
-  }, E2E_TEST_TIMEOUT_MS);
-
-  it("records TLE when sandbox execution exceeds the time limit", async () => {
-    const stack = await createStack();
-    const tleProblemId = await createProblem(stack.problemSetter.token, {
-      title: "E2E TLE Probe",
-      descriptionMd: "Intentionally tiny time limit.",
-      difficulty: "easy",
-      timeLimitMs: 300,
-      memoryLimitMb: 128,
-      outputLimitKb: 64,
-      testcases: [
-        { orderIndex: 1, isPublic: true, inputData: "1\n", expectedOutput: "1" },
-        { orderIndex: 2, isPublic: false, inputData: "2\n", expectedOutput: "2" },
-      ],
-      languageLimits: [{ language: "python3", timeMultiplier: 1, memoryMultiplier: 1 }],
-    });
-    const session = await createManualSession(
-      stack.interviewer.token,
-      stack.candidates.perfect,
-      [{ problemId: tleProblemId, scoreWeight: 100, orderIndex: 1 }]
-    );
-    await startSession(session.sessionId, stack.candidates.perfect.token);
-
-    const submission = await submitCode(
-      session.sessionId,
-      session.problemIds[tleProblemId]!.id,
-      stack.candidates.perfect.token,
-      "while True:\n    pass\n"
-    );
-    await waitForSubmissionsDone([submission.id]);
-
-    const detail = await api<SubmissionDetail>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
-      stack.interviewer.token
-    );
-    expect(detail.verdict).toBe("TLE");
-    expect(detail.testcaseResults[0]).toMatchObject({ isPublic: true, verdict: "TLE" });
-    expect(detail.testcaseResults[1]).toMatchObject({ isPublic: false, verdict: "skipped" });
-  }, E2E_TEST_TIMEOUT_MS);
-
-  it("records RE when submitted code raises at runtime", async () => {
-    const stack = await createStack();
-    const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
-      sum: stack.problemIds.sum,
-    });
-    await startSession(session.sessionId, stack.candidates.perfect.token);
-
-    const submission = await submitCode(
-      session.sessionId,
-      session.problemsByKey.sum.id,
-      stack.candidates.perfect.token,
-      "raise RuntimeError('boom')\n"
-    );
-    await waitForSubmissionsDone([submission.id]);
-
-    const detail = await api<SubmissionDetail>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
-      stack.interviewer.token
-    );
-    expect(detail.verdict).toBe("RE");
-    expect(detail.testcaseResults[0]).toMatchObject({ isPublic: true, verdict: "RE" });
-    expect(detail.testcaseResults[1]).toMatchObject({ isPublic: false, verdict: "skipped" });
-  }, E2E_TEST_TIMEOUT_MS);
-
-  it("records CE for invalid C++ submissions without testcase rows", async () => {
-    const stack = await createStack();
-    const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
-      sum: stack.problemIds.sum,
-    });
-    await startSession(session.sessionId, stack.candidates.perfect.token);
-
-    const submission = await submitCode(
-      session.sessionId,
-      session.problemsByKey.sum.id,
-      stack.candidates.perfect.token,
-      "int main(\n",
-      { language: "cpp17" }
-    );
-    await waitForSubmissionsDone([submission.id]);
-
-    const detail = await api<SubmissionDetail>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
-      stack.interviewer.token
-    );
-    expect(detail.verdict).toBe("CE");
-    expect(detail.testcaseResults).toHaveLength(0);
-    expect(detail.score).toBe(0);
-  }, E2E_TEST_TIMEOUT_MS);
-
-  it("accepts valid C++ submissions end-to-end", async () => {
-    const stack = await createStack();
-    const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
-      sum: stack.problemIds.sum,
-    });
-    await startSession(session.sessionId, stack.candidates.perfect.token);
-
-    const submission = await submitCode(
-      session.sessionId,
-      session.problemsByKey.sum.id,
-      stack.candidates.perfect.token,
-      [
-        "#include <iostream>",
-        "int main() {",
-        "  long long a, b;",
-        "  std::cin >> a >> b;",
-        "  std::cout << (a + b) << '\\n';",
-        "  return 0;",
-        "}",
-        "",
-      ].join("\n"),
-      { language: "cpp17" }
-    );
-    await waitForSubmissionsDone([submission.id]);
-
-    const detail = await api<SubmissionDetail>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
-      stack.interviewer.token
-    );
-    expect(detail.verdict).toBe("AC");
-    expect(detail.score).toBe(30);
-  }, E2E_TEST_TIMEOUT_MS);
-
-  it("keeps tasks durable while no worker is consuming and processes them after worker restart", async () => {
-    await workerChannel.close();
-    await waitForJudgeConsumerCount(0, 5000);
-
-    const stack = await createStack();
-    const session = await createSession(stack.interviewer.token, stack.candidates.perfect, {
-      sum: stack.problemIds.sum,
-    });
-    await startSession(session.sessionId, stack.candidates.perfect.token);
-
-    const submission = await submitCode(
-      session.sessionId,
-      session.problemsByKey.sum.id,
-      stack.candidates.perfect.token,
-      problemSpecs[0]!.correctSource
-    );
-    await new Promise((resolve) => setTimeout(resolve, 250));
-
-    const pending = await api<SubmissionDetail>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
-      stack.candidates.perfect.token
-    );
-    expect(pending.status).toBe("pending");
-
-    workerChannel = await rabbitConnection.createChannel();
-    await startJudgeConsumer(workerChannel);
-    await waitForSubmissionsDone([submission.id]);
-
-    const detail = await api<SubmissionDetail>(
-      "GET",
-      `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
-      stack.interviewer.token
-    );
-    expect(detail.verdict).toBe("AC");
-    expect(detail.isFinalSubmission).toBe(true);
-  }, E2E_TEST_TIMEOUT_MS);
+      const detail = await api<SubmissionDetail>(
+        "GET",
+        `/api/exam-sessions/${session.sessionId}/submissions/${submission.id}`,
+        stack.interviewer.token,
+      );
+      expect(detail.verdict).toBe("AC");
+      expect(detail.isFinalSubmission).toBe(true);
+    },
+    E2E_TEST_TIMEOUT_MS,
+  );
 });
 
 async function createStack() {
@@ -702,11 +764,21 @@ async function createStack() {
 }
 
 async function createProblem(problemSetterToken: string, payload: ProblemPayload): Promise<number> {
-  const created = await api<{ id: number }>("POST", "/api/problems", problemSetterToken, payload, 201);
+  const created = await api<{ id: number }>(
+    "POST",
+    "/api/problems",
+    problemSetterToken,
+    payload,
+    201,
+  );
   return created.id;
 }
 
-async function createUser(rootToken: string, username: string, roleNames: string[]): Promise<Actor> {
+async function createUser(
+  rootToken: string,
+  username: string,
+  roleNames: string[],
+): Promise<Actor> {
   const created = await api<{ id: number; username: string }>(
     "POST",
     "/api/users",
@@ -717,7 +789,7 @@ async function createUser(rootToken: string, username: string, roleNames: string
       displayName: username,
       roleNames,
     },
-    201
+    201,
   );
   const token = await loginAs(app, username, PASSWORD);
   return { id: created.id, username: created.username, password: PASSWORD, token };
@@ -726,7 +798,7 @@ async function createUser(rootToken: string, username: string, roleNames: string
 async function createSession(
   interviewerToken: string,
   candidate: Actor,
-  problemIds: Partial<Record<ProblemSpec["key"], number>>
+  problemIds: Partial<Record<ProblemSpec["key"], number>>,
 ): Promise<{
   sessionId: number;
   problemsByKey: Record<ProblemSpec["key"], SessionProblem>;
@@ -745,13 +817,13 @@ async function createSession(
         orderIndex: index + 1,
       })),
     },
-    201
+    201,
   );
 
   const sessionProblems = await api<SessionProblem[]>(
     "GET",
     `/api/exam-sessions/${session.id}/problems`,
-    interviewerToken
+    interviewerToken,
   );
 
   const problemsByKey = {} as Record<ProblemSpec["key"], SessionProblem>;
@@ -767,7 +839,7 @@ async function createSession(
 async function createManualSession(
   interviewerToken: string,
   candidate: Actor,
-  problems: { problemId: number; scoreWeight: number; orderIndex: number }[]
+  problems: { problemId: number; scoreWeight: number; orderIndex: number }[],
 ): Promise<{
   sessionId: number;
   problemIds: Record<number, SessionProblem>;
@@ -781,13 +853,13 @@ async function createManualSession(
       durationMinutes: 3,
       problems,
     },
-    201
+    201,
   );
 
   const sessionProblems = await api<SessionProblem[]>(
     "GET",
     `/api/exam-sessions/${session.id}/problems`,
-    interviewerToken
+    interviewerToken,
   );
 
   const byProblemId: Record<number, SessionProblem> = {};
@@ -807,7 +879,7 @@ async function submitCode(
   examSessionProblemId: number,
   candidateToken: string,
   sourceCode: string,
-  options: { type?: SubmissionType; language?: SubmissionLanguage } = {}
+  options: { type?: SubmissionType; language?: SubmissionLanguage } = {},
 ): Promise<{ id: number }> {
   return api<{ id: number }>(
     "POST",
@@ -819,7 +891,7 @@ async function submitCode(
       sourceCode,
       type: options.type ?? "formal",
     },
-    202
+    202,
   );
 }
 
@@ -828,7 +900,7 @@ async function api<T = unknown>(
   url: string,
   token: string,
   payload?: object,
-  expectedStatus = 200
+  expectedStatus = 200,
 ): Promise<T> {
   const options: InjectOptions = {
     method,
@@ -854,7 +926,7 @@ async function waitForSubmissionsDone(submissionIds: number[]): Promise<void> {
         FROM submissions
         WHERE id = ANY($1::bigint[])
       `,
-      [submissionIds]
+      [submissionIds],
     );
     return (
       result.rows.length === submissionIds.length &&
@@ -867,13 +939,13 @@ async function waitForSubmissionStatus(
   sessionId: number,
   submissionId: number,
   token: string,
-  status: SubmissionSummary["status"]
+  status: SubmissionSummary["status"],
 ): Promise<void> {
   await waitFor(async () => {
     const detail = await api<SubmissionDetail>(
       "GET",
       `/api/exam-sessions/${sessionId}/submissions/${submissionId}`,
-      token
+      token,
     );
     return detail.status === status;
   }, 15000);
@@ -899,7 +971,7 @@ async function expectJudgeConsumerCount(expected: number, context: string): Prom
   if (consumerCount !== expected) {
     throw new Error(
       `Expected ${expected} judge.tasks consumer(s) ${context}, but found ${consumerCount}. ` +
-        "Stop any external worker first, for example: docker compose stop worker"
+        "Stop any external worker first, for example: docker compose stop worker",
     );
   }
 }
@@ -917,6 +989,6 @@ async function waitForJudgeConsumerCount(expected: number, timeoutMs: number): P
 
   throw new Error(
     `Timed out waiting for judge.tasks consumer count to become ${expected}; last count was ${lastCount}. ` +
-      "Stop any external worker first, for example: docker compose stop worker"
+      "Stop any external worker first, for example: docker compose stop worker",
   );
 }

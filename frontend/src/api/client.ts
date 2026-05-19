@@ -91,9 +91,7 @@ export async function getUsers(): Promise<UserSummary[]> {
   return data;
 }
 
-export async function createUser(
-  req: CreateUserRequest,
-): Promise<CreateUserResponse> {
+export async function createUser(req: CreateUserRequest): Promise<CreateUserResponse> {
   const { data } = await api.post<CreateUserResponse>("/users", req);
 
   return data;
@@ -131,7 +129,10 @@ export async function deleteProblem(id: number): Promise<void> {
   await api.delete(`/problems/${id}`);
 }
 
-export async function addTestcase(problemId: number, req: CreateTestcaseRequest): Promise<Testcase> {
+export async function addTestcase(
+  problemId: number,
+  req: CreateTestcaseRequest,
+): Promise<Testcase> {
   const { data } = await api.post<Testcase>(`/problems/${problemId}/testcases`, req);
   return data;
 }
@@ -149,9 +150,7 @@ export async function deleteTestcase(problemId: number, tcId: number): Promise<v
   await api.delete(`/problems/${problemId}/testcases/${tcId}`);
 }
 
-export async function createExamSession(
-  req: CreateExamSessionRequest,
-): Promise<ExamSession> {
+export async function createExamSession(req: CreateExamSessionRequest): Promise<ExamSession> {
   const { data } = await api.post<ExamSession>("/exam-sessions", req);
   return data;
 }
@@ -177,12 +176,8 @@ export async function createSubmission(
   return data;
 }
 
-export async function listSessionSubmissions(
-  sessionId: number,
-): Promise<SubmissionSummary[]> {
-  const { data } = await api.get<SubmissionSummary[]>(
-    `/exam-sessions/${sessionId}/submissions`,
-  );
+export async function listSessionSubmissions(sessionId: number): Promise<SubmissionSummary[]> {
+  const { data } = await api.get<SubmissionSummary[]>(`/exam-sessions/${sessionId}/submissions`);
   return data;
 }
 
@@ -227,11 +222,7 @@ export async function saveExamDraft(
 
 // Get all drafts for a session (restore from Redis on page load)
 // Returns Record<"problemId:language", code>
-export async function getExamDrafts(
-  sessionId: number,
-): Promise<Record<string, string>> {
-  const { data } = await api.get<Record<string, string>>(
-    `/exam-sessions/${sessionId}/drafts`,
-  );
+export async function getExamDrafts(sessionId: number): Promise<Record<string, string>> {
+  const { data } = await api.get<Record<string, string>>(`/exam-sessions/${sessionId}/drafts`);
   return data;
 }

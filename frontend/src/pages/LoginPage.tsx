@@ -38,17 +38,12 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-        <h1 className="text-2xl font-semibold text-slate-900 mb-1">
-          Online Code Test
-        </h1>
+        <h1 className="text-2xl font-semibold text-slate-900 mb-1">Online Code Test</h1>
         <p className="text-sm text-slate-500 mb-6">請輸入您的帳號密碼以繼續</p>
 
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
           <div>
-            <label
-              htmlFor="username"
-              className="block text-sm font-medium text-slate-700 mb-1"
-            >
+            <label htmlFor="username" className="block text-sm font-medium text-slate-700 mb-1">
               帳號
             </label>
             <input
@@ -66,10 +61,7 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-slate-700 mb-1"
-            >
+            <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">
               密碼
             </label>
             <input

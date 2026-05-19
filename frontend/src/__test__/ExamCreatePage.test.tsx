@@ -107,9 +107,7 @@ describe("ExamCreatePage()", () => {
     renderPage();
 
     // expect
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
   });
 
   // ── Candidate setup button ─────────────────────────────────────────────────
@@ -117,14 +115,10 @@ describe("ExamCreatePage()", () => {
   it("shows '+ 設定面試者帳號' button before any candidate is set", async () => {
     // given: no pending user
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
 
     // expect: setup button present; no "待建立" badge
-    expect(
-      screen.getByRole("button", { name: /設定面試者帳號/ }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /設定面試者帳號/ })).toBeInTheDocument();
     expect(screen.queryByText(/待建立/)).not.toBeInTheDocument();
   });
 
@@ -132,9 +126,7 @@ describe("ExamCreatePage()", () => {
     // given
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
 
     // when
     await user.click(screen.getByRole("button", { name: /設定面試者帳號/ }));
@@ -146,9 +138,7 @@ describe("ExamCreatePage()", () => {
   it("shows '待建立' badge after confirming the modal with a username", async () => {
     // given
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
 
     // when
     await setupCandidate("candidate01");
@@ -162,9 +152,7 @@ describe("ExamCreatePage()", () => {
     // given
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /設定面試者帳號/ }));
     await screen.findByText("設定面試者帳號");
 
@@ -172,21 +160,15 @@ describe("ExamCreatePage()", () => {
     await user.click(screen.getByRole("button", { name: "取消" }));
 
     // expect: modal closed, no badge, setup button restored
-    await waitFor(() =>
-      expect(screen.queryByText(/待建立/)).not.toBeInTheDocument(),
-    );
-    expect(
-      screen.getByRole("button", { name: /設定面試者帳號/ }),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(/待建立/)).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /設定面試者帳號/ })).toBeInTheDocument();
   });
 
   it("confirm button is disabled when username is empty", async () => {
     // given
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /設定面試者帳號/ }));
     await screen.findByText("設定面試者帳號");
 
@@ -201,9 +183,7 @@ describe("ExamCreatePage()", () => {
 
     // when
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
 
     // expect: easy tab shows 'Two Sum'; medium/hard problems are hidden
     expect(screen.getByText("Two Sum")).toBeInTheDocument();
@@ -215,9 +195,7 @@ describe("ExamCreatePage()", () => {
     // given
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
 
     // when
     await user.click(screen.getByRole("button", { name: /中等/ }));
@@ -231,9 +209,7 @@ describe("ExamCreatePage()", () => {
     // given
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
 
     // when
     await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
@@ -248,21 +224,15 @@ describe("ExamCreatePage()", () => {
     // given
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
-    expect(
-      screen.getByRole("spinbutton", { name: "Two Sum 配分" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Two Sum 配分" })).toBeInTheDocument();
 
     // when
     await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
 
     // expect
-    expect(
-      screen.queryByRole("spinbutton", { name: "Two Sum 配分" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: "Two Sum 配分" })).not.toBeInTheDocument();
   });
 
   // ── Mode toggle ───────────────────────────────────────────────────────────
@@ -271,26 +241,16 @@ describe("ExamCreatePage()", () => {
     // given
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
 
     // when
     await user.click(screen.getByRole("button", { name: "隨機派題" }));
 
     // expect: distribution inputs appear
-    expect(
-      screen.getByRole("spinbutton", { name: "隨機簡單題數" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("spinbutton", { name: "隨機中等題數" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("spinbutton", { name: "隨機困難題數" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("spinbutton", { name: "每題配分" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "隨機簡單題數" })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "隨機中等題數" })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "隨機困難題數" })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "每題配分" })).toBeInTheDocument();
     // problem list is hidden
     expect(screen.queryByText("Two Sum")).not.toBeInTheDocument();
   });
@@ -301,9 +261,7 @@ describe("ExamCreatePage()", () => {
     // given
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
 
     // when: submit without setting candidate
     await user.click(screen.getByRole("button", { name: "建立考試" }));
@@ -317,9 +275,7 @@ describe("ExamCreatePage()", () => {
     // given
     mockCreateUser.mockResolvedValue(mockCreatedUser);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     await setupCandidate();
 
     // when: submit without selecting any problem
@@ -327,9 +283,7 @@ describe("ExamCreatePage()", () => {
     await user.click(screen.getByRole("button", { name: "建立考試" }));
 
     // expect
-    await waitFor(() =>
-      expect(screen.getByText("請至少選擇一個題目")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("請至少選擇一個題目")).toBeInTheDocument());
     expect(mockCreateExamSession).not.toHaveBeenCalled();
   });
 
@@ -337,9 +291,7 @@ describe("ExamCreatePage()", () => {
     // given
     mockCreateUser.mockResolvedValue(mockCreatedUser);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     const user = userEvent.setup();
     await setupCandidate();
     await user.click(screen.getByRole("button", { name: "隨機派題" }));
@@ -348,11 +300,7 @@ describe("ExamCreatePage()", () => {
     await user.click(screen.getByRole("button", { name: "建立考試" }));
 
     // expect
-    await waitFor(() =>
-      expect(
-        screen.getByText("請至少在難度分佈中填寫一題"),
-      ).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("請至少在難度分佈中填寫一題")).toBeInTheDocument());
     expect(mockCreateExamSession).not.toHaveBeenCalled();
   });
 
@@ -363,9 +311,7 @@ describe("ExamCreatePage()", () => {
     mockCreateUser.mockResolvedValue(mockCreatedUser);
     mockCreateExamSession.mockResolvedValue(mockCreatedSession);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     await setupCandidate("candidate01");
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
@@ -399,9 +345,7 @@ describe("ExamCreatePage()", () => {
     mockCreateUser.mockResolvedValue(mockCreatedUser);
     mockCreateExamSession.mockResolvedValue(mockCreatedSession);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     const user = userEvent.setup();
     await setupCandidate("candidate01");
     await user.click(screen.getByRole("button", { name: "隨機派題" }));
@@ -429,13 +373,9 @@ describe("ExamCreatePage()", () => {
   it("shows error message when createExamSession rejects", async () => {
     // given
     mockCreateUser.mockResolvedValue(mockCreatedUser);
-    mockCreateExamSession.mockRejectedValue(
-      new Error("500 Internal Server Error"),
-    );
+    mockCreateExamSession.mockRejectedValue(new Error("500 Internal Server Error"));
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     await setupCandidate();
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
@@ -444,11 +384,7 @@ describe("ExamCreatePage()", () => {
     await user.click(screen.getByRole("button", { name: "建立考試" }));
 
     // expect: error shown, no navigation
-    await waitFor(() =>
-      expect(
-        screen.getByText("500 Internal Server Error"),
-      ).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("500 Internal Server Error")).toBeInTheDocument());
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
@@ -456,9 +392,7 @@ describe("ExamCreatePage()", () => {
     // given
     mockCreateUser.mockRejectedValue(new Error("使用者帳號已存在"));
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     await setupCandidate();
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
@@ -467,9 +401,7 @@ describe("ExamCreatePage()", () => {
     await user.click(screen.getByRole("button", { name: "建立考試" }));
 
     // expect: error shown, no navigation
-    await waitFor(() =>
-      expect(screen.getByText("使用者帳號已存在")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("使用者帳號已存在")).toBeInTheDocument());
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
@@ -478,9 +410,7 @@ describe("ExamCreatePage()", () => {
   it("back button navigates to /interviewer", async () => {
     // given
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
 
     // when
     await userEvent.click(screen.getByText("← 返回考試管理"));
@@ -492,13 +422,12 @@ describe("ExamCreatePage()", () => {
   it("brand link in navbar points to /interviewer", async () => {
     // given
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
 
     // expect
-    expect(
-      screen.getByRole("link", { name: "Online Code Test" }),
-    ).toHaveAttribute("href", "/interviewer");
+    expect(screen.getByRole("link", { name: "Online Code Test" })).toHaveAttribute(
+      "href",
+      "/interviewer",
+    );
   });
 });

@@ -10,16 +10,11 @@ export function formatTimeLeft(seconds: number): string {
 
 function calculateTimeLeft(expiresAt: string | null): number | null {
   if (!expiresAt) return null;
-  return Math.max(
-    0,
-    Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000),
-  );
+  return Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
 }
 
 export function useExamTimer(expiresAt: string | null): number | null {
-  const [timeLeft, setTimeLeft] = useState<number | null>(() =>
-    calculateTimeLeft(expiresAt),
-  );
+  const [timeLeft, setTimeLeft] = useState<number | null>(() => calculateTimeLeft(expiresAt));
 
   useEffect(() => {
     setTimeLeft(calculateTimeLeft(expiresAt));

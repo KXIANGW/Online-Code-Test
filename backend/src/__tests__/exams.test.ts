@@ -10,7 +10,7 @@ let app: FastifyInstance;
 let carolToken: string;
 let aliceToken: string;
 let bobToken: string;
-let candToken: string;   // david
+let candToken: string; // david
 let eveToken: string;
 let rootToken: string;
 let carolId: number;
@@ -32,13 +32,51 @@ afterAll(async () => {
 beforeEach(async () => {
   await truncateTestTables();
 
-  await seedUser({ username: "root", password: "Root@1234", displayName: "Root", isSuperuser: true });
-  carolId = await seedUser({ username: "carol", password: "Test@1234", displayName: "Carol", roleNames: ["problem_setter"] });
-  aliceId = await seedUser({ username: "alice", password: "Test@1234", displayName: "Alice", roleNames: ["interviewer"] });
-  bobId = await seedUser({ username: "bob", password: "Bob@1234", displayName: "Bob", roleNames: ["interviewer"] });
-  davidId = await seedUser({ username: "david", password: "Cand@1234", displayName: "David", roleNames: ["candidate"], createdBy: aliceId });
-  eveId = await seedUser({ username: "eve", password: "Eve@1234", displayName: "Eve", roleNames: ["candidate"], createdBy: bobId });
-  graceId = await seedUser({ username: "grace", password: "Grace@1234", displayName: "Grace", roleNames: ["candidate"], createdBy: aliceId });
+  await seedUser({
+    username: "root",
+    password: "Root@1234",
+    displayName: "Root",
+    isSuperuser: true,
+  });
+  carolId = await seedUser({
+    username: "carol",
+    password: "Test@1234",
+    displayName: "Carol",
+    roleNames: ["problem_setter"],
+  });
+  aliceId = await seedUser({
+    username: "alice",
+    password: "Test@1234",
+    displayName: "Alice",
+    roleNames: ["interviewer"],
+  });
+  bobId = await seedUser({
+    username: "bob",
+    password: "Bob@1234",
+    displayName: "Bob",
+    roleNames: ["interviewer"],
+  });
+  davidId = await seedUser({
+    username: "david",
+    password: "Cand@1234",
+    displayName: "David",
+    roleNames: ["candidate"],
+    createdBy: aliceId,
+  });
+  eveId = await seedUser({
+    username: "eve",
+    password: "Eve@1234",
+    displayName: "Eve",
+    roleNames: ["candidate"],
+    createdBy: bobId,
+  });
+  graceId = await seedUser({
+    username: "grace",
+    password: "Grace@1234",
+    displayName: "Grace",
+    roleNames: ["candidate"],
+    createdBy: aliceId,
+  });
 
   carolToken = await loginAs(app, "carol", "Test@1234");
   aliceToken = await loginAs(app, "alice", "Test@1234");
@@ -80,7 +118,7 @@ async function getProblemIds(): Promise<{ easy: number; medium: number }> {
 async function createSession(
   token: string,
   candidateId: number,
-  problemId: number
+  problemId: number,
 ): Promise<number> {
   const res = await app.inject({
     method: "POST",
@@ -371,7 +409,7 @@ describe("GET /api/exam-sessions", () => {
   it("candidate sees only sessions where they are the candidate", async () => {
     const { easy } = await getProblemIds();
     await createSession(aliceToken, davidId, easy); // david's session
-    await createSession(aliceToken, graceId, easy);  // grace's session
+    await createSession(aliceToken, graceId, easy); // grace's session
 
     const res = await app.inject({
       method: "GET",
@@ -656,7 +694,15 @@ describe("GET /api/exam-sessions/:id/problems", () => {
       headers: { authorization: `Bearer ${candToken}` },
     });
     expect(listRes.statusCode).toBe(200);
-    const body = listRes.json<{ title: string; orderIndex: number; descriptionMd: string; outputLimitKb: number; languageLimits: unknown[] }[]>();
+    const body = listRes.json<
+      {
+        title: string;
+        orderIndex: number;
+        descriptionMd: string;
+        outputLimitKb: number;
+        languageLimits: unknown[];
+      }[]
+    >();
     expect(body).toHaveLength(2);
     expect(body.map((p) => p.orderIndex).sort()).toEqual([1, 2]);
     expect(body[0]!.descriptionMd).toBeDefined();

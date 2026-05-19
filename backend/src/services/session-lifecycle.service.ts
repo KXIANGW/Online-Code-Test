@@ -4,10 +4,7 @@ import { examSessions } from "../db/schema";
 import { NotFoundError } from "../errors";
 
 export async function getSessionOrThrow(sessionId: number) {
-  const [session] = await db
-    .select()
-    .from(examSessions)
-    .where(eq(examSessions.id, sessionId));
+  const [session] = await db.select().from(examSessions).where(eq(examSessions.id, sessionId));
 
   if (!session) throw NotFoundError("exam session");
   return session;
@@ -15,9 +12,7 @@ export async function getSessionOrThrow(sessionId: number) {
 
 export type ExamSessionRecord = Awaited<ReturnType<typeof getSessionOrThrow>>;
 
-export async function expireIfNeeded(
-  session: ExamSessionRecord
-): Promise<ExamSessionRecord> {
+export async function expireIfNeeded(session: ExamSessionRecord): Promise<ExamSessionRecord> {
   if (session.status === "in_progress" && session.expiresAt && session.expiresAt <= new Date()) {
     const [updated] = await db
       .update(examSessions)

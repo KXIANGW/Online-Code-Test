@@ -3,12 +3,7 @@ import { useParams } from "react-router-dom";
 import { getSessionResult, listSessionSubmissions } from "../api/client";
 import { NavBar } from "../components/NavBar";
 import { useJudgeSocket } from "../hooks/useJudgeSocket";
-import type {
-  ExamStatus,
-  JudgeSocketMessage,
-  SessionResult,
-  SubmissionSummary,
-} from "../types";
+import type { ExamStatus, JudgeSocketMessage, SessionResult, SubmissionSummary } from "../types";
 
 const STATUS_LABEL: Record<ExamStatus, string> = {
   not_started: "待考",
@@ -75,8 +70,7 @@ export default function CandidateResultPage() {
                 memoryKb: message.memoryKb,
                 judgedAt: message.judgedAt,
                 score: message.score,
-                isFinalSubmission:
-                  message.submissionType === "formal" && message.score > 0,
+                isFinalSubmission: message.submissionType === "formal" && message.score > 0,
               }
             : submission,
         ),
@@ -127,9 +121,7 @@ export default function CandidateResultPage() {
                         {problem.orderIndex}. {problem.problemTitle}
                       </p>
                       <p className="mt-0.5 text-xs text-slate-500">
-                        {problem.latestStatus === "no_submission"
-                          ? "未作答"
-                          : problem.latestStatus}
+                        {problem.latestStatus === "no_submission" ? "未作答" : problem.latestStatus}
                       </p>
                     </div>
                     <p className="text-sm text-slate-600">

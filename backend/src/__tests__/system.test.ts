@@ -38,8 +38,10 @@ describe("system routes", () => {
   it("GET /api/health checks database connectivity", async () => {
     const res = await app.inject({ method: "GET", url: "/api/health" });
     expect(res.statusCode).toBe(200);
-    expect(res.json<{ status: string; dbLatencyMs: number }>())
-      .toMatchObject({ status: "ok", dbLatencyMs: expect.any(Number) });
+    expect(res.json<{ status: string; dbLatencyMs: number }>()).toMatchObject({
+      status: "ok",
+      dbLatencyMs: expect.any(Number),
+    });
   });
 });
 
@@ -48,12 +50,18 @@ describe("GET /api/ws", () => {
     const require = createRequire(__filename);
     const WebSocket = require("ws") as WebSocketCtor;
 
-    await seedUser({ username: "candidate1", password: "Cand@1234", displayName: "Candidate", roleNames: ["candidate"] });
+    await seedUser({
+      username: "candidate1",
+      password: "Cand@1234",
+      displayName: "Candidate",
+      roleNames: ["candidate"],
+    });
     const token = await loginAs(app, "candidate1", "Cand@1234");
 
     await app.listen({ port: 0, host: "127.0.0.1" });
     const address = app.server.address();
-    if (address === null || typeof address === "string") throw new Error("server did not bind a TCP port");
+    if (address === null || typeof address === "string")
+      throw new Error("server did not bind a TCP port");
     const baseUrl = `ws://127.0.0.1:${address.port}/api/ws`;
 
     const missingToken = new WebSocket(baseUrl);

@@ -7,10 +7,7 @@ import {
   submissions,
   submissionTestcaseResults,
 } from "../db/schema";
-import {
-  JUDGE_RESULTS_BACKEND_QUEUE,
-  getChannel,
-} from "./client";
+import { JUDGE_RESULTS_BACKEND_QUEUE, getChannel } from "./client";
 import { publishToSession } from "../ws/hub";
 import { judgeResultPublishTotal, submissionCompletedTotal } from "../metrics";
 
@@ -28,11 +25,7 @@ type ResultMessage = {
 function parseResultMessage(message: ConsumeMessage): ResultMessage | null {
   try {
     const parsed = JSON.parse(message.content.toString("utf8"));
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      typeof parsed.submissionId !== "number"
-    ) {
+    if (typeof parsed !== "object" || parsed === null || typeof parsed.submissionId !== "number") {
       return null;
     }
     return parsed as ResultMessage;
@@ -57,10 +50,7 @@ export async function buildJudgeResultPayload(submissionId: number) {
       finalSubmissionId: examSessionProblems.finalSubmissionId,
     })
     .from(submissions)
-    .innerJoin(
-      examSessionProblems,
-      eq(submissions.examSessionProblemId, examSessionProblems.id)
-    )
+    .innerJoin(examSessionProblems, eq(submissions.examSessionProblemId, examSessionProblems.id))
     .where(eq(submissions.id, submissionId));
 
   if (!submission) return null;
@@ -115,10 +105,7 @@ export async function buildSubmissionStatusPayload(submissionId: number) {
       sessionId: examSessionProblems.examSessionId,
     })
     .from(submissions)
-    .innerJoin(
-      examSessionProblems,
-      eq(submissions.examSessionProblemId, examSessionProblems.id)
-    )
+    .innerJoin(examSessionProblems, eq(submissions.examSessionProblemId, examSessionProblems.id))
     .where(eq(submissions.id, submissionId));
 
   if (!submission) return null;
@@ -134,7 +121,7 @@ export async function buildSubmissionStatusPayload(submissionId: number) {
 
 export async function handleJudgeResultMessage(
   channel: Pick<Channel, "ack">,
-  message: ConsumeMessage
+  message: ConsumeMessage,
 ): Promise<void> {
   const parsed = parseResultMessage(message);
   if (!parsed) {
@@ -168,6 +155,6 @@ export async function startJudgeResultConsumer(): Promise<void> {
         console.error("[mq] failed to handle judge result", err);
       });
     },
-    { noAck: false }
+    { noAck: false },
   );
 }

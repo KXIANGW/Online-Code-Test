@@ -51,22 +51,26 @@ const mockSubmittedResult: SessionResult = {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function setupAuthStore(username = "alice") {
   mockUseAuthStore.mockImplementation((sel: any) =>
-    sel({ token: "tok", username, login: vi.fn(), logout: mockLogout,
-          isSuperuser: false, permissions: ["exam:manage"] })
+    sel({
+      token: "tok",
+      username,
+      login: vi.fn(),
+      logout: mockLogout,
+      isSuperuser: false,
+      permissions: ["exam:manage"],
+    }),
   );
 }
 
 function setupInterviewerStore(results: SessionResult[] = [], setResults = vi.fn()) {
-  mockUseInterviewerStore.mockImplementation((sel: any) =>
-    sel({ results, setResults })
-  );
+  mockUseInterviewerStore.mockImplementation((sel: any) => sel({ results, setResults }));
 }
 
 function renderPage() {
   return render(
     <MemoryRouter>
       <InterviewerDashboardPage />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -115,7 +119,7 @@ describe("InterviewerDashboardPage()", () => {
     // given
     setupAuthStore();
     mockUseInterviewerStore.mockImplementation((sel: any) =>
-      sel({ results: [], setResults: vi.fn() })
+      sel({ results: [], setResults: vi.fn() }),
     );
     mockGetExamSessions.mockReturnValue(new Promise(() => {})); // never resolves
 
@@ -136,9 +140,7 @@ describe("InterviewerDashboardPage()", () => {
     renderPage();
 
     // expect
-    await waitFor(() =>
-      expect(screen.getByText("目前沒有考試紀錄")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText("目前沒有考試紀錄")).toBeInTheDocument());
   });
 
   it("displays session card with candidate display name and status badge", async () => {
@@ -217,7 +219,7 @@ describe("InterviewerDashboardPage()", () => {
     await userEvent.click(screen.getByRole("button", { name: "進行中" }));
 
     // expect
-    expect(screen.getByText("Alice Chen")).toBeInTheDocument();        // in_progress → visible
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument(); // in_progress → visible
     expect(screen.queryByText("David Chang")).not.toBeInTheDocument(); // not_started → hidden
   });
 
@@ -246,8 +248,8 @@ describe("InterviewerDashboardPage()", () => {
     await userEvent.click(screen.getByRole("button", { name: "已結束" }));
 
     // expect
-    expect(screen.getByText("Emma Lin")).toBeInTheDocument();          // submitted → visible
-    expect(screen.queryByText("Alice Chen")).not.toBeInTheDocument();  // in_progress → hidden
+    expect(screen.getByText("Emma Lin")).toBeInTheDocument(); // submitted → visible
+    expect(screen.queryByText("Alice Chen")).not.toBeInTheDocument(); // in_progress → hidden
   });
 
   // ── Page refresh: data is re-fetched on mount ─────────────────────────────
@@ -257,7 +259,7 @@ describe("InterviewerDashboardPage()", () => {
       const mockSetResults = vi.fn();
       setupAuthStore();
       mockUseInterviewerStore.mockImplementation((sel: any) =>
-        sel({ results: [], setResults: mockSetResults })
+        sel({ results: [], setResults: mockSetResults }),
       );
       mockGetExamSessions.mockResolvedValue([{ id: 2 }]);
       mockGetSessionResult.mockResolvedValue(mockSessionResult);
@@ -279,10 +281,12 @@ describe("InterviewerDashboardPage()", () => {
       let resolveExamSessions!: (v: unknown) => void;
       setupAuthStore();
       mockUseInterviewerStore.mockImplementation((sel: any) =>
-        sel({ results: [], setResults: mockSetResults })
+        sel({ results: [], setResults: mockSetResults }),
       );
       mockGetExamSessions.mockReturnValue(
-        new Promise((resolve) => { resolveExamSessions = resolve; })
+        new Promise((resolve) => {
+          resolveExamSessions = resolve;
+        }),
       );
 
       // when
@@ -295,9 +299,7 @@ describe("InterviewerDashboardPage()", () => {
       resolveExamSessions([]);
 
       // expect: loading hidden after fetch
-      await waitFor(() =>
-        expect(screen.queryByText("載入中...")).not.toBeInTheDocument()
-      );
+      await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     });
   });
 

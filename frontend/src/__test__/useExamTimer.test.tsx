@@ -17,9 +17,7 @@ describe("useExamTimer", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-16T00:00:00.000Z"));
 
-    const { result } = renderHook(() =>
-      useExamTimer("2026-05-16T00:00:03.000Z"),
-    );
+    const { result } = renderHook(() => useExamTimer("2026-05-16T00:00:03.000Z"));
 
     expect(result.current).toBe(3);
 

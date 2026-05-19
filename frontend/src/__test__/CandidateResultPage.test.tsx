@@ -23,9 +23,7 @@ vi.mock("../hooks/useJudgeSocket", () => ({
 }));
 
 vi.mock("../components/NavBar", () => ({
-  NavBar: ({ homeHref }: { homeHref: string }) => (
-    <nav data-testid="navbar" data-home={homeHref} />
-  ),
+  NavBar: ({ homeHref }: { homeHref: string }) => <nav data-testid="navbar" data-home={homeHref} />,
 }));
 
 const sessionResult: SessionResult = {

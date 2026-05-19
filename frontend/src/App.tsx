@@ -89,16 +89,14 @@ function RoleRedirect() {
   if (isSuperuser) return <Navigate to="/admin" replace />;
 
   // 優先級 2: 面試主管 (Interviewer) -> /interviewer
-  if (permissions.includes(PERMISSIONS.EXAM_MANAGE))
-    return <Navigate to="/interviewer" replace />;
+  if (permissions.includes(PERMISSIONS.EXAM_MANAGE)) return <Navigate to="/interviewer" replace />;
 
   // 優先級 3: 出題主管 (Problem Setter) -> /problem-setter
   if (permissions.includes(PERMISSIONS.PROBLEM_MANAGE))
     return <Navigate to="/problem-setter" replace />;
 
   // 優先級 4: 考生 -> /candidate
-  if (permissions.includes(PERMISSIONS.EXAM_TAKE))
-    return <Navigate to="/candidate" replace />;
+  if (permissions.includes(PERMISSIONS.EXAM_TAKE)) return <Navigate to="/candidate" replace />;
 
   return <Navigate to="/" replace />;
 }
@@ -110,10 +108,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         {/* 公共路徑 */}
-        <Route
-          path="/login"
-          element={token ? <RoleRedirect /> : <LoginPage />}
-        />
+        <Route path="/login" element={token ? <RoleRedirect /> : <LoginPage />} />
 
         {/* 管理員路徑：onlyAdmin 為簡寫，意同 onlyAdmin={true} */}
         <Route
@@ -216,10 +211,7 @@ export default function App() {
         />
 
         {/* 根路徑導向 */}
-        <Route
-          path="/"
-          element={token ? <RoleRedirect /> : <Navigate to="/login" replace />}
-        />
+        <Route path="/" element={token ? <RoleRedirect /> : <Navigate to="/login" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

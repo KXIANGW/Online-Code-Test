@@ -105,9 +105,7 @@ describe("ExamResultPage()", () => {
     renderPage();
 
     // expect
-    await waitFor(() =>
-      expect(screen.getByText("無法載入考試結果")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("無法載入考試結果")).toBeInTheDocument());
     expect(screen.queryByText("載入中...")).not.toBeInTheDocument();
   });
 
@@ -119,9 +117,7 @@ describe("ExamResultPage()", () => {
     renderPage();
 
     // expect
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
   });
 
   // ── Candidate info ────────────────────────────────────────────────────────
@@ -268,9 +264,7 @@ describe("ExamResultPage()", () => {
     mockGetSubmissionDetail.mockResolvedValue(mockSubmissionDetail);
 
     renderPage();
-    await userEvent.click(
-      await screen.findByRole("button", { name: "查看公開測資：提交 2" }),
-    );
+    await userEvent.click(await screen.findByRole("button", { name: "查看公開測資：提交 2" }));
 
     expect(await screen.findByText("公開測資 1")).toBeInTheDocument();
     expect(screen.getByText("公開測資 2")).toBeInTheDocument();
@@ -423,9 +417,10 @@ describe("ExamResultPage()", () => {
     renderPage();
 
     // expect
-    expect(
-      screen.getByRole("link", { name: "Online Code Test" }),
-    ).toHaveAttribute("href", "/interviewer");
+    expect(screen.getByRole("link", { name: "Online Code Test" })).toHaveAttribute(
+      "href",
+      "/interviewer",
+    );
   });
 
   // ── Testcase detail accordion ────────────────────────────────────────────────
@@ -440,9 +435,7 @@ describe("ExamResultPage()", () => {
       await screen.findByText(/Two Sum/);
 
       // expect: exactly 1 button (Valid Parentheses has no finalSubmissionId → no button)
-      expect(
-        screen.getAllByRole("button", { name: "查看詳情 ▶" }),
-      ).toHaveLength(1);
+      expect(screen.getAllByRole("button", { name: "查看詳情 ▶" })).toHaveLength(1);
     });
 
     it("clicking 查看詳情 ▶ calls getSubmissionDetail with correct sessionId and submissionId", async () => {
@@ -457,9 +450,7 @@ describe("ExamResultPage()", () => {
       await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
 
       // expect: sessionId=2 (from URL /result/2), finalSubmissionId=2
-      await waitFor(() =>
-        expect(mockGetSubmissionDetail).toHaveBeenCalledWith(2, 2),
-      );
+      await waitFor(() => expect(mockGetSubmissionDetail).toHaveBeenCalledWith(2, 2));
     });
 
     it("shows 載入測資中... while getSubmissionDetail is in flight", async () => {
@@ -489,9 +480,7 @@ describe("ExamResultPage()", () => {
       await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
 
       // expect
-      await waitFor(() =>
-        expect(screen.getByText("無法載入測資結果")).toBeTruthy(),
-      );
+      await waitFor(() => expect(screen.getByText("無法載入測資結果")).toBeTruthy());
     });
 
     it("renders only hidden testcase rows with verdict and runtime after successful fetch", async () => {
@@ -573,19 +562,17 @@ describe("ExamResultPage()", () => {
 
       // 模擬 API：讓不同的 submissionId 回傳可辨識的 runtimeMs
       // isPublic: false 確保隱藏測資 filter 不會過濾掉這筆測試資料
-      mockGetSubmissionDetail.mockImplementation(
-        async (sessionId, submissionId) => ({
-          ...mockSubmissionDetail,
-          testcaseResults: [
-            {
-              ...mockSubmissionDetail.testcaseResults[0]!,
-              isPublic: false,
-              id: submissionId * 100,
-              runtimeMs: submissionId,
-            },
-          ],
-        }),
-      );
+      mockGetSubmissionDetail.mockImplementation(async (sessionId, submissionId) => ({
+        ...mockSubmissionDetail,
+        testcaseResults: [
+          {
+            ...mockSubmissionDetail.testcaseResults[0]!,
+            isPublic: false,
+            id: submissionId * 100,
+            runtimeMs: submissionId,
+          },
+        ],
+      }));
 
       renderPage();
 
@@ -623,9 +610,7 @@ describe("ExamResultPage()", () => {
     renderPage();
 
     // expect
-    expect(screen.getByRole("button", { name: "User menu" })).toHaveTextContent(
-      "AL",
-    );
+    expect(screen.getByRole("button", { name: "User menu" })).toHaveTextContent("AL");
   });
 
   it("shows ?? as initials when username is null", () => {
@@ -640,9 +625,7 @@ describe("ExamResultPage()", () => {
     renderPage();
 
     // expect
-    expect(screen.getByRole("button", { name: "User menu" })).toHaveTextContent(
-      "??",
-    );
+    expect(screen.getByRole("button", { name: "User menu" })).toHaveTextContent("??");
   });
 
   it("logout: opens menu → clicks Log out → calls logout and navigates to /login", async () => {

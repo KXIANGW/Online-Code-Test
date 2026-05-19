@@ -23,13 +23,15 @@ const saveDraftBody = z.object({
 const manualSessionBody = z.object({
   candidateId: z.number().int(),
   durationMinutes: z.number().int().min(1),
-  problems: z.array(
-    z.object({
-      problemId: z.number().int(),
-      scoreWeight: z.number().int().min(1),
-      orderIndex: z.number().int().min(1),
-    })
-  ).min(1),
+  problems: z
+    .array(
+      z.object({
+        problemId: z.number().int(),
+        scoreWeight: z.number().int().min(1),
+        orderIndex: z.number().int().min(1),
+      }),
+    )
+    .min(1),
 });
 
 const randomSessionBody = z.object({
@@ -61,7 +63,9 @@ export const examRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(201).send(session);
     }
 
-    throw BadRequestError("Body must contain either 'problems' (manual) or 'distribution' (random)");
+    throw BadRequestError(
+      "Body must contain either 'problems' (manual) or 'distribution' (random)",
+    );
   });
 
   app.get("/", { preHandler: [authenticate] }, async (request) => {
@@ -104,11 +108,16 @@ export const examRoutes: FastifyPluginAsync = async (app) => {
 
   // PUT /:id/drafts/:problemId/:language — save draft keyed by problem + language
   app.put("/:id/drafts/:problemId/:language", { preHandler: [authenticate] }, async (request) => {
-    const { id, problemId, language } = request.params as { id: string; problemId: string; language: string };
+    const { id, problemId, language } = request.params as {
+      id: string;
+      problemId: string;
+      language: string;
+    };
     const sessionId = parsePositiveIntParam(id, "id");
     const pid = parsePositiveIntParam(problemId, "problemId");
 
-    if (!language || language.length === 0 || language.length > 32) throw BadRequestError("invalid language");
+    if (!language || language.length === 0 || language.length > 32)
+      throw BadRequestError("invalid language");
 
     const body = request.body as Record<string, unknown>;
     const result = saveDraftBody.safeParse(body);

@@ -19,10 +19,31 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await truncateTestTables();
-  await seedUser({ username: "root", password: "Root@1234", displayName: "Root", isSuperuser: true });
-  carolId = await seedUser({ username: "carol", password: "Test@1234", displayName: "Carol", roleNames: ["problem_setter"] });
-  aliceId = await seedUser({ username: "alice", password: "Test@1234", displayName: "Alice", roleNames: ["interviewer"] });
-  candidate1Id = await seedUser({ username: "candidate1", password: "Cand@1234", displayName: "Candidate 1", roleNames: ["candidate"], createdBy: aliceId });
+  await seedUser({
+    username: "root",
+    password: "Root@1234",
+    displayName: "Root",
+    isSuperuser: true,
+  });
+  carolId = await seedUser({
+    username: "carol",
+    password: "Test@1234",
+    displayName: "Carol",
+    roleNames: ["problem_setter"],
+  });
+  aliceId = await seedUser({
+    username: "alice",
+    password: "Test@1234",
+    displayName: "Alice",
+    roleNames: ["interviewer"],
+  });
+  candidate1Id = await seedUser({
+    username: "candidate1",
+    password: "Cand@1234",
+    displayName: "Candidate 1",
+    roleNames: ["candidate"],
+    createdBy: aliceId,
+  });
 });
 
 const sampleProblem = {
@@ -573,9 +594,7 @@ describe("PUT /api/problems/:id/languages", () => {
       method: "PUT",
       url: `/api/problems/${id}/languages`,
       headers: { authorization: `Bearer ${token}` },
-      payload: [
-        { language: "cpp17", timeMultiplier: 2.0, memoryMultiplier: 1.5 },
-      ],
+      payload: [{ language: "cpp17", timeMultiplier: 2.0, memoryMultiplier: 1.5 }],
     });
     expect(res.statusCode).toBe(200);
     const body = res.json<{ language: string; timeMultiplier: string }[]>();

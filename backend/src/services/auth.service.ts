@@ -8,12 +8,9 @@ import { UnauthorizedError } from "../errors";
 export async function login(
   app: FastifyInstance,
   username: string,
-  password: string
+  password: string,
 ): Promise<string> {
-  const [user] = await db
-    .select()
-    .from(users)
-    .where(eq(users.username, username));
+  const [user] = await db.select().from(users).where(eq(users.username, username));
 
   if (!user || user.deletedAt !== null) throw UnauthorizedError();
 

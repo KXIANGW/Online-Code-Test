@@ -26,7 +26,7 @@ export const submissionRoutes: FastifyPluginAsync = async (app) => {
     const submission = await createSubmission(
       request.user,
       parsePositiveIntParam(sessionId, "sessionId"),
-      result.data
+      result.data,
     );
     return reply.status(202).send(submission);
   });
@@ -36,17 +36,21 @@ export const submissionRoutes: FastifyPluginAsync = async (app) => {
     return listSessionSubmissions(request.user, parsePositiveIntParam(sessionId, "sessionId"));
   });
 
-  app.get("/:sessionId/submissions/:submissionId", { preHandler: [authenticate] }, async (request) => {
-    const { sessionId, submissionId } = request.params as {
-      sessionId: string;
-      submissionId: string;
-    };
-    return getSubmissionDetail(
-      request.user,
-      parsePositiveIntParam(sessionId, "sessionId"),
-      parsePositiveIntParam(submissionId, "submissionId")
-    );
-  });
+  app.get(
+    "/:sessionId/submissions/:submissionId",
+    { preHandler: [authenticate] },
+    async (request) => {
+      const { sessionId, submissionId } = request.params as {
+        sessionId: string;
+        submissionId: string;
+      };
+      return getSubmissionDetail(
+        request.user,
+        parsePositiveIntParam(sessionId, "sessionId"),
+        parsePositiveIntParam(submissionId, "submissionId"),
+      );
+    },
+  );
 
   app.get("/:sessionId/result", { preHandler: [authenticate] }, async (request) => {
     const { sessionId } = request.params as { sessionId: string };

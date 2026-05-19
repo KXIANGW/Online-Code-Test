@@ -115,12 +115,7 @@ export interface CreateTestcaseRequest {
 }
 
 // ── Exam Session ──────────────────────────────────────────────────────────────
-export type ExamStatus =
-  | "not_started"
-  | "in_progress"
-  | "submitted"
-  | "expired"
-  | "cancelled";
+export type ExamStatus = "not_started" | "in_progress" | "submitted" | "expired" | "cancelled";
 
 export interface ExamSession {
   id: number;

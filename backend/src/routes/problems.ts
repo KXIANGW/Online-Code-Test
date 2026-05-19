@@ -94,7 +94,7 @@ export const problemRoutes: FastifyPluginAsync = async (app) => {
       request.user,
       parsePositiveIntParam(id, "id"),
       parsePositiveIntParam(tcId, "tcId"),
-      result.data
+      result.data,
     );
   });
 
@@ -103,7 +103,7 @@ export const problemRoutes: FastifyPluginAsync = async (app) => {
     await deleteTestcase(
       request.user,
       parsePositiveIntParam(id, "id"),
-      parsePositiveIntParam(tcId, "tcId")
+      parsePositiveIntParam(tcId, "tcId"),
     );
     return reply.status(204).send();
   });

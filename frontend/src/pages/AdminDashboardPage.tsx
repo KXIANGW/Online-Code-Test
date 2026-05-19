@@ -1,11 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavBar } from "../components/NavBar";
-import {
-  createUser,
-  deleteUser,
-  getUsers,
-  updateUserRoles,
-} from "../api/client";
+import { createUser, deleteUser, getUsers, updateUserRoles } from "../api/client";
 import { CreateUserRequest } from "../types";
 import {
   ROLE_CONFIG_MAP,
@@ -58,9 +53,7 @@ export default function AdminDashboardPage() {
 
   const filteredUsers = users
     .filter((user) => {
-      const nameMatch = user.username
-        .toLowerCase()
-        .includes(searchTerm.trim().toLowerCase());
+      const nameMatch = user.username.toLowerCase().includes(searchTerm.trim().toLowerCase());
       if (!nameMatch) return false;
 
       if (activeTab === "role" && roleFilter !== "all") {
@@ -94,9 +87,7 @@ export default function AdminDashboardPage() {
 
   function handleToggleRole(role: UserRole) {
     setRoleNames((current) =>
-      current.includes(role)
-        ? current.filter((item) => item !== role)
-        : [...current, role],
+      current.includes(role) ? current.filter((item) => item !== role) : [...current, role],
     );
   }
 
@@ -157,9 +148,7 @@ export default function AdminDashboardPage() {
 
   function handleTogglePendingRole(role: RoleKey) {
     setPendingRoles((current) =>
-      current.includes(role)
-        ? current.filter((r) => r !== role)
-        : [...current, role],
+      current.includes(role) ? current.filter((r) => r !== role) : [...current, role],
     );
   }
 
@@ -169,9 +158,7 @@ export default function AdminDashboardPage() {
     updateUserRoles(editingUser.id, pendingRoles)
       .then(() => {
         setUsers((current) =>
-          current.map((u) =>
-            u.id === editingUser.id ? { ...u, roles: pendingRoles } : u,
-          ),
+          current.map((u) => (u.id === editingUser.id ? { ...u, roles: pendingRoles } : u)),
         );
         setEditingUser(null);
       })
@@ -188,9 +175,7 @@ export default function AdminDashboardPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm text-slate-500">Root 控制台</p>
-            <h1 className="text-2xl font-semibold text-slate-900">
-              帳號與權限管理
-            </h1>
+            <h1 className="text-2xl font-semibold text-slate-900">帳號與權限管理</h1>
           </div>
         </div>
 
@@ -210,9 +195,7 @@ export default function AdminDashboardPage() {
               <p className="text-sm text-slate-500">使用者列表</p>
               <h2 className="text-lg font-semibold text-slate-900">全部帳號</h2>
             </div>
-            <span className="text-sm text-slate-500">
-              總計 {users.length} 筆
-            </span>
+            <span className="text-sm text-slate-500">總計 {users.length} 筆</span>
           </div>
 
           <div className="border-b border-slate-100 px-6 py-4">
@@ -259,9 +242,7 @@ export default function AdminDashboardPage() {
                   <button
                     key={filter.key}
                     type="button"
-                    onClick={() =>
-                      setRoleFilter(filter.key as UserRole | "all")
-                    }
+                    onClick={() => setRoleFilter(filter.key as UserRole | "all")}
                     className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
                       roleFilter === filter.key
                         ? "bg-slate-900 text-white"
@@ -277,9 +258,7 @@ export default function AdminDashboardPage() {
 
           <div className="max-h-[480px] overflow-y-auto divide-y divide-slate-100">
             {filteredUsers.length === 0 ? (
-              <p className="px-6 py-12 text-center text-sm text-slate-400">
-                無符合條件的使用者
-              </p>
+              <p className="px-6 py-12 text-center text-sm text-slate-400">無符合條件的使用者</p>
             ) : (
               filteredUsers.map((user) => (
                 <div
@@ -288,33 +267,23 @@ export default function AdminDashboardPage() {
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-slate-900">
-                        {user.username}
-                      </p>
-                      <p className="truncate text-xs text-slate-500">
-                        {user.displayName}
-                      </p>
+                      <p className="truncate font-medium text-slate-900">{user.username}</p>
+                      <p className="truncate text-xs text-slate-500">{user.displayName}</p>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     <div className="hidden sm:flex flex-wrap gap-1">
                       {user.roles.length > 0 ? (
-                        user.roles.map((role) => (
-                          <RolePill key={role} role={role} />
-                        ))
+                        user.roles.map((role) => <RolePill key={role} role={role} />)
                       ) : (
-                        <span className="text-xs text-slate-400">
-                          尚未取得角色
-                        </span>
+                        <span className="text-xs text-slate-400">尚未取得角色</span>
                       )}
                     </div>
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() => handleOpenEditRoles(user)}
-                        disabled={
-                          user.isSuperuser || user.roles.includes("candidate")
-                        }
+                        disabled={user.isSuperuser || user.roles.includes("candidate")}
                         className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
                       >
                         編輯角色
@@ -338,15 +307,11 @@ export default function AdminDashboardPage() {
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-4">
             <p className="text-sm text-slate-500">快速建立帳號</p>
-            <h2 className="text-lg font-semibold text-slate-900">
-              建立單一帳號
-            </h2>
+            <h2 className="text-lg font-semibold text-slate-900">建立單一帳號</h2>
           </div>
           <form className="space-y-4" onSubmit={handleCreateUser}>
             <div>
-              <label className="block text-sm font-medium text-slate-700">
-                使用者名稱
-              </label>
+              <label className="block text-sm font-medium text-slate-700">使用者名稱</label>
               <input
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
@@ -355,9 +320,7 @@ export default function AdminDashboardPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">
-                密碼
-              </label>
+              <label className="block text-sm font-medium text-slate-700">密碼</label>
               <input
                 type="password"
                 value={password}
@@ -367,9 +330,7 @@ export default function AdminDashboardPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">
-                顯示名稱
-              </label>
+              <label className="block text-sm font-medium text-slate-700">顯示名稱</label>
               <input
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
@@ -379,9 +340,7 @@ export default function AdminDashboardPage() {
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-medium text-slate-700">指派角色</p>
-              <p className="text-xs text-slate-500 mt-1">
-                授權面試官或出題者，角色可疊加。
-              </p>
+              <p className="text-xs text-slate-500 mt-1">授權面試官或出題者，角色可疊加。</p>
               <div className="mt-3 flex flex-col gap-3">
                 {CREATABLE_ROLES.map((r) => (
                   <label
@@ -394,7 +353,9 @@ export default function AdminDashboardPage() {
                       onChange={() => handleToggleRole(r.key)}
                       className={`h-4 w-4 rounded border-slate-300 ${r.checkboxColor} focus:ring-2`}
                     />
-                    <span>{r.key}（{r.label}）</span>
+                    <span>
+                      {r.key}（{r.label}）
+                    </span>
                   </label>
                 ))}
               </div>
@@ -418,9 +379,7 @@ export default function AdminDashboardPage() {
         >
           <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-semibold text-slate-900">編輯角色</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              {editingUser.username}
-            </p>
+            <p className="mt-1 text-sm text-slate-500">{editingUser.username}</p>
 
             <div className="mt-5 flex flex-col gap-3">
               {EDITABLE_ROLES.map((r) => (
@@ -434,7 +393,9 @@ export default function AdminDashboardPage() {
                     onChange={() => handleTogglePendingRole(r.key)}
                     className={`h-4 w-4 rounded border-slate-300 ${r.checkboxColor} focus:ring-2`}
                   />
-                  <span>{r.key}（{r.label}）</span>
+                  <span>
+                    {r.key}（{r.label}）
+                  </span>
                 </label>
               ))}
             </div>

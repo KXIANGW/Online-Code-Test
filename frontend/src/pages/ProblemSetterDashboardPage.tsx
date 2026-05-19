@@ -46,9 +46,7 @@ export default function ProblemSetterDashboardPage() {
   }, []);
 
   const filtered = problems.filter((p) => {
-    const nameMatch = p.title
-      .toLowerCase()
-      .includes(searchTerm.trim().toLowerCase());
+    const nameMatch = p.title.toLowerCase().includes(searchTerm.trim().toLowerCase());
     if (!nameMatch) return false;
     if (difficultyFilter !== "all") return p.difficulty === difficultyFilter;
     return true;
@@ -140,9 +138,7 @@ export default function ProblemSetterDashboardPage() {
 
           <div className="max-h-[520px] overflow-y-auto divide-y divide-slate-100">
             {!loading && filtered.length === 0 ? (
-              <p className="px-6 py-12 text-center text-sm text-slate-400">
-                無符合條件的題目
-              </p>
+              <p className="px-6 py-12 text-center text-sm text-slate-400">無符合條件的題目</p>
             ) : (
               filtered.map((problem) => (
                 <div
@@ -151,9 +147,7 @@ export default function ProblemSetterDashboardPage() {
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-slate-900">
-                        {problem.title}
-                      </p>
+                      <p className="truncate font-medium text-slate-900">{problem.title}</p>
                       <p className="text-xs text-slate-400 mt-0.5">
                         {problem.timeLimitMs} ms · {problem.memoryLimitMb} MB
                       </p>

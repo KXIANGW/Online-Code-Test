@@ -43,16 +43,21 @@ export async function listUsers(currentUser: CurrentUser) {
     .from(users)
     .leftJoin(userRoles, eq(userRoles.userId, users.id))
     .leftJoin(roles, eq(roles.id, userRoles.roleId))
-    .where(and(isNull(users.deletedAt), eq(users.isSuperuser, false), eq(users.createdBy, currentUser.id)))
+    .where(
+      and(
+        isNull(users.deletedAt),
+        eq(users.isSuperuser, false),
+        eq(users.createdBy, currentUser.id),
+      ),
+    )
     .groupBy(users.id, users.username, users.displayName, users.isSuperuser, users.createdAt);
 }
 
 export async function createUser(
   currentUser: CurrentUser,
-  data: { username: string; password: string; displayName?: string; roleNames?: string[] }
+  data: { username: string; password: string; displayName?: string; roleNames?: string[] },
 ) {
-  const canCreate =
-    currentUser.isSuperuser || currentUser.permissions.includes("exam:manage");
+  const canCreate = currentUser.isSuperuser || currentUser.permissions.includes("exam:manage");
   if (!canCreate) throw ForbiddenError();
 
   // exam:manage (non-superuser) may only create candidate-role accounts
@@ -66,43 +71,43 @@ export async function createUser(
 
   const passwordHash = await bcrypt.hash(data.password, 10);
 
-  return db.transaction(async (tx) => {
-    const roleRows = await tx
-      .select({ id: roles.id, name: roles.name })
-      .from(roles)
-      .where(inArray(roles.name, effectiveRoles));
+  return db
+    .transaction(async (tx) => {
+      const roleRows = await tx
+        .select({ id: roles.id, name: roles.name })
+        .from(roles)
+        .where(inArray(roles.name, effectiveRoles));
 
-    if (roleRows.length !== new Set(effectiveRoles).size) {
-      throw BadRequestError("Unknown role");
-    }
+      if (roleRows.length !== new Set(effectiveRoles).size) {
+        throw BadRequestError("Unknown role");
+      }
 
-    const userRows = await tx
-      .insert(users)
-      .values({
-        username: data.username,
-        passwordHash,
-        displayName: data.displayName,
-        isSuperuser: false,
-        createdBy: currentUser.isSuperuser ? undefined : currentUser.id,
-      })
-      .returning();
+      const userRows = await tx
+        .insert(users)
+        .values({
+          username: data.username,
+          passwordHash,
+          displayName: data.displayName,
+          isSuperuser: false,
+          createdBy: currentUser.isSuperuser ? undefined : currentUser.id,
+        })
+        .returning();
 
-    const user = userRows[0]!;
+      const user = userRows[0]!;
 
-    await tx.insert(userRoles).values(
-      roleRows.map((r) => ({ userId: user.id, roleId: r.id }))
-    );
+      await tx.insert(userRoles).values(roleRows.map((r) => ({ userId: user.id, roleId: r.id })));
 
-    return { id: user.id, username: user.username, displayName: user.displayName };
-  }).catch((err: unknown) => {
-    if (isPgErrorCode(err, "23505")) throw ConflictError("Username already exists");
-    throw err;
-  });
+      return { id: user.id, username: user.username, displayName: user.displayName };
+    })
+    .catch((err: unknown) => {
+      if (isPgErrorCode(err, "23505")) throw ConflictError("Username already exists");
+      throw err;
+    });
 }
 
 export async function batchCreateCandidates(
   currentUser: CurrentUser,
-  count: number
+  count: number,
 ): Promise<{ username: string; password: string }[]> {
   if (!currentUser.isSuperuser && !currentUser.permissions.includes("exam:manage")) {
     throw ForbiddenError();
@@ -137,14 +142,18 @@ export async function batchCreateCandidates(
     await db.transaction(async (tx) => {
       const insertedRows = await tx
         .insert(users)
-        .values({ username, passwordHash, displayName: username, isSuperuser: false, createdBy: currentUser.isSuperuser ? undefined : currentUser.id })
+        .values({
+          username,
+          passwordHash,
+          displayName: username,
+          isSuperuser: false,
+          createdBy: currentUser.isSuperuser ? undefined : currentUser.id,
+        })
         .returning({ id: users.id });
 
       const newUser = insertedRows[0]!;
       if (candidateRole.length > 0) {
-        await tx
-          .insert(userRoles)
-          .values({ userId: newUser.id, roleId: candidateRole[0]!.id });
+        await tx.insert(userRoles).values({ userId: newUser.id, roleId: candidateRole[0]!.id });
       }
     });
 
@@ -195,7 +204,12 @@ export async function updateUser(
   requirePermissionOrSuperuser(currentUser, "exam:manage");
 
   const [existing] = await db
-    .select({ id: users.id, deletedAt: users.deletedAt, isSuperuser: users.isSuperuser, createdBy: users.createdBy })
+    .select({
+      id: users.id,
+      deletedAt: users.deletedAt,
+      isSuperuser: users.isSuperuser,
+      createdBy: users.createdBy,
+    })
     .from(users)
     .where(eq(users.id, targetId));
 
@@ -232,7 +246,8 @@ export async function updateUserRoles(
   requireSuperuser(currentUser);
 
   const allowed = new Set(["interviewer", "problem_setter"]);
-  if (roleNames.some((r) => !allowed.has(r))) throw BadRequestError("Only interviewer and problem_setter roles are assignable");
+  if (roleNames.some((r) => !allowed.has(r)))
+    throw BadRequestError("Only interviewer and problem_setter roles are assignable");
 
   const [existing] = await db
     .select({ id: users.id, deletedAt: users.deletedAt, isSuperuser: users.isSuperuser })
@@ -261,7 +276,12 @@ export async function deleteUser(currentUser: CurrentUser, targetId: number) {
   requirePermissionOrSuperuser(currentUser, "exam:manage");
 
   const [existing] = await db
-    .select({ id: users.id, deletedAt: users.deletedAt, isSuperuser: users.isSuperuser, createdBy: users.createdBy })
+    .select({
+      id: users.id,
+      deletedAt: users.deletedAt,
+      isSuperuser: users.isSuperuser,
+      createdBy: users.createdBy,
+    })
     .from(users)
     .where(eq(users.id, targetId));
 

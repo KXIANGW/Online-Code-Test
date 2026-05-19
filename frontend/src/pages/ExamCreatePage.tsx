@@ -34,8 +34,7 @@ export default function ExamCreatePage() {
 
   // ── 密碼產生邏輯 ──
   const generateStrongPassword = (length = 12) => {
-    const charset =
-      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+";
+    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+";
     let retVal = "";
     const values = new Uint32Array(length);
     window.crypto.getRandomValues(values);
@@ -46,9 +45,7 @@ export default function ExamCreatePage() {
   };
 
   // ── 狀態管理 ──
-  const [pendingUser, setPendingUser] = useState<CreateUserRequest | null>(
-    null,
-  );
+  const [pendingUser, setPendingUser] = useState<CreateUserRequest | null>(null);
   const [durationMinutes, setDurationMinutes] = useState(90);
   const [mode, setMode] = useState<ExamMode>("manual");
   const [diffTab, setDiffTab] = useState<DiffTab>("easy");
@@ -59,9 +56,7 @@ export default function ExamCreatePage() {
   >([]);
 
   // 隨機抽題分佈
-  const [distribution, setDistribution] = useState<
-    Required<RandomDistribution>
-  >({
+  const [distribution, setDistribution] = useState<Required<RandomDistribution>>({
     easy: 0,
     medium: 0,
     hard: 0,
@@ -109,22 +104,15 @@ export default function ExamCreatePage() {
 
   function toggleProblem(pId: number) {
     if (selectedProblems.some((sp) => sp.problemId === pId)) {
-      setSelectedProblems(
-        selectedProblems.filter((sp) => sp.problemId !== pId),
-      );
+      setSelectedProblems(selectedProblems.filter((sp) => sp.problemId !== pId));
     } else {
-      setSelectedProblems([
-        ...selectedProblems,
-        { problemId: pId, scoreWeight: 100 },
-      ]);
+      setSelectedProblems([...selectedProblems, { problemId: pId, scoreWeight: 100 }]);
     }
   }
 
   function updateScoreWeight(id: number, weight: number) {
     setSelectedProblems(
-      selectedProblems.map((sp) =>
-        sp.problemId === id ? { ...sp, scoreWeight: weight } : sp,
-      ),
+      selectedProblems.map((sp) => (sp.problemId === id ? { ...sp, scoreWeight: weight } : sp)),
     );
   }
 
@@ -146,8 +134,7 @@ export default function ExamCreatePage() {
       let req: CreateExamSessionRequest;
 
       if (mode === "manual") {
-        if (selectedProblems.length === 0)
-          throw new Error("請至少選擇一個題目");
+        if (selectedProblems.length === 0) throw new Error("請至少選擇一個題目");
 
         req = {
           candidateId: newUser.id,
@@ -159,8 +146,7 @@ export default function ExamCreatePage() {
           })),
         };
       } else {
-        const totalProblems =
-          distribution.easy + distribution.medium + distribution.hard;
+        const totalProblems = distribution.easy + distribution.medium + distribution.hard;
         if (totalProblems === 0) throw new Error("請至少在難度分佈中填寫一題");
 
         // 過濾掉為 0 的難度以符合 RandomDistribution 類型
@@ -180,10 +166,7 @@ export default function ExamCreatePage() {
       await createExamSession(req);
       navigate("/interviewer");
     } catch (err: any) {
-      const msg =
-        err.response?.data?.message ||
-        err.message ||
-        "建立失敗，請檢查資料正確性";
+      const msg = err.response?.data?.message || err.message || "建立失敗，請檢查資料正確性";
       setSubmitError(msg);
     } finally {
       setSubmitting(false);
@@ -197,8 +180,7 @@ export default function ExamCreatePage() {
   const totalScore =
     mode === "manual"
       ? selectedProblems.reduce((acc, sp) => acc + sp.scoreWeight, 0)
-      : (distribution.easy + distribution.medium + distribution.hard) *
-        randomScoreWeight;
+      : (distribution.easy + distribution.medium + distribution.hard) * randomScoreWeight;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -221,14 +203,12 @@ export default function ExamCreatePage() {
             <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
               <h2 className="font-medium text-slate-800">基本設定</h2>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  面試候選人
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">面試候選人</label>
                 {pendingUser ? (
                   <div className="flex items-center gap-3">
                     <div className="px-3 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-100 text-sm font-medium">
-                      待建立：{pendingUser.displayName || pendingUser.username}{" "}
-                      (@{pendingUser.username})
+                      待建立：{pendingUser.displayName || pendingUser.username} (@
+                      {pendingUser.username})
                     </div>
                     <button
                       onClick={openCreateUserModal}
@@ -271,9 +251,7 @@ export default function ExamCreatePage() {
                       key={m}
                       onClick={() => setMode(m)}
                       className={`px-3 py-1.5 transition-colors ${
-                        mode === m
-                          ? "bg-blue-600 text-white"
-                          : "text-slate-600 hover:bg-slate-50"
+                        mode === m ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"
                       }`}
                     >
                       {m === "manual" ? "手動選題" : "隨機派題"}
@@ -295,20 +273,13 @@ export default function ExamCreatePage() {
                             : "border-transparent text-slate-500 hover:text-slate-700"
                         }`}
                       >
-                        {t.label} (
-                        {
-                          problems.filter((p) => p.difficulty === t.value)
-                            .length
-                        }
-                        )
+                        {t.label} ({problems.filter((p) => p.difficulty === t.value).length})
                       </button>
                     ))}
                   </div>
                   <div className="space-y-1">
                     {filteredProblems.map((p) => {
-                      const sel = selectedProblems.find(
-                        (sp) => sp.problemId === p.id,
-                      );
+                      const sel = selectedProblems.find((sp) => sp.problemId === p.id);
                       return (
                         <div
                           key={p.id}
@@ -323,9 +294,7 @@ export default function ExamCreatePage() {
                           />
                           <div className="flex-1 text-sm text-slate-800">
                             {p.title}{" "}
-                            <span
-                              className={`text-xs ml-2 ${DIFF_COLOR[p.difficulty]}`}
-                            >
+                            <span className={`text-xs ml-2 ${DIFF_COLOR[p.difficulty]}`}>
                               {p.timeLimitMs}ms
                             </span>
                           </div>
@@ -335,12 +304,7 @@ export default function ExamCreatePage() {
                                 type="number"
                                 aria-label={`${p.title} 配分`}
                                 value={sel.scoreWeight}
-                                onChange={(e) =>
-                                  updateScoreWeight(
-                                    p.id,
-                                    Number(e.target.value),
-                                  )
-                                }
+                                onChange={(e) => updateScoreWeight(p.id, Number(e.target.value))}
                                 className="w-20 border border-slate-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
                               />
                               <span className="text-xs text-slate-500">分</span>
@@ -384,9 +348,7 @@ export default function ExamCreatePage() {
                       aria-label="每題配分"
                       min={1}
                       value={randomScoreWeight}
-                      onChange={(e) =>
-                        setRandomScoreWeight(Number(e.target.value))
-                      }
+                      onChange={(e) => setRandomScoreWeight(Number(e.target.value))}
                       className="w-24 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
@@ -398,14 +360,10 @@ export default function ExamCreatePage() {
             <div className="flex items-center justify-between bg-slate-100 rounded-xl p-5">
               <div>
                 <p className="text-xs text-slate-500 font-medium">預計總分</p>
-                <p className="text-2xl font-bold text-slate-800">
-                  {totalScore} pts
-                </p>
+                <p className="text-2xl font-bold text-slate-800">{totalScore} pts</p>
               </div>
               <div className="flex flex-col items-end gap-2">
-                {submitError && (
-                  <p className="text-xs text-red-500">{submitError}</p>
-                )}
+                {submitError && <p className="text-xs text-red-500">{submitError}</p>}
                 <button
                   type="button"
                   onClick={handleSubmit}
@@ -421,15 +379,8 @@ export default function ExamCreatePage() {
       </main>
 
       {/* 建立使用者帳號彈窗 */}
-      <Dialog
-        open={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        className="relative z-50"
-      >
-        <div
-          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
-          aria-hidden="true"
-        />
+      <Dialog open={isModalOpen} onClose={() => setIsModalOpen(false)} className="relative z-50">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" aria-hidden="true" />
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
             <DialogTitle className="text-lg font-bold text-slate-800 mb-5">
@@ -444,9 +395,7 @@ export default function ExamCreatePage() {
                   type="text"
                   aria-label="帳號"
                   value={modalForm.username}
-                  onChange={(e) =>
-                    setModalForm({ ...modalForm, username: e.target.value })
-                  }
+                  onChange={(e) => setModalForm({ ...modalForm, username: e.target.value })}
                   className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
@@ -482,9 +431,7 @@ export default function ExamCreatePage() {
                 <input
                   type="text"
                   value={modalForm.displayName}
-                  onChange={(e) =>
-                    setModalForm({ ...modalForm, displayName: e.target.value })
-                  }
+                  onChange={(e) => setModalForm({ ...modalForm, displayName: e.target.value })}
                   className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>

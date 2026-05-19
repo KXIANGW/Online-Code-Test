@@ -30,7 +30,6 @@ const TABS: { value: Tab; label: string }[] = [
   { value: "ended", label: "已結束" },
 ];
 
-
 function StatusBadge({ status }: { status: ExamStatus }) {
   return (
     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLOR[status]}`}>
@@ -92,8 +91,8 @@ export default function InterviewerDashboardPage() {
     activeTab === "all"
       ? results
       : activeTab === "ended"
-      ? results.filter((r) => r.status === "submitted" || r.status === "expired")
-      : results.filter((r) => r.status === activeTab);
+        ? results.filter((r) => r.status === "submitted" || r.status === "expired")
+        : results.filter((r) => r.status === activeTab);
 
   return (
     <div className="min-h-screen bg-slate-50">

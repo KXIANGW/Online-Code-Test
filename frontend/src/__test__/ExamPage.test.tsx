@@ -15,28 +15,28 @@ import type {
 import { mockSubmissions } from "./mock-data";
 
 // ── Hoisted mock factories ────────────────────────────────────────────────────
-const mockGetExamSession         = vi.hoisted(() => vi.fn());
+const mockGetExamSession = vi.hoisted(() => vi.fn());
 const mockGetExamSessionProblems = vi.hoisted(() => vi.fn());
-const mockGetLanguages           = vi.hoisted(() => vi.fn());
-const mockGetExamDrafts          = vi.hoisted(() => vi.fn());
-const mockSaveExamDraft          = vi.hoisted(() => vi.fn());
-const mockCreateSubmission       = vi.hoisted(() => vi.fn());
+const mockGetLanguages = vi.hoisted(() => vi.fn());
+const mockGetExamDrafts = vi.hoisted(() => vi.fn());
+const mockSaveExamDraft = vi.hoisted(() => vi.fn());
+const mockCreateSubmission = vi.hoisted(() => vi.fn());
 const mockListSessionSubmissions = vi.hoisted(() => vi.fn());
-const mockSubmitExamSession      = vi.hoisted(() => vi.fn());
-const mockGetPublicTestcases     = vi.hoisted(() => vi.fn());
-const mockUseJudgeSocket         = vi.hoisted(() => vi.fn());
-const mockNavigate               = vi.hoisted(() => vi.fn());
+const mockSubmitExamSession = vi.hoisted(() => vi.fn());
+const mockGetPublicTestcases = vi.hoisted(() => vi.fn());
+const mockUseJudgeSocket = vi.hoisted(() => vi.fn());
+const mockNavigate = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
-  getExamSession:         mockGetExamSession,
+  getExamSession: mockGetExamSession,
   getExamSessionProblems: mockGetExamSessionProblems,
-  getLanguages:           mockGetLanguages,
-  getExamDrafts:          mockGetExamDrafts,
-  saveExamDraft:          mockSaveExamDraft,
-  createSubmission:       mockCreateSubmission,
+  getLanguages: mockGetLanguages,
+  getExamDrafts: mockGetExamDrafts,
+  saveExamDraft: mockSaveExamDraft,
+  createSubmission: mockCreateSubmission,
   listSessionSubmissions: mockListSessionSubmissions,
-  submitExamSession:      mockSubmitExamSession,
-  getPublicTestcases:     mockGetPublicTestcases,
+  submitExamSession: mockSubmitExamSession,
+  getPublicTestcases: mockGetPublicTestcases,
 }));
 
 vi.mock("../hooks/useJudgeSocket", () => ({
@@ -74,9 +74,7 @@ vi.mock("react-markdown", () => ({
 vi.mock("remark-gfm", () => ({ default: () => ({}) }));
 
 vi.mock("../components/NavBar", () => ({
-  NavBar: ({ homeHref }: { homeHref: string }) => (
-    <nav data-testid="navbar" data-home={homeHref} />
-  ),
+  NavBar: ({ homeHref }: { homeHref: string }) => <nav data-testid="navbar" data-home={homeHref} />,
 }));
 
 // ── Local mock data (separate from mock-data.ts: tests expect "Binary Search") ─
@@ -161,9 +159,7 @@ async function renderExamPage(id = "42") {
       </Routes>
     </MemoryRouter>,
   );
-  await waitFor(() =>
-    expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-  );
+  await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
   return result;
 }
 
@@ -188,7 +184,10 @@ describe("ExamPage", () => {
       submittedAt: "2026-01-01T00:30:00.000Z",
     });
     mockCreateSubmission.mockImplementation(
-      async (_sessionId: number, { type }: { type: "simple" | "formal" }): Promise<SubmissionCreated> => ({
+      async (
+        _sessionId: number,
+        { type }: { type: "simple" | "formal" },
+      ): Promise<SubmissionCreated> => ({
         id: type === "simple" ? 9001 : 9002,
         examSessionProblemId: 101,
         language: "python3",
@@ -218,10 +217,7 @@ describe("ExamPage", () => {
     // given
     await renderExamPage();
     // when / expect
-    expect(screen.getByTestId("navbar")).toHaveAttribute(
-      "data-home",
-      "/candidate",
-    );
+    expect(screen.getByTestId("navbar")).toHaveAttribute("data-home", "/candidate");
   });
 
   it("renders problem tabs for all placeholder problems", async () => {
@@ -726,10 +722,7 @@ describe("ExamPage", () => {
     // when
     fireEvent.click(screen.getByRole("button", { name: "Run" }));
     // expect
-    expect(screen.getByRole("tab", { name: "執行結果" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(screen.getByRole("tab", { name: "執行結果" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("尚未執行")).toBeInTheDocument();
   });
 
@@ -768,10 +761,7 @@ describe("ExamPage", () => {
         type: "formal",
       }),
     );
-    expect(screen.getByRole("tab", { name: "提交記錄" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(screen.getByRole("tab", { name: "提交記錄" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("renders loaded submission history showing only formal submissions", async () => {
@@ -861,7 +851,12 @@ describe("ExamPage", () => {
   it("shows realtime public testcase results after judge_result arrives", async () => {
     // given — one public testcase loaded for problem 1 (espId 101)
     mockGetPublicTestcases.mockResolvedValue([
-      { id: 1, orderIndex: 1, inputData: "1 2", expectedOutput: "expected_3" } satisfies PublicTestcase,
+      {
+        id: 1,
+        orderIndex: 1,
+        inputData: "1 2",
+        expectedOutput: "expected_3",
+      } satisfies PublicTestcase,
     ]);
     await renderExamPage();
     await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 101));
@@ -914,7 +909,12 @@ describe("ExamPage", () => {
   it("fetches and displays public testcases for the active problem on mount", async () => {
     // given
     mockGetPublicTestcases.mockResolvedValue([
-      { id: 10, orderIndex: 1, inputData: "hello", expectedOutput: "world" } satisfies PublicTestcase,
+      {
+        id: 10,
+        orderIndex: 1,
+        inputData: "hello",
+        expectedOutput: "world",
+      } satisfies PublicTestcase,
     ]);
     // when
     await renderExamPage();
@@ -948,8 +948,18 @@ describe("ExamPage", () => {
   it("clicking a case button shows that case's content and hides the previous", async () => {
     // given — two public testcases for the active problem
     mockGetPublicTestcases.mockResolvedValue([
-      { id: 1, orderIndex: 1, inputData: "input_one", expectedOutput: "out_one" } satisfies PublicTestcase,
-      { id: 2, orderIndex: 2, inputData: "input_two", expectedOutput: "out_two" } satisfies PublicTestcase,
+      {
+        id: 1,
+        orderIndex: 1,
+        inputData: "input_one",
+        expectedOutput: "out_one",
+      } satisfies PublicTestcase,
+      {
+        id: 2,
+        orderIndex: 2,
+        inputData: "input_two",
+        expectedOutput: "out_two",
+      } satisfies PublicTestcase,
     ]);
     await renderExamPage();
     await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalledWith(42, 101));
@@ -1067,7 +1077,16 @@ describe("ExamPage", () => {
         submissionType: "simple",
         score: 0,
         testcaseResults: [
-          { id: 99, testcaseId: 1, orderIndex: 1, isPublic: true, verdict: "WA", runtimeMs: 10, memoryKb: 512, actualOutput: "wrong" },
+          {
+            id: 99,
+            testcaseId: 1,
+            orderIndex: 1,
+            isPublic: true,
+            verdict: "WA",
+            runtimeMs: 10,
+            memoryKb: 512,
+            actualOutput: "wrong",
+          },
         ],
       });
     });

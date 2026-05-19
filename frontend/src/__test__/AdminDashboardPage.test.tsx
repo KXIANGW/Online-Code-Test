@@ -105,9 +105,7 @@ describe("AdminDashboardPage()", () => {
 
     // expect
     await waitFor(() => {
-      expect(
-        screen.getByText("無法載入使用者清單，請稍後再試。"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("無法載入使用者清單，請稍後再試。")).toBeInTheDocument();
     });
   });
 
@@ -210,9 +208,7 @@ describe("AdminDashboardPage()", () => {
     const usernames = screen
       .getAllByRole("paragraph")
       .map((el) => el.textContent)
-      .filter((t) =>
-        ["root", "interviewer01", "setter01", "candidate01"].includes(t ?? ""),
-      );
+      .filter((t) => ["root", "interviewer01", "setter01", "candidate01"].includes(t ?? ""));
     expect(usernames).toEqual(["root", "interviewer01", "setter01", "candidate01"]);
   });
 
@@ -302,9 +298,7 @@ describe("AdminDashboardPage()", () => {
 
     // expect
     await waitFor(() => {
-      expect(window.alert).toHaveBeenCalledWith(
-        "刪除使用者失敗，請稍後再試。",
-      );
+      expect(window.alert).toHaveBeenCalledWith("刪除使用者失敗，請稍後再試。");
     });
   });
 
@@ -483,9 +477,7 @@ describe("AdminDashboardPage()", () => {
     await user.click(within(dialog).getByRole("button", { name: "儲存" }));
 
     // expect
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(mockUpdateUserRoles).toHaveBeenCalledWith(interviewer.id, [
       "interviewer",
       "problem_setter",
@@ -506,9 +498,7 @@ describe("AdminDashboardPage()", () => {
     await user.click(screen.getByRole("button", { name: "儲存" }));
 
     // expect
-    await waitFor(() =>
-      expect(window.alert).toHaveBeenCalledWith("更新角色失敗，請稍後再試。"),
-    );
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith("更新角色失敗，請稍後再試。"));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
@@ -528,9 +518,7 @@ describe("AdminDashboardPage()", () => {
 
     // expect
     await waitFor(() =>
-      expect(mockUpdateUserRoles).toHaveBeenCalledWith(multiRoleUser.id, [
-        "problem_setter",
-      ]),
+      expect(mockUpdateUserRoles).toHaveBeenCalledWith(multiRoleUser.id, ["problem_setter"]),
     );
   });
 

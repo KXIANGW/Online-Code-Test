@@ -22,9 +22,7 @@ function SectionCard({
       <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-100">
         <h2 className="font-medium text-slate-800">{title}</h2>
         {badge !== undefined && (
-          <span
-            className={`text-xs font-medium px-2 py-0.5 rounded-full ${badgeColor}`}
-          >
+          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${badgeColor}`}>
             {badge}
           </span>
         )}
@@ -53,14 +51,10 @@ function ExamSessionCard({
       <div>
         <p className="text-sm font-medium text-slate-800">考試 #{session.id}</p>
         {session.status === "in_progress" && session.expiresAt && (
-          <p className="text-xs text-slate-400 mt-0.5">
-            剩餘：{formatTimeLeft(timeLeft ?? 0)}
-          </p>
+          <p className="text-xs text-slate-400 mt-0.5">剩餘：{formatTimeLeft(timeLeft ?? 0)}</p>
         )}
         {session.status === "not_started" && (
-          <p className="text-xs text-slate-400 mt-0.5">
-            {session.durationMinutes} 分鐘
-          </p>
+          <p className="text-xs text-slate-400 mt-0.5">{session.durationMinutes} 分鐘</p>
         )}
         {(session.status === "submitted" || session.status === "expired") && (
           <p className="text-xs text-slate-400 mt-0.5">
@@ -96,9 +90,7 @@ export default function DashboardPage() {
 
   const inProgress = sessions.filter((s) => s.status === "in_progress");
   const pending = sessions.filter((s) => s.status === "not_started");
-  const history = sessions.filter(
-    (s) => s.status === "submitted" || s.status === "expired",
-  );
+  const history = sessions.filter((s) => s.status === "submitted" || s.status === "expired");
 
   useEffect(() => {
     getExamSessions().then((data) => setSessions(data));
@@ -129,31 +121,19 @@ export default function DashboardPage() {
       <NavBar homeHref="/dashboard" />
 
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-        <SectionCard
-          title="進行中"
-          badge={inProgress.length}
-          badgeColor="bg-blue-50 text-blue-600"
-        >
+        <SectionCard title="進行中" badge={inProgress.length} badgeColor="bg-blue-50 text-blue-600">
           {inProgress.length === 0 ? (
             <EmptyState message="目前沒有進行中的考試" />
           ) : (
-            inProgress.map((s) => (
-              <ExamSessionCard key={s.id} session={s} onStart={handleStart} />
-            ))
+            inProgress.map((s) => <ExamSessionCard key={s.id} session={s} onStart={handleStart} />)
           )}
         </SectionCard>
 
-        <SectionCard
-          title="待考"
-          badge={pending.length}
-          badgeColor="bg-amber-50 text-amber-600"
-        >
+        <SectionCard title="待考" badge={pending.length} badgeColor="bg-amber-50 text-amber-600">
           {pending.length === 0 ? (
             <EmptyState message="目前沒有待考的考試" />
           ) : (
-            pending.map((s) => (
-              <ExamSessionCard key={s.id} session={s} onStart={handleStart} />
-            ))
+            pending.map((s) => <ExamSessionCard key={s.id} session={s} onStart={handleStart} />)
           )}
         </SectionCard>
 
@@ -161,9 +141,7 @@ export default function DashboardPage() {
           {history.length === 0 ? (
             <EmptyState message="尚無歷史紀錄" />
           ) : (
-            history.map((s) => (
-              <ExamSessionCard key={s.id} session={s} onStart={handleStart} />
-            ))
+            history.map((s) => <ExamSessionCard key={s.id} session={s} onStart={handleStart} />)
           )}
         </SectionCard>
       </main>

@@ -66,9 +66,7 @@ export async function seedUser(data: SeedUser): Promise<number> {
       .where(inArray(roles.name, data.roleNames));
 
     if (roleRows.length > 0) {
-      await db.insert(userRoles).values(
-        roleRows.map((r) => ({ userId, roleId: r.id }))
-      );
+      await db.insert(userRoles).values(roleRows.map((r) => ({ userId, roleId: r.id })));
     }
   }
 
@@ -78,7 +76,7 @@ export async function seedUser(data: SeedUser): Promise<number> {
 export async function loginAs(
   app: FastifyInstance,
   username: string,
-  password: string
+  password: string,
 ): Promise<string> {
   const res = await app.inject({
     method: "POST",

@@ -6,10 +6,10 @@ import ProblemSetterDashboardPage from "../pages/ProblemSetterDashboardPage";
 import { mockProblemSummaries } from "./mock-data";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
-const mockNavigate    = vi.hoisted(() => vi.fn());
-const mockLogout      = vi.hoisted(() => vi.fn());
+const mockNavigate = vi.hoisted(() => vi.fn());
+const mockLogout = vi.hoisted(() => vi.fn());
 const mockUseAuthStore = vi.hoisted(() => vi.fn());
-const mockGetProblems  = vi.hoisted(() => vi.fn());
+const mockGetProblems = vi.hoisted(() => vi.fn());
 const mockDeleteProblem = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -18,15 +18,21 @@ vi.mock("react-router-dom", async (importOriginal) => {
 });
 vi.mock("../stores/authStore", () => ({ useAuthStore: mockUseAuthStore }));
 vi.mock("../api/client", () => ({
-  getProblems:   mockGetProblems,
+  getProblems: mockGetProblems,
   deleteProblem: mockDeleteProblem,
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function setupAuthStore(username = "setter01") {
   mockUseAuthStore.mockImplementation((sel: (s: object) => unknown) =>
-    sel({ token: "tok", username, login: vi.fn(), logout: mockLogout,
-          isSuperuser: false, permissions: ["problem:manage"] })
+    sel({
+      token: "tok",
+      username,
+      login: vi.fn(),
+      logout: mockLogout,
+      isSuperuser: false,
+      permissions: ["problem:manage"],
+    }),
   );
 }
 
@@ -34,7 +40,7 @@ function renderPage() {
   return render(
     <MemoryRouter>
       <ProblemSetterDashboardPage />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
@@ -83,9 +89,7 @@ describe("ProblemSetterDashboardPage()", () => {
     renderPage();
 
     // expect
-    await waitFor(() =>
-      expect(screen.getByText("無符合條件的題目")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText("無符合條件的題目")).toBeInTheDocument());
   });
 
   it("shows error message when API rejects", async () => {
@@ -98,7 +102,7 @@ describe("ProblemSetterDashboardPage()", () => {
 
     // expect
     await waitFor(() =>
-      expect(screen.getByText("無法載入題目列表，請稍後再試。")).toBeInTheDocument()
+      expect(screen.getByText("無法載入題目列表，請稍後再試。")).toBeInTheDocument(),
     );
   });
 
@@ -248,9 +252,7 @@ describe("ProblemSetterDashboardPage()", () => {
     await user.click(screen.getByRole("button", { name: "刪除" }));
 
     // expect
-    await waitFor(() =>
-      expect(screen.queryByText("Two Sum")).not.toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.queryByText("Two Sum")).not.toBeInTheDocument());
     expect(mockDeleteProblem).toHaveBeenCalledWith(1);
   });
 

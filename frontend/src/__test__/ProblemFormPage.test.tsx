@@ -127,16 +127,11 @@ describe("ProblemFormPage()", () => {
       renderCreate();
 
       // when
-      await user.type(
-        screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
-        "## Hello World",
-      );
+      await user.type(screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."), "## Hello World");
       await user.click(screen.getByRole("button", { name: "預覽" }));
 
       // expect
-      expect(
-        screen.getByRole("heading", { level: 2, name: "Hello World" }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: "Hello World" })).toBeInTheDocument();
     });
 
     it("preview renders `inline code` as a <code> element without literal backticks", async () => {
@@ -146,10 +141,7 @@ describe("ProblemFormPage()", () => {
       renderCreate();
 
       // when
-      await user.type(
-        screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
-        "`abc`",
-      );
+      await user.type(screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."), "`abc`");
       await user.click(screen.getByRole("button", { name: "預覽" }));
 
       // expect — backtick syntax is stripped; only the content text appears in the DOM
@@ -166,16 +158,11 @@ describe("ProblemFormPage()", () => {
       renderCreate();
 
       // when
-      await user.type(
-        screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
-        "**bold text**",
-      );
+      await user.type(screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."), "**bold text**");
       await user.click(screen.getByRole("button", { name: "預覽" }));
 
       // expect
-      expect(screen.getByText("bold text").tagName.toLowerCase()).toBe(
-        "strong",
-      );
+      expect(screen.getByText("bold text").tagName.toLowerCase()).toBe("strong");
     });
 
     it("preview shows placeholder text when description is empty", async () => {
@@ -198,9 +185,7 @@ describe("ProblemFormPage()", () => {
       renderCreate();
 
       // when — single Enter between two lines (no blank line)
-      const textarea = screen.getByPlaceholderText(
-        "以 Markdown 撰寫題目描述...",
-      );
+      const textarea = screen.getByPlaceholderText("以 Markdown 撰寫題目描述...");
       await user.type(textarea, "Input: 1 2 3{Enter}Output: 0 1");
       await user.click(screen.getByRole("button", { name: "預覽" }));
 
@@ -214,17 +199,13 @@ describe("ProblemFormPage()", () => {
       setupAuthStore();
       renderCreate();
       await user.click(screen.getByRole("button", { name: "預覽" }));
-      expect(
-        screen.queryByPlaceholderText("以 Markdown 撰寫題目描述..."),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText("以 Markdown 撰寫題目描述...")).not.toBeInTheDocument();
 
       // when
       await user.click(screen.getByRole("button", { name: "編輯" }));
 
       // expect
-      expect(
-        screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
-      ).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("以 Markdown 撰寫題目描述...")).toBeInTheDocument();
     });
 
     it("renders 測試資料 section with + 新增測資 button", () => {
@@ -236,9 +217,7 @@ describe("ProblemFormPage()", () => {
 
       // expect
       expect(screen.getByText("測試資料")).toBeInTheDocument();
-      expect(
-        screen.getByRole("button", { name: "+ 新增測資" }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "+ 新增測資" })).toBeInTheDocument();
     });
 
     it("cancel button navigates to /problem-setter", async () => {
@@ -280,10 +259,7 @@ describe("ProblemFormPage()", () => {
       renderCreate();
 
       // when
-      await user.type(
-        screen.getByPlaceholderText("輸入題目名稱"),
-        "New Problem",
-      );
+      await user.type(screen.getByPlaceholderText("輸入題目名稱"), "New Problem");
       await user.click(screen.getByRole("radio", { name: "hard" }));
       await user.click(screen.getByRole("button", { name: "儲存題目" }));
 
@@ -356,17 +332,12 @@ describe("ProblemFormPage()", () => {
       renderCreate();
 
       // when
-      await user.type(
-        screen.getByPlaceholderText("輸入題目名稱"),
-        "Fail Problem",
-      );
+      await user.type(screen.getByPlaceholderText("輸入題目名稱"), "Fail Problem");
       await user.click(screen.getByRole("button", { name: "儲存題目" }));
 
       // expect — alert starts with "儲存失敗：" and includes the error detail
       await waitFor(() =>
-        expect(window.alert).toHaveBeenCalledWith(
-          expect.stringContaining("儲存失敗："),
-        ),
+        expect(window.alert).toHaveBeenCalledWith(expect.stringContaining("儲存失敗：")),
       );
       expect(mockNavigate).not.toHaveBeenCalledWith("/problem-setter");
     });
@@ -383,9 +354,7 @@ describe("ProblemFormPage()", () => {
       renderEdit(1);
 
       // expect
-      await waitFor(() =>
-        expect(screen.getByText("編輯題目")).toBeInTheDocument(),
-      );
+      await waitFor(() => expect(screen.getByText("編輯題目")).toBeInTheDocument());
     });
 
     it("populates form fields with problem data from API", async () => {
@@ -455,9 +424,7 @@ describe("ProblemFormPage()", () => {
 
       // expect
       await waitFor(() =>
-        expect(
-          screen.getByText("無法載入題目，請稍後再試。"),
-        ).toBeInTheDocument(),
+        expect(screen.getByText("無法載入題目，請稍後再試。")).toBeInTheDocument(),
       );
     });
   });

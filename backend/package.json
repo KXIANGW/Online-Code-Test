@@ -13,7 +13,9 @@
     "test": "vitest run",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\""
   },
   "dependencies": {
     "@fastify/jwt": "^8.0.1",
@@ -35,6 +37,7 @@
     "@types/node": "^20.14.10",
     "@types/pg": "^8.11.6",
     "drizzle-kit": "^0.24.0",
+    "prettier": "3.5.3",
     "tsx": "^4.16.2",
     "typescript": "^5.5.3",
     "vitest": "^2.0.3"

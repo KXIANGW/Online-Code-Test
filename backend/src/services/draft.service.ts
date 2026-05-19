@@ -37,8 +37,8 @@ export async function saveDraft(
       examSessionProblems,
       and(
         eq(examSessionProblems.examSessionId, examSessions.id),
-        eq(examSessionProblems.problemId, problemId)
-      )
+        eq(examSessionProblems.problemId, problemId),
+      ),
     )
     .where(eq(examSessions.id, sessionId));
 

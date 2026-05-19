@@ -57,9 +57,7 @@ function TestcaseCard({
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-slate-700">
-          測資 #{row.orderIndex + 1}
-        </p>
+        <p className="text-sm font-medium text-slate-700">測資 #{row.orderIndex + 1}</p>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -103,9 +101,7 @@ function TestcaseCard({
             className="w-full rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-500 hover:border-blue-400 hover:text-blue-600 transition"
           >
             {row.inputFileName ? (
-              <span className="text-slate-700 font-medium">
-                {row.inputFileName}
-              </span>
+              <span className="text-slate-700 font-medium">{row.inputFileName}</span>
             ) : (
               "點擊上傳 .in 檔"
             )}
@@ -137,9 +133,7 @@ function TestcaseCard({
             className="w-full rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-500 hover:border-blue-400 hover:text-blue-600 transition"
           >
             {row.outputFileName ? (
-              <span className="text-slate-700 font-medium">
-                {row.outputFileName}
-              </span>
+              <span className="text-slate-700 font-medium">{row.outputFileName}</span>
             ) : (
               "點擊上傳 .out 檔"
             )}
@@ -186,47 +180,33 @@ export default function ProblemFormPage() {
         setTimeLimitMs(problem.timeLimitMs);
         setMemoryLimitMb(problem.memoryLimitMb);
         setDescriptionMd(problem.descriptionMd);
-        const rows: TestcaseRow[] = (problem.testcases as Testcase[]).map(
-          (tc) => ({
-            id: tc.id,
-            orderIndex: tc.orderIndex,
-            isPublic: tc.isPublic,
-            inputData: tc.inputData ?? "",
-            outputData: tc.expectedOutput ?? "",
-          }),
-        );
+        const rows: TestcaseRow[] = (problem.testcases as Testcase[]).map((tc) => ({
+          id: tc.id,
+          orderIndex: tc.orderIndex,
+          isPublic: tc.isPublic,
+          inputData: tc.inputData ?? "",
+          outputData: tc.expectedOutput ?? "",
+        }));
         setTestcases(rows);
-        setOriginalTcIds(
-          new Set(rows.filter((r) => r.id !== undefined).map((r) => r.id!)),
-        );
+        setOriginalTcIds(new Set(rows.filter((r) => r.id !== undefined).map((r) => r.id!)));
       })
       .catch(() => setLoadError(true));
   }, [id, isEdit]);
 
   function addTestcaseRow() {
     setTestcases((prev) => {
-      const nextOrder =
-        prev.length === 0 ? 0 : Math.max(...prev.map((tc) => tc.orderIndex)) + 1;
-      return [
-        ...prev,
-        { orderIndex: nextOrder, isPublic: false, inputData: "", outputData: "" },
-      ];
+      const nextOrder = prev.length === 0 ? 0 : Math.max(...prev.map((tc) => tc.orderIndex)) + 1;
+      return [...prev, { orderIndex: nextOrder, isPublic: false, inputData: "", outputData: "" }];
     });
   }
 
   function togglePublic(index: number) {
     setTestcases((prev) =>
-      prev.map((tc, i) =>
-        i === index ? { ...tc, isPublic: !tc.isPublic } : tc,
-      ),
+      prev.map((tc, i) => (i === index ? { ...tc, isPublic: !tc.isPublic } : tc)),
     );
   }
 
-  async function handleFileUpload(
-    index: number,
-    field: "input" | "output",
-    file: File,
-  ) {
+  async function handleFileUpload(index: number, field: "input" | "output", file: File) {
     const text = await readFileAsText(file);
     setTestcases((prev) =>
       prev.map((tc, i) => {
@@ -319,9 +299,7 @@ export default function ProblemFormPage() {
       <div className="min-h-screen bg-slate-50">
         <NavBar homeHref="/problem-setter" />
         <main className="max-w-3xl mx-auto px-4 py-8">
-          <p className="text-sm text-red-500 text-center py-12">
-            無法載入題目，請稍後再試。
-          </p>
+          <p className="text-sm text-red-500 text-center py-12">無法載入題目，請稍後再試。</p>
         </main>
       </div>
     );
@@ -349,9 +327,7 @@ export default function ProblemFormPage() {
             <h2 className="text-base font-semibold text-slate-800">基本資訊</h2>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                題目名稱
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">題目名稱</label>
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -413,9 +389,7 @@ export default function ProblemFormPage() {
           {/* ── 題目描述 ── */}
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-800">
-                題目描述
-              </h2>
+              <h2 className="text-base font-semibold text-slate-800">題目描述</h2>
               <div className="flex rounded-xl border border-slate-200 overflow-hidden text-sm">
                 <button
                   type="button"
@@ -466,18 +440,12 @@ export default function ProblemFormPage() {
           {/* ── 測試資料 ── */}
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-800">
-                測試資料
-              </h2>
-              <span className="text-sm text-slate-500">
-                {testcases.length} 筆
-              </span>
+              <h2 className="text-base font-semibold text-slate-800">測試資料</h2>
+              <span className="text-sm text-slate-500">{testcases.length} 筆</span>
             </div>
 
             {testcases.length === 0 && (
-              <p className="text-sm text-slate-400 text-center py-4">
-                尚未新增測資
-              </p>
+              <p className="text-sm text-slate-400 text-center py-4">尚未新增測資</p>
             )}
 
             <div className="space-y-3">
@@ -486,9 +454,7 @@ export default function ProblemFormPage() {
                   key={i}
                   row={tc}
                   onTogglePublic={() => togglePublic(i)}
-                  onFileUpload={(field, file) =>
-                    handleFileUpload(i, field, file)
-                  }
+                  onFileUpload={(field, file) => handleFileUpload(i, field, file)}
                   onDelete={() => removeTestcase(i)}
                 />
               ))}

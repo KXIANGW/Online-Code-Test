@@ -13,7 +13,7 @@ const USERNAME_KEY = "oct_username";
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function makeToken(payload: object): string {
   const header = btoa(JSON.stringify({ alg: "HS256" }));
-  const body   = btoa(JSON.stringify(payload));
+  const body = btoa(JSON.stringify(payload));
   return `${header}.${body}.sig`;
 }
 
@@ -118,7 +118,10 @@ describe("useAuthStore", () => {
       mockApiLogin.mockRejectedValue(new Error("Unauthorized"));
 
       // when
-      await useAuthStore.getState().login("wrong", "wrong").catch(() => {});
+      await useAuthStore
+        .getState()
+        .login("wrong", "wrong")
+        .catch(() => {});
 
       // expect
       expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull();

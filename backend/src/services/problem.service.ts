@@ -1,5 +1,10 @@
 import { db } from "../db/client";
-import { problems, problemTestcases, examSessionProblems, problemLanguageLimits } from "../db/schema";
+import {
+  problems,
+  problemTestcases,
+  examSessionProblems,
+  problemLanguageLimits,
+} from "../db/schema";
 import { eq, isNull, sql } from "drizzle-orm";
 import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
@@ -121,54 +126,67 @@ export async function createProblem(
     timeLimitMs: number;
     memoryLimitMb: number;
     outputLimitKb?: number;
-    testcases?: { orderIndex: number; isPublic: boolean; inputData: string; expectedOutput: string }[];
+    testcases?: {
+      orderIndex: number;
+      isPublic: boolean;
+      inputData: string;
+      expectedOutput: string;
+    }[];
     languageLimits?: { language: string; timeMultiplier: number; memoryMultiplier: number }[];
-  }
+  },
 ) {
   requireProblemManage(currentUser);
 
-  assertUniqueValues(data.testcases?.map((tc) => tc.orderIndex) ?? [], "Duplicate testcase orderIndex");
-  assertUniqueValues(data.languageLimits?.map((ll) => ll.language) ?? [], "Duplicate language limit");
+  assertUniqueValues(
+    data.testcases?.map((tc) => tc.orderIndex) ?? [],
+    "Duplicate testcase orderIndex",
+  );
+  assertUniqueValues(
+    data.languageLimits?.map((ll) => ll.language) ?? [],
+    "Duplicate language limit",
+  );
 
-  const problem = await db.transaction(async (tx) => {
-    const problemRows = await tx
-      .insert(problems)
-      .values({
-        title: data.title,
-        descriptionMd: data.descriptionMd,
-        difficulty: data.difficulty,
-        timeLimitMs: data.timeLimitMs,
-        memoryLimitMb: data.memoryLimitMb,
-        outputLimitKb: data.outputLimitKb ?? 64,
-        createdBy: currentUser.id,
-      })
-      .returning();
+  const problem = await db
+    .transaction(async (tx) => {
+      const problemRows = await tx
+        .insert(problems)
+        .values({
+          title: data.title,
+          descriptionMd: data.descriptionMd,
+          difficulty: data.difficulty,
+          timeLimitMs: data.timeLimitMs,
+          memoryLimitMb: data.memoryLimitMb,
+          outputLimitKb: data.outputLimitKb ?? 64,
+          createdBy: currentUser.id,
+        })
+        .returning();
 
-    const created = problemRows[0]!;
+      const created = problemRows[0]!;
 
-    if (data.testcases && data.testcases.length > 0) {
-      await tx.insert(problemTestcases).values(
-        data.testcases.map((tc) => ({ ...tc, problemId: created.id }))
-      );
-    }
+      if (data.testcases && data.testcases.length > 0) {
+        await tx
+          .insert(problemTestcases)
+          .values(data.testcases.map((tc) => ({ ...tc, problemId: created.id })));
+      }
 
-    if (data.languageLimits && data.languageLimits.length > 0) {
-      await tx.insert(problemLanguageLimits).values(
-        data.languageLimits.map((ll) => ({
-          problemId: created.id,
-          language: ll.language,
-          timeMultiplier: String(ll.timeMultiplier),
-          memoryMultiplier: String(ll.memoryMultiplier),
-        }))
-      );
-    }
+      if (data.languageLimits && data.languageLimits.length > 0) {
+        await tx.insert(problemLanguageLimits).values(
+          data.languageLimits.map((ll) => ({
+            problemId: created.id,
+            language: ll.language,
+            timeMultiplier: String(ll.timeMultiplier),
+            memoryMultiplier: String(ll.memoryMultiplier),
+          })),
+        );
+      }
 
-    return created;
-  }).catch((err: unknown) => {
-    if (isPgErrorCode(err, "23503")) throw BadRequestError("Unknown language or user");
-    if (isPgErrorCode(err, "23505")) throw ConflictError("Duplicate problem data");
-    throw err;
-  });
+      return created;
+    })
+    .catch((err: unknown) => {
+      if (isPgErrorCode(err, "23503")) throw BadRequestError("Unknown language or user");
+      if (isPgErrorCode(err, "23505")) throw ConflictError("Duplicate problem data");
+      throw err;
+    });
 
   cacheDel("problems:list").catch(() => {});
   return problem;
@@ -185,10 +203,7 @@ export async function getProblem(currentUser: CurrentUser, id: number) {
     return sanitizeProblemCache(cached, currentUser);
   }
 
-  const [problem] = await db
-    .select()
-    .from(problems)
-    .where(eq(problems.id, id));
+  const [problem] = await db.select().from(problems).where(eq(problems.id, id));
 
   if (!problem || problem.deletedAt !== null) throw NotFoundError("problem");
 
@@ -234,7 +249,7 @@ export async function updateProblem(
     timeLimitMs: number;
     memoryLimitMb: number;
     outputLimitKb: number;
-  }>
+  }>,
 ) {
   requireProblemManage(currentUser);
 
@@ -274,10 +289,7 @@ export async function deleteProblem(currentUser: CurrentUser, id: number) {
     throw ConflictError("Cannot delete problem: it is referenced by exam sessions");
   }
 
-  await db
-    .update(problems)
-    .set({ deletedAt: new Date() })
-    .where(eq(problems.id, id));
+  await db.update(problems).set({ deletedAt: new Date() }).where(eq(problems.id, id));
 
   cacheDel("problems:list", `problem:${id}:raw`).catch(() => {});
 }
@@ -285,7 +297,7 @@ export async function deleteProblem(currentUser: CurrentUser, id: number) {
 export async function addTestcase(
   currentUser: CurrentUser,
   problemId: number,
-  data: { orderIndex: number; isPublic: boolean; inputData: string; expectedOutput: string }
+  data: { orderIndex: number; isPublic: boolean; inputData: string; expectedOutput: string },
 ) {
   requireProblemManage(currentUser);
 
@@ -313,14 +325,16 @@ export async function updateTestcase(
   currentUser: CurrentUser,
   problemId: number,
   tcId: number,
-  data: Partial<{ orderIndex: number; isPublic: boolean; inputData: string; expectedOutput: string }>
+  data: Partial<{
+    orderIndex: number;
+    isPublic: boolean;
+    inputData: string;
+    expectedOutput: string;
+  }>,
 ) {
   requireProblemManage(currentUser);
 
-  const [tc] = await db
-    .select()
-    .from(problemTestcases)
-    .where(eq(problemTestcases.id, tcId));
+  const [tc] = await db.select().from(problemTestcases).where(eq(problemTestcases.id, tcId));
 
   if (!tc || tc.problemId !== problemId) throw NotFoundError("testcase");
 
@@ -338,17 +352,10 @@ export async function updateTestcase(
   return updated;
 }
 
-export async function deleteTestcase(
-  currentUser: CurrentUser,
-  problemId: number,
-  tcId: number
-) {
+export async function deleteTestcase(currentUser: CurrentUser, problemId: number, tcId: number) {
   requireProblemManage(currentUser);
 
-  const [tc] = await db
-    .select()
-    .from(problemTestcases)
-    .where(eq(problemTestcases.id, tcId));
+  const [tc] = await db.select().from(problemTestcases).where(eq(problemTestcases.id, tcId));
 
   if (!tc || tc.problemId !== problemId) throw NotFoundError("testcase");
 
@@ -359,7 +366,7 @@ export async function deleteTestcase(
 export async function setProblemLanguageLimits(
   currentUser: CurrentUser,
   problemId: number,
-  limits: { language: string; timeMultiplier: number; memoryMultiplier: number }[]
+  limits: { language: string; timeMultiplier: number; memoryMultiplier: number }[],
 ) {
   requireProblemManage(currentUser);
 
@@ -373,18 +380,24 @@ export async function setProblemLanguageLimits(
   await db.delete(problemLanguageLimits).where(eq(problemLanguageLimits.problemId, problemId));
 
   if (limits.length > 0) {
-    assertUniqueValues(limits.map((ll) => ll.language), "Duplicate language limit");
-    await db.insert(problemLanguageLimits).values(
-      limits.map((ll) => ({
-        problemId,
-        language: ll.language,
-        timeMultiplier: String(ll.timeMultiplier),
-        memoryMultiplier: String(ll.memoryMultiplier),
-      }))
-    ).catch((err: unknown) => {
-      if (isPgErrorCode(err, "23503")) throw BadRequestError("Unknown language");
-      throw err;
-    });
+    assertUniqueValues(
+      limits.map((ll) => ll.language),
+      "Duplicate language limit",
+    );
+    await db
+      .insert(problemLanguageLimits)
+      .values(
+        limits.map((ll) => ({
+          problemId,
+          language: ll.language,
+          timeMultiplier: String(ll.timeMultiplier),
+          memoryMultiplier: String(ll.memoryMultiplier),
+        })),
+      )
+      .catch((err: unknown) => {
+        if (isPgErrorCode(err, "23503")) throw BadRequestError("Unknown language");
+        throw err;
+      });
   }
 
   cacheDel(`problem:${problemId}:raw`).catch(() => {});

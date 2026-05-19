@@ -33,7 +33,11 @@ export const handlers = [
   }),
 
   http.post(`${BASE}/users`, async ({ request }) => {
-    const body = (await request.json()) as { username: string; displayName?: string; roleNames?: string[] };
+    const body = (await request.json()) as {
+      username: string;
+      displayName?: string;
+      roleNames?: string[];
+    };
     const created: UserSummary = {
       id: Date.now(),
       username: body.username,
@@ -84,12 +88,17 @@ export const handlers = [
     if (session.status !== "not_started") {
       return HttpResponse.json(
         { message: `Cannot start exam session: current status is '${session.status}'` },
-        { status: 409 }
+        { status: 409 },
       );
     }
     const now = new Date().toISOString();
     const expires = new Date(Date.now() + session.durationMinutes * 60 * 1000).toISOString();
-    return HttpResponse.json({ ...session, status: "in_progress", actualStartAt: now, expiresAt: expires });
+    return HttpResponse.json({
+      ...session,
+      status: "in_progress",
+      actualStartAt: now,
+      expiresAt: expires,
+    });
   }),
 
   http.post(`${BASE}/exam-sessions/:id/cancel`, ({ params }) => {
@@ -137,7 +146,11 @@ export const handlers = [
     }
     const summary = mockSubmissions.find((s) => s.id === id);
     if (!summary) return HttpResponse.json({ message: "Not found" }, { status: 404 });
-    return HttpResponse.json({ ...summary, sourceCode: "# (source not available in mock)", testcaseResults: [] });
+    return HttpResponse.json({
+      ...summary,
+      sourceCode: "# (source not available in mock)",
+      testcaseResults: [],
+    });
   }),
 
   // ── Session Result ─────────────────────────────────────────────────────────

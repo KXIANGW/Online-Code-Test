@@ -51,8 +51,8 @@ export const mockProblemDetail: Problem = {
   updatedAt: "2026-01-01T00:00:00.000Z",
   deletedAt: null,
   testcases: [
-    { id: 10, orderIndex: 0, isPublic: true,  inputData: "2 7 11 15\n9", expectedOutput: "0 1" },
-    { id: 11, orderIndex: 1, isPublic: false, inputData: "3 2 4\n6",    expectedOutput: "1 2" },
+    { id: 10, orderIndex: 0, isPublic: true, inputData: "2 7 11 15\n9", expectedOutput: "0 1" },
+    { id: 11, orderIndex: 1, isPublic: false, inputData: "3 2 4\n6", expectedOutput: "1 2" },
   ],
   languageLimits: [],
 };
@@ -180,7 +180,7 @@ Output: [1, 2]
     outputLimitKb: 64,
     languageLimits: [
       { language: "python3", timeMultiplier: "2.00", memoryMultiplier: "1.50" },
-      { language: "java21",  timeMultiplier: "2.00", memoryMultiplier: "2.00" },
+      { language: "java21", timeMultiplier: "2.00", memoryMultiplier: "2.00" },
     ],
   },
   {
@@ -234,11 +234,11 @@ Output: false
 
 // ── Exam Sessions ─────────────────────────────────────────────────────────────
 // Fixed ISO timestamps so snapshots are deterministic
-const T_30MIN_AGO  = "2026-05-10T07:30:00.000Z";
-const T_IN_1H      = "2026-05-10T09:00:00.000Z";
-const T_YESTERDAY  = "2026-05-09T08:00:00.000Z";
-const T_2DAYS_AGO  = "2026-05-08T08:00:00.000Z";
-const T_2DAYS_END  = "2026-05-08T09:30:00.000Z";
+const T_30MIN_AGO = "2026-05-10T07:30:00.000Z";
+const T_IN_1H = "2026-05-10T09:00:00.000Z";
+const T_YESTERDAY = "2026-05-09T08:00:00.000Z";
+const T_2DAYS_AGO = "2026-05-08T08:00:00.000Z";
+const T_2DAYS_END = "2026-05-08T09:30:00.000Z";
 
 export const mockExamSessions: ExamSession[] = [
   {
@@ -305,7 +305,7 @@ export const mockSubmissions: SubmissionSummary[] = [
     runtimeMs: 24,
     memoryKb: 4096,
     submittedAt: "2026-05-10T07:35:00.000Z",
-    judgedAt:    "2026-05-10T07:35:03.000Z",
+    judgedAt: "2026-05-10T07:35:03.000Z",
     score: 0,
     scoreWeight: 50,
     isFinalSubmission: false,
@@ -323,7 +323,7 @@ export const mockSubmissions: SubmissionSummary[] = [
     runtimeMs: 42,
     memoryKb: 8192,
     submittedAt: "2026-05-10T07:45:00.000Z",
-    judgedAt:    "2026-05-10T07:45:02.000Z",
+    judgedAt: "2026-05-10T07:45:02.000Z",
     score: 50,
     scoreWeight: 50,
     isFinalSubmission: true,
@@ -401,7 +401,7 @@ export const mockSessionResult: SessionResult = {
       runtimeMs: 42,
       memoryKb: 8192,
       submittedAt: "2026-05-10T07:45:00.000Z",
-      judgedAt:    "2026-05-10T07:45:02.000Z",
+      judgedAt: "2026-05-10T07:45:02.000Z",
     },
     {
       examSessionProblemId: 102,
@@ -423,7 +423,8 @@ export const mockSessionResult: SessionResult = {
 };
 
 // ── Reference: current mock user for token-based lookup ──────────────────────
-export const mockTokenUserMap: Record<string, typeof mockUsers.candidate | typeof mockUsers.admin> = {
-  [mockTokens["candidate01"]]: mockUsers.candidate,
-  [mockTokens["admin"]]:       mockUsers.admin,
-};
+export const mockTokenUserMap: Record<string, typeof mockUsers.candidate | typeof mockUsers.admin> =
+  {
+    [mockTokens["candidate01"]]: mockUsers.candidate,
+    [mockTokens["admin"]]: mockUsers.admin,
+  };
