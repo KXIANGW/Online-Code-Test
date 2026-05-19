@@ -35,9 +35,24 @@ make ps
 | 後端 Prometheus metrics | <http://localhost:3000/api/metrics> |
 | RabbitMQ Management UI | <http://localhost:15672> (`oct` / `oct_dev_password`) |
 | PostgreSQL | `localhost:5432` |
+| Adminer（DB 視覺化）| <http://localhost:8082>|
 | Prometheus | <http://localhost:9090> |
 | Grafana | <http://localhost:3001> (`admin` / `oct_dev_grafana`；匿名 viewer 已開放）|
 | cAdvisor | <http://localhost:8081> |
+
+### Adminer — PostgreSQL 視覺化管理
+
+開啟 <http://localhost:8082>，填入以下連線資訊即可瀏覽 / 查詢所有資料表：
+
+| 欄位 | 值 |
+|------|----|
+| System | PostgreSQL |
+| Server | `postgres` |
+| Username | `oct` |
+| Password | `oct_dev_password_change_me` |
+| Database | `oct` |
+
+> 密碼以 `.env` 中的 `POSTGRES_PASSWORD` 為準。
 
 如果本機尚未安裝 gVisor，可在 `.env` 暫時改用普通 Docker runtime：
 
@@ -83,6 +98,7 @@ make demo-urls       # 列出 Grafana / Prometheus / RabbitMQ 等入口
 | `prometheus` | 抓取 backend / worker / cadvisor / rabbitmq metrics | 9090 |
 | `grafana` | 自動載入「OCT Demo — 100 concurrent」13-panel dashboard | 3001 |
 | `cadvisor` | Container CPU / memory 即時監控（供 KEDA scaling 用） | 8081 |
+| `adminer` | PostgreSQL 視覺化管理介面 | 8082 |
 
 ## 判題流程
 
@@ -112,6 +128,7 @@ make demo-urls       # 列出 Grafana / Prometheus / RabbitMQ 等入口
 | `HOST_GRAFANA_PORT` | `3001` | Grafana host port |
 | `HOST_CADVISOR_PORT` | `8081` | cAdvisor host port |
 | `GRAFANA_PASSWORD` | `oct_dev_grafana` | Grafana admin 密碼 |
+| `HOST_ADMINER_PORT` | `8082` | Adminer host port |
 | `HOST_*_PORT` | 見 `.env.example` | 其餘 host port mapping |
 
 ## 測試與排錯

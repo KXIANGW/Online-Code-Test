@@ -122,6 +122,15 @@ services:
       timeout: 5s
       retries: 6
 
+  adminer:
+    image: adminer:5.4.2
+    restart: unless-stopped
+    ports:
+      - "${HOST_ADMINER_PORT:-8082}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   prometheus:
     image: prom/prometheus:v2.55.0
     restart: unless-stopped
