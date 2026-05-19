@@ -57,8 +57,8 @@ psql:
 	docker compose exec -it postgres psql -U $${POSTGRES_USER:-oct} -d $${POSTGRES_DB:-oct}
 
 test:
-	cd backend && npm run lint && npm test
-	cd frontend && npm run lint && npm test && npm run build
+	cd backend && npm run format:check && npm run lint && npm test
+	cd frontend && npm run format:check && npm run lint && npm test && npm run build
 
 sandbox-images:
 	$(MAKE) -C worker build-sandbox-images
