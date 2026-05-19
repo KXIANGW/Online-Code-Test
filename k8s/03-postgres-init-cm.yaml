@@ -1,0 +1,882 @@
+apiVersion: v1
+data:
+  00-extensions.sql: |
+    -- Runs first on a fresh data volume. All other scripts depend on pgcrypto.
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+  01-enums.sql: |
+    -- 5 custom enum types used across all modules
+    CREATE TYPE difficulty_level AS ENUM ('easy', 'medium', 'hard');
+
+    CREATE TYPE exam_status AS ENUM (
+      'not_started',
+      'in_progress',
+      'submitted',
+      'expired',
+      'cancelled'
+    );
+
+    CREATE TYPE submission_status AS ENUM (
+      'pending',
+      'judging',
+      'done',
+      'system_error'
+    );
+
+    CREATE TYPE submission_type AS ENUM (
+      'simple',
+      'formal'
+    );
+
+    CREATE TYPE verdict_type AS ENUM (
+      'AC', 'WA', 'TLE', 'MLE', 'RE', 'CE'
+    );
+
+    -- skipped = short-circuit when an earlier testcase already failed
+    CREATE TYPE testcase_verdict_type AS ENUM (
+      'AC', 'WA', 'TLE', 'MLE', 'RE', 'skipped'
+    );
+  02-iam.sql: |
+    -- IAM module: users, roles, permissions, and junction tables
+    CREATE TABLE users (
+      id            BIGSERIAL    PRIMARY KEY,
+      username      VARCHAR(64)  NOT NULL UNIQUE,
+      password_hash VARCHAR(255) NOT NULL,
+      display_name  VARCHAR(128),
+      is_superuser  BOOLEAN      NOT NULL DEFAULT FALSE,
+      created_by    BIGINT       REFERENCES users(id),
+      created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+      deleted_at    TIMESTAMPTZ
+    );
+
+    CREATE TABLE roles (
+      id          BIGSERIAL    PRIMARY KEY,
+      name        VARCHAR(64)  NOT NULL UNIQUE,
+      description VARCHAR(255),
+      created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE permissions (
+      id          BIGSERIAL    PRIMARY KEY,
+      code        VARCHAR(64)  NOT NULL UNIQUE,
+      description VARCHAR(255),
+      created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE user_roles (
+      user_id    BIGINT      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role_id    BIGINT      NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, role_id)
+    );
+
+    CREATE TABLE role_permissions (
+      role_id       BIGINT NOT NULL REFERENCES roles(id)       ON DELETE CASCADE,
+      permission_id BIGINT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+      PRIMARY KEY (role_id, permission_id)
+    );
+  03-problems.sql: |
+    -- Problem module: language_defaults, problems, testcases, per-language limits
+    CREATE TABLE language_defaults (
+      language          VARCHAR(32)  PRIMARY KEY,
+      display_name      VARCHAR(64)  NOT NULL,
+      time_multiplier   NUMERIC(4,2) NOT NULL DEFAULT 1.0 CHECK (time_multiplier > 0),
+      memory_multiplier NUMERIC(4,2) NOT NULL DEFAULT 1.0 CHECK (memory_multiplier > 0),
+      is_enabled        BOOLEAN      NOT NULL DEFAULT TRUE,
+      created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE problems (
+      id              BIGSERIAL        PRIMARY KEY,
+      title           VARCHAR(255)     NOT NULL,
+      description_md  TEXT             NOT NULL,
+      difficulty      difficulty_level NOT NULL,
+      time_limit_ms   INT              NOT NULL CHECK (time_limit_ms > 0),
+      memory_limit_mb INT              NOT NULL CHECK (memory_limit_mb > 0),
+      output_limit_kb INT              NOT NULL DEFAULT 64 CHECK (output_limit_kb > 0),
+      created_by      BIGINT           NOT NULL REFERENCES users(id),
+      created_at      TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+      deleted_at      TIMESTAMPTZ
+    );
+
+    CREATE TABLE problem_testcases (
+      id              BIGSERIAL   PRIMARY KEY,
+      problem_id      BIGINT      NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
+      order_index     INT         NOT NULL,
+      is_public       BOOLEAN     NOT NULL DEFAULT FALSE,
+      input_data      TEXT        NOT NULL,
+      expected_output TEXT        NOT NULL,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (problem_id, order_index)
+    );
+
+    -- Per-problem language overrides; absence means use language_defaults values
+    CREATE TABLE problem_language_limits (
+      problem_id        BIGINT       NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
+      language          VARCHAR(32)  NOT NULL REFERENCES language_defaults(language),
+      time_multiplier   NUMERIC(4,2) NOT NULL CHECK (time_multiplier > 0),
+      memory_multiplier NUMERIC(4,2) NOT NULL CHECK (memory_multiplier > 0),
+      PRIMARY KEY (problem_id, language)
+    );
+  04-exam.sql: |
+    -- Exam module: exam_sessions and exam_session_problems
+    -- NOTE: final_submission_id has NO FK constraint here; the circular FK to
+    -- submissions is added in 07-alter-esp.sql after submissions table exists.
+    CREATE TABLE exam_sessions (
+      id               BIGSERIAL   PRIMARY KEY,
+      candidate_id     BIGINT      NOT NULL REFERENCES users(id),
+      created_by       BIGINT      NOT NULL REFERENCES users(id),
+      status           exam_status NOT NULL DEFAULT 'not_started',
+      duration_minutes INT         NOT NULL CHECK (duration_minutes > 0),
+      actual_start_at  TIMESTAMPTZ,
+      expires_at       TIMESTAMPTZ,
+      submitted_at     TIMESTAMPTZ,
+      total_score      INT         NOT NULL DEFAULT 0,
+      max_score        INT         NOT NULL DEFAULT 0,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE exam_session_problems (
+      id                  BIGSERIAL   PRIMARY KEY,
+      exam_session_id     BIGINT      NOT NULL REFERENCES exam_sessions(id) ON DELETE CASCADE,
+      problem_id          BIGINT      NOT NULL REFERENCES problems(id),
+      order_index         INT         NOT NULL,
+      score_weight        INT         NOT NULL CHECK (score_weight >= 0),
+      final_submission_id BIGINT,      -- FK to submissions added in 07-alter-esp.sql
+      score               INT         NOT NULL DEFAULT 0,
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (exam_session_id, order_index),
+      UNIQUE (exam_session_id, problem_id)
+    );
+  05-submissions.sql: |
+    -- Submission module: one row per candidate submit action
+    CREATE TABLE submissions (
+      id                      BIGSERIAL         PRIMARY KEY,
+      exam_session_problem_id BIGINT            NOT NULL REFERENCES exam_session_problems(id) ON DELETE CASCADE,
+      candidate_id            BIGINT            NOT NULL REFERENCES users(id),
+      language                VARCHAR(32)       NOT NULL REFERENCES language_defaults(language),
+      source_code             TEXT              NOT NULL,
+      submission_type          submission_type   NOT NULL DEFAULT 'formal',
+      status                  submission_status NOT NULL DEFAULT 'pending',
+      verdict                 verdict_type,
+      runtime_ms              INT,
+      memory_kb               INT,
+      submitted_at            TIMESTAMPTZ       NOT NULL DEFAULT NOW(),
+      judged_at               TIMESTAMPTZ
+    );
+  06-str.sql: |
+    -- Per-testcase judge output; actual_output stored ONLY for public testcases
+    CREATE TABLE submission_testcase_results (
+      id            BIGSERIAL             PRIMARY KEY,
+      submission_id BIGINT                NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+      testcase_id   BIGINT                NOT NULL REFERENCES problem_testcases(id),
+      verdict       testcase_verdict_type NOT NULL,
+      runtime_ms    INT,
+      memory_kb     INT,
+      actual_output TEXT,
+      created_at    TIMESTAMPTZ           NOT NULL DEFAULT NOW(),
+      UNIQUE (submission_id, testcase_id)
+    );
+  07-alter-esp.sql: |
+    -- Completes the circular FK: exam_session_problems.final_submission_id → submissions.id
+    -- DEFERRABLE INITIALLY DEFERRED allows both rows in a transaction without
+    -- worrying about insertion order (checked at COMMIT time, not immediately).
+    ALTER TABLE exam_session_problems
+      ADD CONSTRAINT fk_esp_final_submission
+      FOREIGN KEY (final_submission_id)
+      REFERENCES submissions(id)
+      DEFERRABLE INITIALLY DEFERRED;
+  08-indexes.sql: |
+    -- All indexes beyond PK / UNIQUE auto-indexes (from PLAN.md §8)
+
+    -- IAM
+    CREATE INDEX idx_users_deleted_at        ON users(deleted_at) WHERE deleted_at IS NULL;
+    CREATE INDEX idx_user_roles_user_id      ON user_roles(user_id);
+    CREATE INDEX idx_user_roles_role_id      ON user_roles(role_id);
+
+    -- Problem
+    CREATE INDEX idx_problems_difficulty     ON problems(difficulty) WHERE deleted_at IS NULL;
+    CREATE INDEX idx_problems_created_by     ON problems(created_by);
+    CREATE INDEX idx_problem_testcases_prob  ON problem_testcases(problem_id, order_index);
+
+    -- Exam
+    CREATE INDEX idx_exam_sessions_candidate  ON exam_sessions(candidate_id, created_at DESC);
+    CREATE INDEX idx_exam_sessions_created_by ON exam_sessions(created_by);
+    CREATE INDEX idx_exam_sessions_status     ON exam_sessions(status);
+    CREATE INDEX idx_esp_session              ON exam_session_problems(exam_session_id, order_index);
+    CREATE INDEX idx_esp_problem              ON exam_session_problems(problem_id);
+
+    -- Submission
+    CREATE INDEX idx_submissions_esp       ON submissions(exam_session_problem_id, submitted_at DESC);
+    CREATE INDEX idx_submissions_candidate ON submissions(candidate_id, submitted_at DESC);
+    CREATE INDEX idx_submissions_status    ON submissions(status) WHERE status IN ('pending', 'judging');
+    CREATE INDEX idx_str_submission        ON submission_testcase_results(submission_id);
+  09-seed.sql: |
+    -- Static reference data: roles, permissions, bindings, language defaults.
+    -- Users and test scenarios are in 10-scenarios.sql.
+
+    INSERT INTO roles (name, description) VALUES
+      ('interviewer',    '面試主管：建立面試者帳號、派題、查看結果'),
+      ('problem_setter', '出題主管：建立與管理題目'),
+      ('candidate',      '面試者：參加考試');
+
+    INSERT INTO permissions (code, description) VALUES
+      ('problem:manage', '建立、編輯、刪除題目與測資'),
+      ('exam:manage',    '建立面試者帳號、派題、查看所有面試者結果'),
+      ('exam:take',      '參加考試、提交程式碼、查看自己的結果');
+
+    INSERT INTO role_permissions (role_id, permission_id)
+    SELECT r.id, p.id FROM roles r, permissions p
+    WHERE (r.name = 'interviewer'    AND p.code = 'exam:manage')
+       OR (r.name = 'problem_setter' AND p.code = 'problem:manage')
+       OR (r.name = 'candidate'      AND p.code = 'exam:take');
+
+    INSERT INTO language_defaults (language, display_name, time_multiplier, memory_multiplier) VALUES
+      ('cpp17',   'C++17',    1.0, 1.0),
+      ('python3', 'Python 3', 3.0, 2.0);
+  10-scenarios.sql: "-- Rich test scenario data covering all exam statuses, all verdict
+    types,\n-- multi-submission history, and retake deduplication.\n--\n-- Passwords:
+    \ root → Root@1234 | staff (alice/bob/carol) → Test@1234 | candidates → Cand@1234\n--\n--
+    Sessions:\n--   1  David  (001)  not_started   P1+P4+P7   0/100\n--   2  Emma
+    \  (002)  in_progress   P2+P5+P8   0/90  (started 40 min ago)\n--   3  Frank  (003)
+    \ submitted     P1+P4+P7   30/100 (P1=AC, P4=WA, P7=CE)\n--   4  Grace  (004)
+    \ cancelled     P3+P6+P8   0/90\n--   5  Henry  (005)  submitted     P2+P5+P6
+    \  60/90  (first exam)\n--   6  Henry  (005)  submitted     P1+P4+P7   70/100
+    (retake, no overlap with sess5)\n\nDO $$\nDECLARE\n  -- Role IDs (from 09-seed.sql)\n
+    \ v_role_interviewer BIGINT;\n  v_role_setter      BIGINT;\n  v_role_candidate
+    \  BIGINT;\n\n  -- User IDs\n  v_root_id  BIGINT;\n  v_alice_id BIGINT;\n  v_bob_id
+    \  BIGINT;\n  v_carol_id BIGINT;\n  v_c1_id    BIGINT;  -- David Chang\n  v_c2_id
+    \   BIGINT;  -- Emma Lin\n  v_c3_id    BIGINT;  -- Frank Wu\n  v_c4_id    BIGINT;
+    \ -- Grace Lee\n  v_c5_id    BIGINT;  -- Henry Huang\n\n  -- Problem IDs\n  v_p1_id
+    BIGINT;  -- Two Sum            (easy)\n  v_p2_id BIGINT;  -- Fibonacci          (easy)\n
+    \ v_p3_id BIGINT;  -- Palindrome Check   (easy)\n  v_p4_id BIGINT;  -- Binary
+    Search      (medium)\n  v_p5_id BIGINT;  -- Merge Sorted Arrays(medium)\n  v_p6_id
+    BIGINT;  -- Valid Parentheses  (medium)\n  v_p7_id BIGINT;  -- LCS                (hard)\n
+    \ v_p8_id BIGINT;  -- Coin Change        (hard)\n  -- new added 5 problems\n  v_p9_id
+    BIGINT;   -- Container With Most Water (medium)\n  v_p10_id BIGINT;  -- Longest
+    Substring Without Repeating Characters (medium)\n  v_p11_id BIGINT;  -- Edit Distance
+    (hard)\n  v_p12_id BIGINT;  -- Sliding Window Maximum (hard)\n  v_p13_id BIGINT;
+    \ -- N-Queens (hard)\n\n  -- Exam session IDs\n  v_s1_id BIGINT; v_s2_id BIGINT;
+    v_s3_id BIGINT;\n  v_s4_id BIGINT; v_s5_id BIGINT; v_s6_id BIGINT;\n\n  -- exam_session_problems
+    IDs\n  v_s3_esp1 BIGINT; v_s3_esp2 BIGINT; v_s3_esp3 BIGINT;\n  v_s5_esp1 BIGINT;
+    v_s5_esp2 BIGINT; v_s5_esp3 BIGINT;\n  v_s6_esp1 BIGINT; v_s6_esp2 BIGINT; v_s6_esp3
+    BIGINT;\n\n  -- Submission IDs (session 3 = Frank)\n  v_sub_s3p1_1 BIGINT; v_sub_s3p1_2
+    BIGINT; v_sub_s3p1_3 BIGINT;\n  v_sub_s3p2_1 BIGINT;\n  v_sub_s3p3_1 BIGINT; v_sub_s3p3_2
+    BIGINT;\n\n  -- Submission IDs (sessions 5 & 6 = Henry)\n  v_sub_s5p1 BIGINT;
+    v_sub_s5p2 BIGINT; v_sub_s5p3 BIGINT;\n  v_sub_s6p1 BIGINT; v_sub_s6p2 BIGINT;
+    v_sub_s6p3 BIGINT;\n\nBEGIN\n  -- ================================================================\n
+    \ -- 1. USERS\n  -- ================================================================\n
+    \ SELECT id INTO v_role_interviewer FROM roles WHERE name = 'interviewer';\n  SELECT
+    id INTO v_role_setter      FROM roles WHERE name = 'problem_setter';\n  SELECT
+    id INTO v_role_candidate   FROM roles WHERE name = 'candidate';\n\n  -- root:
+    superuser, created_by = NULL\n  INSERT INTO users (username, password_hash, display_name,
+    is_superuser)\n  VALUES ('root', crypt('Root@1234', gen_salt('bf', 10)), 'System
+    Root', TRUE)\n  RETURNING id INTO v_root_id;\n\n  -- staff: created by root\n
+    \ INSERT INTO users (username, password_hash, display_name, created_by)\n  VALUES
+    ('alice', crypt('Test@1234', gen_salt('bf', 10)), 'Alice Chen', v_root_id)\n  RETURNING
+    id INTO v_alice_id;\n\n  INSERT INTO users (username, password_hash, display_name,
+    created_by)\n  VALUES ('bob', crypt('Test@1234', gen_salt('bf', 10)), 'Bob Wang',
+    v_root_id)\n  RETURNING id INTO v_bob_id;\n\n  INSERT INTO users (username, password_hash,
+    display_name, created_by)\n  VALUES ('carol', crypt('Test@1234', gen_salt('bf',
+    10)), 'Carol Liu', v_root_id)\n  RETURNING id INTO v_carol_id;\n\n  INSERT INTO
+    user_roles (user_id, role_id) VALUES\n    (v_alice_id, v_role_interviewer),\n
+    \   (v_bob_id,   v_role_interviewer),\n    (v_bob_id,   v_role_setter),\n    (v_carol_id,
+    v_role_setter);\n\n  -- candidates: distributed between alice and bob\n  INSERT
+    INTO users (username, password_hash, display_name, created_by)\n  VALUES ('candidate_20260509_001',
+    crypt('Cand@1234', gen_salt('bf', 10)), 'David Chang', v_alice_id)\n  RETURNING
+    id INTO v_c1_id;\n\n  INSERT INTO users (username, password_hash, display_name,
+    created_by)\n  VALUES ('candidate_20260509_002', crypt('Cand@1234', gen_salt('bf',
+    10)), 'Emma Lin', v_alice_id)\n  RETURNING id INTO v_c2_id;\n\n  INSERT INTO users
+    (username, password_hash, display_name, created_by)\n  VALUES ('candidate_20260509_003',
+    crypt('Cand@1234', gen_salt('bf', 10)), 'Frank Wu', v_bob_id)\n  RETURNING id
+    INTO v_c3_id;\n\n  INSERT INTO users (username, password_hash, display_name, created_by)\n
+    \ VALUES ('candidate_20260509_004', crypt('Cand@1234', gen_salt('bf', 10)), 'Grace
+    Lee', v_alice_id)\n  RETURNING id INTO v_c4_id;\n\n  INSERT INTO users (username,
+    password_hash, display_name, created_by)\n  VALUES ('candidate_20260509_005',
+    crypt('Cand@1234', gen_salt('bf', 10)), 'Henry Huang', v_bob_id)\n  RETURNING
+    id INTO v_c5_id;\n\n  INSERT INTO user_roles (user_id, role_id) VALUES\n    (v_c1_id,
+    v_role_candidate), (v_c2_id, v_role_candidate),\n    (v_c3_id, v_role_candidate),
+    (v_c4_id, v_role_candidate),\n    (v_c5_id, v_role_candidate);\n\n  -- ================================================================\n
+    \ -- 2. PROBLEMS\n  -- ================================================================\n\n
+    \ -- P1: Two Sum (easy) — 3 testcases: 2 public + 1 hidden\n  INSERT INTO problems
+    (title, description_md, difficulty, time_limit_ms, memory_limit_mb, created_by)\n
+    \ VALUES (\n    'Two Sum',\n    E'## Problem\\n\\nGiven an array of `n` integers
+    and a target, return the 0-based indices of two numbers that add up to target.\\n\\n**Input:**
+    Line 1: `n`; Line 2: `n` integers; Line 3: `target`\\n**Output:** Two space-separated
+    indices\\n\\n**Example:**\\n```\\n4\\n2 7 11 15\\n9\\n```\\n→ `0 1`',\n    'easy',
+    1000, 256, v_carol_id\n  ) RETURNING id INTO v_p1_id;\n\n  INSERT INTO problem_testcases
+    (problem_id, order_index, is_public, input_data, expected_output) VALUES\n    (v_p1_id,
+    1, TRUE,  E'4\\n2 7 11 15\\n9', '0 1'),\n    (v_p1_id, 2, TRUE,  E'3\\n3 2 4\\n6',
+    \    '1 2'),\n    (v_p1_id, 3, FALSE, E'2\\n3 3\\n6',       '0 1');\n\n  -- P2:
+    Fibonacci (easy) — 3 testcases: 2 public + 1 hidden\n  INSERT INTO problems (title,
+    description_md, difficulty, time_limit_ms, memory_limit_mb, created_by)\n  VALUES
+    (\n    'Fibonacci Sequence',\n    E'## Problem\\n\\nReturn the nth Fibonacci number
+    (0-indexed: F(0)=0, F(1)=1).\\n\\n**Input:** Single integer `n` (0 ≤ n ≤ 30)\\n**Output:**
+    F(n)\\n\\n**Example:** `5` → `5`',\n    'easy', 1000, 128, v_bob_id\n  ) RETURNING
+    id INTO v_p2_id;\n\n  INSERT INTO problem_testcases (problem_id, order_index,
+    is_public, input_data, expected_output) VALUES\n    (v_p2_id, 1, TRUE,  '5',  '5'),\n
+    \   (v_p2_id, 2, TRUE,  '10', '55'),\n    (v_p2_id, 3, FALSE, '20', '6765');\n\n
+    \ -- P3: Palindrome Check (easy) — 3 testcases\n  INSERT INTO problems (title,
+    description_md, difficulty, time_limit_ms, memory_limit_mb, created_by)\n  VALUES
+    (\n    'Palindrome Check',\n    E'## Problem\\n\\nGiven a lowercase string, output
+    `true` if palindrome, else `false`.\\n\\n**Input:** Single string\\n**Output:**
+    `true` or `false`',\n    'easy', 1000, 128, v_bob_id\n  ) RETURNING id INTO v_p3_id;\n\n
+    \ INSERT INTO problem_testcases (problem_id, order_index, is_public, input_data,
+    expected_output) VALUES\n    (v_p3_id, 1, TRUE,  'racecar', 'true'),\n    (v_p3_id,
+    2, FALSE, 'hello',   'false'),\n    (v_p3_id, 3, FALSE, 'abcba',   'true');\n\n
+    \ -- P4: Binary Search (medium) — 4 testcases: 2 public + 2 hidden\n  INSERT INTO
+    problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb, created_by)\n
+    \ VALUES (\n    'Binary Search',\n    E'## Problem\\n\\nSearch for `target` in
+    a sorted array. Return 0-based index, or `-1` if not found.\\n\\n**Input:** Line
+    1: `n`; Line 2: `n` sorted integers; Line 3: `target`\\n**Output:** Index or `-1`',\n
+    \   'medium', 1000, 256, v_carol_id\n  ) RETURNING id INTO v_p4_id;\n\n  INSERT
+    INTO problem_testcases (problem_id, order_index, is_public, input_data, expected_output)
+    VALUES\n    (v_p4_id, 1, TRUE,  E'5\\n1 3 5 7 9\\n5', '2'),\n    (v_p4_id, 2,
+    TRUE,  E'5\\n1 3 5 7 9\\n1', '0'),\n    (v_p4_id, 3, FALSE, E'5\\n1 3 5 7 9\\n4',
+    '-1'),\n    (v_p4_id, 4, FALSE, E'1\\n7\\n7',          '0');\n\n  -- P5: Merge
+    Sorted Arrays (medium) — 3 testcases\n  INSERT INTO problems (title, description_md,
+    difficulty, time_limit_ms, memory_limit_mb, created_by)\n  VALUES (\n    'Merge
+    Sorted Arrays',\n    E'## Problem\\n\\nMerge two sorted integer arrays into one
+    sorted array.\\n\\n**Input:** Line 1: `n`; Line 2: array A; Line 3: `m`; Line
+    4: array B\\n**Output:** Merged array, space-separated',\n    'medium', 1000,
+    256, v_bob_id\n  ) RETURNING id INTO v_p5_id;\n\n  INSERT INTO problem_testcases
+    (problem_id, order_index, is_public, input_data, expected_output) VALUES\n    (v_p5_id,
+    1, TRUE,  E'3\\n1 3 5\\n3\\n2 4 6',  '1 2 3 4 5 6'),\n    (v_p5_id, 2, FALSE,
+    E'2\\n1 2\\n3\\n3 4 5',     '1 2 3 4 5'),\n    (v_p5_id, 3, FALSE, E'4\\n1 3 7
+    9\\n2\\n2 8',   '1 2 3 7 8 9');\n\n  -- P6: Valid Parentheses (medium) — 4 testcases:
+    2 public + 2 hidden\n  INSERT INTO problems (title, description_md, difficulty,
+    time_limit_ms, memory_limit_mb, created_by)\n  VALUES (\n    'Valid Parentheses',\n
+    \   E'## Problem\\n\\nDetermine if a string of `()[]{}` is valid.\\n\\n**Input:**
+    Single string\\n**Output:** `true` or `false`',\n    'medium', 1000, 256, v_carol_id\n
+    \ ) RETURNING id INTO v_p6_id;\n\n  INSERT INTO problem_testcases (problem_id,
+    order_index, is_public, input_data, expected_output) VALUES\n    (v_p6_id, 1,
+    TRUE,  '()',     'true'),\n    (v_p6_id, 2, TRUE,  '()[]{', 'false'),\n    (v_p6_id,
+    3, FALSE, '{[()]}', 'true'),\n    (v_p6_id, 4, FALSE, '([)]',   'false');\n\n
+    \ -- P7: Longest Common Subsequence (hard) — 4 testcases: 2 public + 2 hidden\n
+    \ INSERT INTO problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb,
+    created_by)\n  VALUES (\n    'Longest Common Subsequence',\n    E'## Problem\\n\\nReturn
+    the length of the LCS of two strings.\\n\\n**Input:** Line 1: s1; Line 2: s2\\n**Output:**
+    Integer LCS length',\n    'hard', 2000, 512, v_bob_id\n  ) RETURNING id INTO v_p7_id;\n\n
+    \ INSERT INTO problem_testcases (problem_id, order_index, is_public, input_data,
+    expected_output) VALUES\n    (v_p7_id, 1, TRUE,  E'abcde\\nace',             '3'),\n
+    \   (v_p7_id, 2, TRUE,  E'abc\\nabc',               '3'),\n    (v_p7_id, 3, FALSE,
+    E'abc\\ndef',               '0'),\n    (v_p7_id, 4, FALSE, E'oxcpqrsvwf\\nmynstqcpxa',
+    '5');\n\n  -- P8: Coin Change (hard) — 3 testcases; python3 has stricter 2x override\n
+    \ INSERT INTO problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb,
+    created_by)\n  VALUES (\n    'Coin Change',\n    E'## Problem\\n\\nFind minimum
+    coins to reach amount. Return `-1` if impossible.\\n\\n**Input:** Line 1: `n`;
+    Line 2: denominations; Line 3: `amount`\\n**Output:** Min coins or `-1`',\n    'hard',
+    2000, 512, v_carol_id\n  ) RETURNING id INTO v_p8_id;\n\n  INSERT INTO problem_language_limits
+    (problem_id, language, time_multiplier, memory_multiplier)\n  VALUES (v_p8_id,
+    'python3', 2.0, 2.0);\n\n  INSERT INTO problem_testcases (problem_id, order_index,
+    is_public, input_data, expected_output) VALUES\n    (v_p8_id, 1, TRUE,  E'3\\n1
+    5 10\\n11', '2'),\n    (v_p8_id, 2, TRUE,  E'1\\n2\\n3',       '-1'),\n    (v_p8_id,
+    3, FALSE, E'3\\n1 2 5\\n11',  '3');\n    \n  -------------------------------------------------------------------------------\n
+    \ -- 9. Container With Most Water (Medium)\n  --\n  -- [測資說明]\n  -- 輸入格式：第一行為陣列長度
+    N，第二行為 N 個由空格分隔的非負整數（代表垂直線高度）。\n  -- 輸出格式：一個整數，代表兩條線與 X 軸圍成的最大裝水容積。\n  --\n  --
+    測資解析：\n  -- * Case 1 (Public): LeetCode 經典範例，最大容積由 index 1 (高8) 與 index 8 (高7)
+    組成，距離為 7，容積 = min(8, 7) * 7 = 49。\n  -- * Case 2 (Public): 邊界邊界測資（最小長度 N=2），高度均為
+    1，容積 = min(1, 1) * 1 = 1。\n  -- * Case 3 (Hidden): 遞減數列測資 [4, 3, 2, 1]，最佳解為選擇前兩個
+    [4, 3]，距離 1，容積 = min(4, 3) * 1 = 3，或選擇 [4, 2] 容積為 4。\n  -- * Case 4 (Hidden):
+    凹型/凸型過渡測資 [1, 2, 4, 3]，驗證雙指標（Two Pointers）向內收斂時的正確性。\n  -------------------------------------------------------------------------------\n
+    \ INSERT INTO problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb,
+    created_by)\n  VALUES (\n    'Container With Most Water',\n    E'## Problem\\n\\nGiven
+    $n$ non-negative integers $a_1, a_2, ..., a_n$ where each represents a point at
+    coordinate $(i, a_i)$. Find two lines, which, together with the x-axis forms a
+    container, such that the container contains the most water.\\n\\n**Input:** Line
+    1: `n` (number of elements); Line 2: space-separated integers representing heights.\\n**Output:**
+    An integer representing the maximum volume of water.',\n    'medium', 1000, 256,
+    v_carol_id\n  ) RETURNING id INTO v_p9_id;\n\n  INSERT INTO problem_language_limits
+    (problem_id, language, time_multiplier, memory_multiplier)\n  VALUES (v_p9_id,
+    'python3', 2.0, 2.0);\n\n  INSERT INTO problem_testcases (problem_id, order_index,
+    is_public, input_data, expected_output) VALUES\n    (v_p9_id, 1, TRUE,  E'9\\n1
+    8 6 2 5 4 8 3 7', '49'),\n    (v_p9_id, 2, TRUE,  E'2\\n1 1', '1'),\n    (v_p9_id,
+    3, FALSE, E'4\\n4 3 2 1', '4'),\n    (v_p9_id, 4, FALSE, E'5\\n1 2 4 3', '4');\n\n\n
+    \ -------------------------------------------------------------------------------\n
+    \ -- 10. Longest Substring Without Repeating Characters (Medium)\n  --\n  -- [測資說明]\n
+    \ -- 輸入格式：第一行為一個字串 s（長度可能為 0，可能包含重複字母）。\n  -- 輸出格式：一個整數，代表不含重複字元的「最長連續子字串」長度。\n
+    \ --\n  -- 測資解析：\n  -- * Case 1 (Public): 標準交錯重複測資 \"abcabcbb\"，最長不重複子字串為 \"abc\"、\"bca\"
+    或 \"cab\"，長度均為 3。\n  -- * Case 2 (Public): 全重複單一字元測資 \"bbbbb\"，最長不重複長度僅能為 1。\n
+    \ -- * Case 3 (Public): 字元重疊於中段的測資 \"pwwkew\"，最長為 \"wke\"，長度為 3（注意 \"pwke\" 不是子字串，它是子序列）。\n
+    \ -- * Case 4 (Hidden): 邊界測資（空字串 \"\"），預期輸出為 0。驗證程式碼是否有做防禦性檢查。\n  -- * Case 5
+    (Hidden): 完全不重複的純遞增字串 \"abcdefg\"，預期輸出為字串總長度 7。\n  -------------------------------------------------------------------------------\n
+    \ INSERT INTO problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb,
+    created_by)\n  VALUES (\n    'Longest Substring Without Repeating Characters',\n
+    \   E'## Problem\\n\\nGiven a string `s`, find the length of the longest substring
+    without repeating characters.\\n\\n**Input:** Line 1: The string `s` (could be
+    empty).\\n**Output:** An integer representing the maximum length.',\n    'medium',
+    1000, 256, v_carol_id\n  ) RETURNING id INTO v_p10_id;\n\n  INSERT INTO problem_language_limits
+    (problem_id, language, time_multiplier, memory_multiplier)\n  VALUES (v_p10_id,
+    'python3', 2.0, 2.0);\n\n  INSERT INTO problem_testcases (problem_id, order_index,
+    is_public, input_data, expected_output) VALUES\n    (v_p10_id, 1, TRUE,  E'abcabcbb',
+    '3'),\n    (v_p10_id, 2, TRUE,  E'bbbbb', '1'),\n    (v_p10_id, 3, TRUE,  E'pwwkew',
+    '3'),\n    (v_p10_id, 4, FALSE, E'', '0'),\n    (v_p10_id, 5, FALSE, E'abcdefg',
+    '7');\n\n\n  -------------------------------------------------------------------------------\n
+    \ -- 11. Edit Distance (Hard)\n  --\n  -- [測資說明]\n  -- 輸入格式：第一行為來源字串 word1，第二行為目標字串
+    word2。\n  -- 輸出格式：一個整數，代表將 word1 轉換為 word2 所需的最少操作步數（插入、刪除、替換）。\n  --\n  -- 測資解析：\n
+    \ -- * Case 1 (Public): 範例測資 \"horse\" -> \"ros\"，最少需要 3 步（h->r, 刪除 o, 刪除 e）。\n
+    \ -- * Case 2 (Public): 較長字串的複雜 DP 轉換 \"intention\" -> \"execution\"，最少需要 5 步。\n
+    \ -- * Case 3 (Hidden): 單一字元轉換為空字串 \"a\" -> \"\"，需要 1 步（刪除），驗證 DP 表邊界初始化。\n  --
+    * Case 4 (Hidden): 字元完全不同且長度相異的轉換 \"plasma\" -> \"altitude\"，需要 6 步，考驗動態規劃狀態轉移。\n
+    \ -------------------------------------------------------------------------------\n
+    \ INSERT INTO problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb,
+    created_by)\n  VALUES (\n    'Edit Distance',\n    E'## Problem\\n\\nGiven two
+    strings `word1` and `word2`, return the minimum number of operations required
+    to convert `word1` to `word2`. You have 3 operations permitted on a word: Insert,
+    Delete, or Replace a character.\\n\\n**Input:** Line 1: `word1`; Line 2: `word2`\\n**Output:**
+    An integer representing the minimum edit distance.',\n    'hard', 2000, 512, v_carol_id\n
+    \ ) RETURNING id INTO v_p11_id;\n\n  INSERT INTO problem_language_limits (problem_id,
+    language, time_multiplier, memory_multiplier)\n  VALUES (v_p11_id, 'python3',
+    2.0, 2.0);\n\n  INSERT INTO problem_testcases (problem_id, order_index, is_public,
+    input_data, expected_output) VALUES\n    (v_p11_id, 1, TRUE,  E'horse\\nros',
+    '3'),\n    (v_p11_id, 2, TRUE,  E'intention\\nexecution', '5'),\n    (v_p11_id,
+    3, FALSE, E'a\\n', '1'),\n    (v_p11_id, 4, FALSE, E'plasma\\naltitude', '6');\n\n\n
+    \ -------------------------------------------------------------------------------\n
+    \ -- 12. Sliding Window Maximum (Hard)\n  --\n  -- [測資說明]\n  -- 輸入格式：第一行為兩個由空格分隔的整數，分別為陣列長度
+    N 與視窗大小 K。\n  --           第二行為 N 個由空格分隔的整數（包含負數）。\n  -- 輸出格式：一列由空格分隔的整數，代表視窗由左往右滑動時，每個視窗內的最大值。\n
+    \ --\n  -- 測資解析：\n  -- * Case 1 (Public): 經典範例，陣列包含正負號與起伏 [1, 3, -1, -3, 5, 3,
+    6, 7] 且 K=3，驗證單調佇列（Monotonic Queue）的維護。\n  -- * Case 2 (Public): 最小極端邊界，N=1 且
+    K=1，預期輸出即為該元素本身。\n  -- * Case 3 (Hidden): 完全單調遞減數列 [4, 3, 2, 1] 且 K=2，驗證當左側滑出視窗時，最大值能否正確遞減更新（輸出：4
+    3 2）。\n  -- * Case 4 (Hidden): 包含多個重複最大值與大幅震盪的數列 [-7, -8, 7, 5, 7, 1] 且 K=3，考驗雙向佇列（Deque）剔除過期索引的嚴謹度。\n
+    \ -------------------------------------------------------------------------------\n
+    \ INSERT INTO problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb,
+    created_by)\n  VALUES (\n    'Sliding Window Maximum',\n    E'## Problem\\n\\nYou
+    are given an array of integers `nums`, there is a sliding window of size `k` which
+    is moving from the very left of the array to the very right. You can only see
+    the `k` numbers in the window. Each time the sliding window moves right by one
+    position. Return the max sliding window.\\n\\n**Input:** Line 1: `n` (array size)
+    and `k` (window size) separated by space; Line 2: space-separated integers.\\n**Output:**
+    Space-separated max integers for each window position.',\n    'hard', 2000, 512,
+    v_carol_id\n  ) RETURNING id INTO v_p12_id;\n\n  INSERT INTO problem_language_limits
+    (problem_id, language, time_multiplier, memory_multiplier)\n  VALUES (v_p12_id,
+    'python3', 2.5, 2.0);\n\n  INSERT INTO problem_testcases (problem_id, order_index,
+    is_public, input_data, expected_output) VALUES\n    (v_p12_id, 1, TRUE,  E'8 3\\n1
+    3 -1 -3 5 3 6 7', '3 3 5 5 6 7'),\n    (v_p12_id, 2, TRUE,  E'1 1\\n1', '1'),\n
+    \   (v_p12_id, 3, FALSE, E'4 2\\n4 3 2 1', '4 3 2'),\n    (v_p12_id, 4, FALSE,
+    E'6 3\\n-7 -8 7 5 7 1', '7 7 7 7');\n\n\n  -------------------------------------------------------------------------------\n
+    \ -- 13. N-Queens (Hard)\n  --\n  -- [測資說明]\n  -- 輸入格式：第一行為一個整數 N，代表棋盤大小為 N *
+    N。\n  -- 輸出格式：一個整數，代表在該棋盤上擺放 N 個互不攻擊的皇后，總共獨立存在幾種解法。\n  --\n  -- 測資解析：\n  -- *
+    Case 1 (Public): 標準的 4 皇后問題（4x4 棋盤），其擺放法的對稱解總數為 2。\n  -- * Case 2 (Public): 邊界基礎解，1
+    皇后（1x1 棋盤），擺放方法數必為 1。\n  -- * Case 3 (Hidden): 經典的 8 皇后問題，解的總數為 92。這題可以有效測試回溯法（Backtracking）在大量遞迴下的效能與剪枝是否正確。\n
+    \ -- * Case 4 (Hidden): 5 皇后問題，總共有 10 種可能解。作為中等複雜度效能與正確性的夾擊驗證。\n  -------------------------------------------------------------------------------\n
+    \ INSERT INTO problems (title, description_md, difficulty, time_limit_ms, memory_limit_mb,
+    created_by)\n  VALUES (\n    'N-Queens',\n    E'## Problem\\n\\nThe n-queens puzzle
+    is the problem of placing $n$ queens on an $n \\times n$ chessboard such that
+    no two queens attack each other. Given an integer $n$, return the number of distinct
+    solutions.\\n\\n**Input:** Line 1: An integer `n`.\\n**Output:** An integer representing
+    the total number of distinct solutions.',\n    'hard', 2000, 512, v_carol_id\n
+    \ ) RETURNING id INTO v_p13_id;\n\n  INSERT INTO problem_language_limits (problem_id,
+    language, time_multiplier, memory_multiplier)\n  VALUES (v_p13_id, 'python3',
+    2.0, 2.0);\n\n  INSERT INTO problem_testcases (problem_id, order_index, is_public,
+    input_data, expected_output) VALUES\n    (v_p13_id, 1, TRUE,  E'4', '2'),\n    (v_p13_id,
+    2, TRUE,  E'1', '1'),\n    (v_p13_id, 3, FALSE, E'8', '92'),\n    (v_p13_id, 4,
+    FALSE, E'5', '10');\n\n  -- ================================================================\n
+    \ -- 3. EXAM SESSIONS\n  -- ================================================================\n\n
+    \ -- Session 1: David — not_started\n  INSERT INTO exam_sessions (candidate_id,
+    created_by, status, duration_minutes, max_score)\n  VALUES (v_c1_id, v_alice_id,
+    'not_started', 90, 100)\n  RETURNING id INTO v_s1_id;\n\n  INSERT INTO exam_session_problems
+    (exam_session_id, problem_id, order_index, score_weight) VALUES\n    (v_s1_id,
+    v_p1_id, 1, 30),\n    (v_s1_id, v_p4_id, 2, 40),\n    (v_s1_id, v_p7_id, 3, 30);\n\n
+    \ -- Session 2: Emma — in_progress (started 40 min ago, 90 min limit → 50 min
+    left)\n  INSERT INTO exam_sessions (\n    candidate_id, created_by, status, duration_minutes,\n
+    \   actual_start_at, expires_at, max_score\n  ) VALUES (\n    v_c2_id, v_alice_id,
+    'in_progress', 90,\n    NOW() - INTERVAL '40 minutes',\n    NOW() - INTERVAL '40
+    minutes' + INTERVAL '90 minutes',\n    90\n  ) RETURNING id INTO v_s2_id;\n\n
+    \ INSERT INTO exam_session_problems (exam_session_id, problem_id, order_index,
+    score_weight) VALUES\n    (v_s2_id, v_p2_id, 1, 30),\n    (v_s2_id, v_p5_id, 2,
+    30),\n    (v_s2_id, v_p8_id, 3, 30);\n\n  -- Session 3: Frank — submitted (3h
+    ago), total=30/100\n  INSERT INTO exam_sessions (\n    candidate_id, created_by,
+    status, duration_minutes,\n    actual_start_at, expires_at, max_score, created_at,
+    updated_at\n  ) VALUES (\n    v_c3_id, v_bob_id, 'submitted', 120,\n    NOW()
+    - INTERVAL '3 hours',\n    NOW() - INTERVAL '1 hour',\n    100,\n    NOW() - INTERVAL
+    '4 hours',\n    NOW() - INTERVAL '1 hour'\n  ) RETURNING id INTO v_s3_id;\n\n
+    \ INSERT INTO exam_session_problems (exam_session_id, problem_id, order_index,
+    score_weight)\n  VALUES (v_s3_id, v_p1_id, 1, 30) RETURNING id INTO v_s3_esp1;\n\n
+    \ INSERT INTO exam_session_problems (exam_session_id, problem_id, order_index,
+    score_weight)\n  VALUES (v_s3_id, v_p4_id, 2, 40) RETURNING id INTO v_s3_esp2;\n\n
+    \ INSERT INTO exam_session_problems (exam_session_id, problem_id, order_index,
+    score_weight)\n  VALUES (v_s3_id, v_p7_id, 3, 30) RETURNING id INTO v_s3_esp3;\n\n
+    \ -- Session 4: Grace — cancelled by alice\n  INSERT INTO exam_sessions (candidate_id,
+    created_by, status, duration_minutes, max_score)\n  VALUES (v_c4_id, v_alice_id,
+    'cancelled', 60, 90)\n  RETURNING id INTO v_s4_id;\n\n  INSERT INTO exam_session_problems
+    (exam_session_id, problem_id, order_index, score_weight) VALUES\n    (v_s4_id,
+    v_p3_id, 1, 30),\n    (v_s4_id, v_p6_id, 2, 30),\n    (v_s4_id, v_p8_id, 3, 30);\n\n
+    \ -- Session 5: Henry first exam — P2(AC,30)+P5(WA,0)+P6(AC,30) = 60/90\n  INSERT
+    INTO exam_sessions (\n    candidate_id, created_by, status, duration_minutes,\n
+    \   actual_start_at, expires_at, max_score, created_at, updated_at\n  ) VALUES
+    (\n    v_c5_id, v_bob_id, 'submitted', 90,\n    NOW() - INTERVAL '5 hours',\n
+    \   NOW() - INTERVAL '3 hours 30 minutes',\n    90,\n    NOW() - INTERVAL '6 hours',\n
+    \   NOW() - INTERVAL '3 hours'\n  ) RETURNING id INTO v_s5_id;\n\n  INSERT INTO
+    exam_session_problems (exam_session_id, problem_id, order_index, score_weight)\n
+    \ VALUES (v_s5_id, v_p2_id, 1, 30) RETURNING id INTO v_s5_esp1;\n\n  INSERT INTO
+    exam_session_problems (exam_session_id, problem_id, order_index, score_weight)\n
+    \ VALUES (v_s5_id, v_p5_id, 2, 30) RETURNING id INTO v_s5_esp2;\n\n  INSERT INTO
+    exam_session_problems (exam_session_id, problem_id, order_index, score_weight)\n
+    \ VALUES (v_s5_id, v_p6_id, 3, 30) RETURNING id INTO v_s5_esp3;\n\n  -- Session
+    6: Henry retake — P1(TLE,0)+P4(AC,40)+P7(AC,30) = 70/100\n  -- Note: P1/P4/P7
+    don't overlap with session 5's P2/P5/P6\n  INSERT INTO exam_sessions (\n    candidate_id,
+    created_by, status, duration_minutes,\n    actual_start_at, expires_at, max_score,
+    created_at, updated_at\n  ) VALUES (\n    v_c5_id, v_bob_id, 'submitted', 90,\n
+    \   NOW() - INTERVAL '1 hour',\n    NOW() + INTERVAL '30 minutes',\n    100,\n
+    \   NOW() - INTERVAL '2 hours',\n    NOW() - INTERVAL '30 minutes'\n  ) RETURNING
+    id INTO v_s6_id;\n\n  INSERT INTO exam_session_problems (exam_session_id, problem_id,
+    order_index, score_weight)\n  VALUES (v_s6_id, v_p1_id, 1, 30) RETURNING id INTO
+    v_s6_esp1;\n\n  INSERT INTO exam_session_problems (exam_session_id, problem_id,
+    order_index, score_weight)\n  VALUES (v_s6_id, v_p4_id, 2, 40) RETURNING id INTO
+    v_s6_esp2;\n\n  INSERT INTO exam_session_problems (exam_session_id, problem_id,
+    order_index, score_weight)\n  VALUES (v_s6_id, v_p7_id, 3, 30) RETURNING id INTO
+    v_s6_esp3;\n\n  -- ================================================================\n
+    \ -- 4. SUBMISSIONS — Session 3 (Frank)\n  --    P1: sub1=WA, sub2=TLE, sub3=AC
+    \ (3 submissions, last=AC=final)\n  --    P4: sub1=WA                     (1 submission,
+    WA=final)\n  --    P7: sub1=RE, sub2=CE            (2 submissions, CE=final)\n
+    \ -- ================================================================\n\n  --
+    Frank P1 sub1: WA\n  INSERT INTO submissions (exam_session_problem_id, candidate_id,
+    language, source_code,\n    status, verdict, runtime_ms, memory_kb, submitted_at,
+    judged_at)\n  VALUES (\n    v_s3_esp1, v_c3_id, 'python3',\n    E'n=int(input())\\nnums=list(map(int,input().split()))\\nt=int(input())\\nfor
+    i in range(n):\\n  for j in range(i+1,n):\\n    if nums[i]+nums[j]==t: print(i,j+1);break
+    \ # bug: j+1',\n    'done', 'WA', 48, 8192,\n    NOW()-INTERVAL'2 hours 50 minutes',
+    NOW()-INTERVAL'2 hours 49 minutes')\n  RETURNING id INTO v_sub_s3p1_1;\n\n  --
+    Frank P1 sub2: TLE\n  INSERT INTO submissions (exam_session_problem_id, candidate_id,
+    language, source_code,\n    status, verdict, runtime_ms, memory_kb, submitted_at,
+    judged_at)\n  VALUES (\n    v_s3_esp1, v_c3_id, 'python3',\n    E'n=int(input())\\nnums=list(map(int,input().split()))\\nt=int(input())\\nwhile
+    True:\\n  for i in range(n):\\n    for j in range(n):\\n      if i!=j and nums[i]+nums[j]==t:
+    print(i,j);break  # infinite outer loop',\n    'done', 'TLE', 5000, 8192,\n    NOW()-INTERVAL'2
+    hours 30 minutes', NOW()-INTERVAL'2 hours 29 minutes')\n  RETURNING id INTO v_sub_s3p1_2;\n\n
+    \ -- Frank P1 sub3: AC (final)\n  INSERT INTO submissions (exam_session_problem_id,
+    candidate_id, language, source_code,\n    status, verdict, runtime_ms, memory_kb,
+    submitted_at, judged_at)\n  VALUES (\n    v_s3_esp1, v_c3_id, 'python3',\n    E'n=int(input())\\nnums=list(map(int,input().split()))\\nt=int(input())\\nseen={}\\nfor
+    i,v in enumerate(nums):\\n  if t-v in seen: print(seen[t-v],i);break\\n  seen[v]=i',\n
+    \   'done', 'AC', 42, 9216,\n    NOW()-INTERVAL'2 hours 10 minutes', NOW()-INTERVAL'2
+    hours 9 minutes')\n  RETURNING id INTO v_sub_s3p1_3;\n\n  -- Testcase results
+    for Frank P1 AC submission\n  INSERT INTO submission_testcase_results (submission_id,
+    testcase_id, verdict, runtime_ms, memory_kb, actual_output)\n  SELECT v_sub_s3p1_3,
+    tc.id, 'AC'::testcase_verdict_type,\n         40 + tc.order_index, 9000,\n         CASE
+    WHEN tc.is_public THEN tc.expected_output ELSE NULL END\n  FROM problem_testcases
+    tc WHERE tc.problem_id = v_p1_id;\n\n  -- Frank P4 sub1: WA (final, off-by-one)\n
+    \ INSERT INTO submissions (exam_session_problem_id, candidate_id, language, source_code,\n
+    \   status, verdict, runtime_ms, memory_kb, submitted_at, judged_at)\n  VALUES
+    (\n    v_s3_esp2, v_c3_id, 'cpp17',\n    E'#include<iostream>\\nusing namespace
+    std;\\nint main(){\\n  int n;cin>>n;\\n  int a[100];\\n  for(int i=0;i<n;i++)cin>>a[i];\\n
+    \ int t;cin>>t;\\n  int lo=0,hi=n-1;\\n  while(lo<=hi){\\n    int mid=(lo+hi)/2;\\n
+    \   if(a[mid]==t){cout<<mid+1;return 0;}  // bug: mid+1\\n    else if(a[mid]<t)lo=mid+1;\\n
+    \   else hi=mid-1;\\n  }\\n  cout<<-1;\\n}',\n    'done', 'WA', 8, 1024,\n    NOW()-INTERVAL'1
+    hour 50 minutes', NOW()-INTERVAL'1 hour 49 minutes')\n  RETURNING id INTO v_sub_s3p2_1;\n\n
+    \ INSERT INTO submission_testcase_results (submission_id, testcase_id, verdict,
+    runtime_ms, memory_kb, actual_output)\n  SELECT v_sub_s3p2_1, tc.id, 'WA'::testcase_verdict_type,
+    8, 1024,\n         CASE WHEN tc.is_public THEN 'wrong' ELSE NULL END\n  FROM problem_testcases
+    tc WHERE tc.problem_id = v_p4_id;\n\n  -- Frank P7 sub1: RE\n  INSERT INTO submissions
+    (exam_session_problem_id, candidate_id, language, source_code,\n    status, verdict,
+    runtime_ms, memory_kb, submitted_at, judged_at)\n  VALUES (\n    v_s3_esp3, v_c3_id,
+    'python3',\n    E's1=input();s2=input()\\nn,m=len(s1),len(s2)\\ndp=[[0]*(m+1)
+    for _ in range(n+1)]\\nfor i in range(1,n+1):\\n  for j in range(1,m+1):\\n    if
+    s1[i]==s2[j]: dp[i][j]=dp[i-1][j-1]+1  # IndexError: s1[i] out of range\\n    else:
+    dp[i][j]=max(dp[i-1][j],dp[i][j-1])\\nprint(dp[n][m])',\n    'done', 'RE', 12,
+    8192,\n    NOW()-INTERVAL'1 hour 40 minutes', NOW()-INTERVAL'1 hour 39 minutes')\n
+    \ RETURNING id INTO v_sub_s3p3_1;\n\n  -- Frank P7 sub2: CE (final)\n  INSERT
+    INTO submissions (exam_session_problem_id, candidate_id, language, source_code,\n
+    \   status, verdict, runtime_ms, memory_kb, submitted_at, judged_at)\n  VALUES
+    (\n    v_s3_esp3, v_c3_id, 'cpp17',\n    E'#include<iostream>\\n#include<string>\\nusing
+    namespace std;\\n// CE: missing return type on function\\nlcs(string s1,string
+    s2){\\n  int n=s1.size(),m=s2.size();\\n  return 0;\\n}',\n    'done', 'CE', NULL,
+    NULL,\n    NOW()-INTERVAL'1 hour 20 minutes', NOW()-INTERVAL'1 hour 19 minutes')\n
+    \ RETURNING id INTO v_sub_s3p3_2;\n\n  -- Skipped testcase results for CE submission\n
+    \ INSERT INTO submission_testcase_results (submission_id, testcase_id, verdict,
+    runtime_ms, memory_kb, actual_output)\n  SELECT v_sub_s3p3_2, tc.id, 'skipped'::testcase_verdict_type,
+    NULL, NULL, NULL\n  FROM problem_testcases tc WHERE tc.problem_id = v_p7_id;\n\n
+    \ -- Update session 3 esp + session total\n  UPDATE exam_session_problems SET
+    final_submission_id=v_sub_s3p1_3, score=30 WHERE id=v_s3_esp1;\n  UPDATE exam_session_problems
+    SET final_submission_id=v_sub_s3p2_1, score=0  WHERE id=v_s3_esp2;\n  UPDATE exam_session_problems
+    SET final_submission_id=v_sub_s3p3_2, score=0  WHERE id=v_s3_esp3;\n  UPDATE exam_sessions
+    SET total_score=30, updated_at=NOW()-INTERVAL'1 hour' WHERE id=v_s3_id;\n\n  --
+    ================================================================\n  -- 5. SUBMISSIONS
+    — Session 5 (Henry first exam)\n  -- ================================================================\n\n
+    \ -- Henry P2: AC\n  INSERT INTO submissions (exam_session_problem_id, candidate_id,
+    language, source_code,\n    status, verdict, runtime_ms, memory_kb, submitted_at,
+    judged_at)\n  VALUES (\n    v_s5_esp1, v_c5_id, 'cpp17',\n    E'#include<iostream>\\nusing
+    namespace std;\\nint main(){int n;cin>>n;\\n  if(n==0){cout<<0;return 0;}\\n  if(n==1){cout<<1;return
+    0;}\\n  int a=0,b=1;\\n  for(int i=2;i<=n;i++){int c=a+b;a=b;b=c;}\\n  cout<<b;}',\n
+    \   'done', 'AC', 5, 512,\n    NOW()-INTERVAL'4 hours 30 minutes', NOW()-INTERVAL'4
+    hours 29 minutes')\n  RETURNING id INTO v_sub_s5p1;\n\n  INSERT INTO submission_testcase_results
+    (submission_id, testcase_id, verdict, runtime_ms, memory_kb, actual_output)\n
+    \ SELECT v_sub_s5p1, tc.id, 'AC'::testcase_verdict_type, 5, 512,\n         CASE
+    WHEN tc.is_public THEN tc.expected_output ELSE NULL END\n  FROM problem_testcases
+    tc WHERE tc.problem_id = v_p2_id;\n\n  -- Henry P5: WA (not sorted output)\n  INSERT
+    INTO submissions (exam_session_problem_id, candidate_id, language, source_code,\n
+    \   status, verdict, runtime_ms, memory_kb, submitted_at, judged_at)\n  VALUES
+    (\n    v_s5_esp2, v_c5_id, 'python3',\n    E'n=int(input());a=list(map(int,input().split()))\\nm=int(input());b=list(map(int,input().split()))\\nprint(*a,*b)
+    \ # bug: concatenation without sorting',\n    'done', 'WA', 28, 7168,\n    NOW()-INTERVAL'4
+    hours 10 minutes', NOW()-INTERVAL'4 hours 9 minutes')\n  RETURNING id INTO v_sub_s5p2;\n\n
+    \ INSERT INTO submission_testcase_results (submission_id, testcase_id, verdict,
+    runtime_ms, memory_kb, actual_output)\n  SELECT v_sub_s5p2, tc.id, 'WA'::testcase_verdict_type,
+    28, 7168,\n         CASE WHEN tc.is_public THEN 'wrong order' ELSE NULL END\n
+    \ FROM problem_testcases tc WHERE tc.problem_id = v_p5_id;\n\n  -- Henry P6: AC\n
+    \ INSERT INTO submissions (exam_session_problem_id, candidate_id, language, source_code,\n
+    \   status, verdict, runtime_ms, memory_kb, submitted_at, judged_at)\n  VALUES
+    (\n    v_s5_esp3, v_c5_id, 'python3',\n    E's=input();stack=[];m={\")\":\"(\",\"}\":\"{\",\"]\":\"[\"}\\nfor
+    c in s:\\n  if c in \"([{\": stack.append(c)\\n  elif stack and stack[-1]==m[c]:
+    stack.pop()\\n  else: print(\"false\");exit()\\nprint(\"true\" if not stack else
+    \"false\")',\n    'done', 'AC', 22, 7168,\n    NOW()-INTERVAL'3 hours 30 minutes',
+    NOW()-INTERVAL'3 hours 29 minutes')\n  RETURNING id INTO v_sub_s5p3;\n\n  INSERT
+    INTO submission_testcase_results (submission_id, testcase_id, verdict, runtime_ms,
+    memory_kb, actual_output)\n  SELECT v_sub_s5p3, tc.id, 'AC'::testcase_verdict_type,
+    22, 7168,\n         CASE WHEN tc.is_public THEN tc.expected_output ELSE NULL END\n
+    \ FROM problem_testcases tc WHERE tc.problem_id = v_p6_id;\n\n  UPDATE exam_session_problems
+    SET final_submission_id=v_sub_s5p1, score=30 WHERE id=v_s5_esp1;\n  UPDATE exam_session_problems
+    SET final_submission_id=v_sub_s5p2, score=0  WHERE id=v_s5_esp2;\n  UPDATE exam_session_problems
+    SET final_submission_id=v_sub_s5p3, score=30 WHERE id=v_s5_esp3;\n  UPDATE exam_sessions
+    SET total_score=60 WHERE id=v_s5_id;\n\n  -- ================================================================\n
+    \ -- 6. SUBMISSIONS — Session 6 (Henry retake)\n  -- ================================================================\n\n
+    \ -- Henry P1: TLE (brute force O(n^2))\n  INSERT INTO submissions (exam_session_problem_id,
+    candidate_id, language, source_code,\n    status, verdict, runtime_ms, memory_kb,
+    submitted_at, judged_at)\n  VALUES (\n    v_s6_esp1, v_c5_id, 'python3',\n    E'n=int(input());nums=list(map(int,input().split()));t=int(input())\\nfor
+    i in range(n):\\n  for j in range(n):  # O(n^2) TLEs on large input\\n    if i!=j
+    and nums[i]+nums[j]==t: print(i,j);exit()',\n    'done', 'TLE', 5000, 9216,\n
+    \   NOW()-INTERVAL'55 minutes', NOW()-INTERVAL'54 minutes')\n  RETURNING id INTO
+    v_sub_s6p1;\n\n  INSERT INTO submission_testcase_results (submission_id, testcase_id,
+    verdict, runtime_ms, memory_kb, actual_output)\n  SELECT v_sub_s6p1, tc.id, 'TLE'::testcase_verdict_type,
+    5000, 9216, NULL\n  FROM problem_testcases tc WHERE tc.problem_id = v_p1_id;\n\n
+    \ -- Henry P4: AC (correct binary search)\n  INSERT INTO submissions (exam_session_problem_id,
+    candidate_id, language, source_code,\n    status, verdict, runtime_ms, memory_kb,
+    submitted_at, judged_at)\n  VALUES (\n    v_s6_esp2, v_c5_id, 'cpp17',\n    E'#include<iostream>\\nusing
+    namespace std;\\nint main(){\\n  int n;cin>>n;\\n  int a[1000];\\n  for(int i=0;i<n;i++)cin>>a[i];\\n
+    \ int t;cin>>t;\\n  int lo=0,hi=n-1;\\n  while(lo<=hi){\\n    int mid=(lo+hi)/2;\\n
+    \   if(a[mid]==t){cout<<mid;return 0;}\\n    else if(a[mid]<t)lo=mid+1;\\n    else
+    hi=mid-1;\\n  }\\n  cout<<-1;\\n}',\n    'done', 'AC', 6, 512,\n    NOW()-INTERVAL'45
+    minutes', NOW()-INTERVAL'44 minutes')\n  RETURNING id INTO v_sub_s6p2;\n\n  INSERT
+    INTO submission_testcase_results (submission_id, testcase_id, verdict, runtime_ms,
+    memory_kb, actual_output)\n  SELECT v_sub_s6p2, tc.id, 'AC'::testcase_verdict_type,
+    6, 512,\n         CASE WHEN tc.is_public THEN tc.expected_output ELSE NULL END\n
+    \ FROM problem_testcases tc WHERE tc.problem_id = v_p4_id;\n\n  -- Henry P7: AC
+    (correct DP solution)\n  INSERT INTO submissions (exam_session_problem_id, candidate_id,
+    language, source_code,\n    status, verdict, runtime_ms, memory_kb, submitted_at,
+    judged_at)\n  VALUES (\n    v_s6_esp3, v_c5_id, 'cpp17',\n    E'#include<iostream>\\n#include<vector>\\n#include<string>\\nusing
+    namespace std;\\nint main(){\\n  string s1,s2;cin>>s1>>s2;\\n  int n=s1.size(),m=s2.size();\\n
+    \ vector<vector<int>>dp(n+1,vector<int>(m+1,0));\\n  for(int i=1;i<=n;i++)\\n
+    \   for(int j=1;j<=m;j++)\\n      dp[i][j]=s1[i-1]==s2[j-1]?dp[i-1][j-1]+1:max(dp[i-1][j],dp[i][j-1]);\\n
+    \ cout<<dp[n][m];\\n}',\n    'done', 'AC', 18, 4096,\n    NOW()-INTERVAL'35 minutes',
+    NOW()-INTERVAL'34 minutes')\n  RETURNING id INTO v_sub_s6p3;\n\n  INSERT INTO
+    submission_testcase_results (submission_id, testcase_id, verdict, runtime_ms,
+    memory_kb, actual_output)\n  SELECT v_sub_s6p3, tc.id, 'AC'::testcase_verdict_type,
+    18, 4096,\n         CASE WHEN tc.is_public THEN tc.expected_output ELSE NULL END\n
+    \ FROM problem_testcases tc WHERE tc.problem_id = v_p7_id;\n\n  UPDATE exam_session_problems
+    SET final_submission_id=v_sub_s6p1, score=0  WHERE id=v_s6_esp1;\n  UPDATE exam_session_problems
+    SET final_submission_id=v_sub_s6p2, score=40 WHERE id=v_s6_esp2;\n  UPDATE exam_session_problems
+    SET final_submission_id=v_sub_s6p3, score=30 WHERE id=v_s6_esp3;\n  UPDATE exam_sessions
+    SET total_score=70 WHERE id=v_s6_id;\n\nEND $$;\n"
+  11-submission-type.sql: |
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'submission_type') THEN
+        CREATE TYPE submission_type AS ENUM ('simple', 'formal');
+      END IF;
+    END $$;
+
+    ALTER TABLE submissions
+      ADD COLUMN IF NOT EXISTS submission_type submission_type NOT NULL DEFAULT 'formal';
+  README.md: |
+    # Database — Online Code Test
+
+    ## 目前狀態
+
+    所有資料統一存於單一 PostgreSQL 實例，依模組邏輯切分 table，未來拆微服務時邊界清楚。M1 已完成 init SQL（00–10）、Drizzle ORM schema 對齊、seed data 與 scenario data；M2 新增 `submission_type` 欄位（11）；M3 於 `02-iam.sql` 新增 `users.created_by` 欄位（self-referential FK），並在 `backend/src/db/migrate.ts` 補上 idempotent `ALTER TABLE` 供現有資料庫升級。`backend/src/db/schema.ts` 已對應所有 tables 與 enums。
+
+    ---
+
+    ## 目錄結構
+
+    ```text
+    infra/postgres/
+    ├── 00-extensions.sql     # 啟用 PostgreSQL extensions（如 pgcrypto）
+    ├── 01-enums.sql          # 所有 ENUM type 定義（difficulty_level、exam_status 等）
+    ├── 02-iam.sql            # IAM 模組：users、roles、permissions、user_roles、role_permissions
+    ├── 03-problems.sql       # Problem 模組：problems、problem_testcases、language_defaults、problem_language_limits
+    ├── 04-exam.sql           # Exam 模組：exam_sessions、exam_session_problems（FK 僅正向）
+    ├── 05-submissions.sql    # Submission 模組：submissions 主表
+    ├── 06-str.sql            # submission_testcase_results 表（per-testcase 結果）
+    ├── 07-alter-esp.sql      # ALTER exam_session_problems：加入 final_submission_id FK（循環 FK 需分開建）
+    ├── 08-indexes.sql        # 所有額外 index（PK/UNIQUE 之外）
+    ├── 09-seed.sql           # 靜態參考資料：roles、permissions、role_permissions、language_defaults
+    ├── 10-scenarios.sql      # 情境測試資料：9 使用者、8 題、6 場考試、多筆 submission
+    └── 11-submission-type.sql # M2 migration：新增 submission_type enum 與 submissions 欄位
+    ```
+
+    **設計邏輯：** 每支 SQL 腳本負責單一層次，按編號順序執行（後面的腳本可能依賴前面建立的 type 或 table）。`07-alter-esp.sql` 獨立出來是因為 `exam_session_problems.final_submission_id` 與 `submissions` 之間存在循環外鍵，必須在兩張表都存在後才能建立。
+
+    ---
+
+    ## Schema 參考
+
+    ### Enum 定義
+
+    | Enum                    | 值                                                                | 說明                                                   |
+    | ----------------------- | ----------------------------------------------------------------- | ------------------------------------------------------ |
+    | `difficulty_level`      | `easy`, `medium`, `hard`                                          | 題目難度                                               |
+    | `exam_status`           | `not_started`, `in_progress`, `submitted`, `expired`, `cancelled` | 考試 session 狀態機                                    |
+    | `submission_status`     | `pending`, `judging`, `done`, `system_error`                      | Submission 生命週期                                    |
+    | `verdict_type`          | `AC`, `WA`, `TLE`, `MLE`, `RE`, `CE`                              | Submission 整體評測結果                                |
+    | `testcase_verdict_type` | `AC`, `WA`, `TLE`, `MLE`, `RE`, `skipped`                         | 單筆測資結果（不含 CE，CE 為 submission 層級）         |
+    | `submission_type`       | `simple`, `formal`                                                | 提交類型：simple 僅跑公開測資，formal 跑全部並更新分數 |
+
+    ### IAM 模組
+
+    | Table              | 用途                                                     |
+    | ------------------ | -------------------------------------------------------- |
+    | `users`            | 使用者主表，含 `is_superuser` flag 與軟刪除 `deleted_at` |
+    | `roles`            | 角色定義（interviewer、problem_setter、candidate）       |
+    | `permissions`      | 權限代碼（problem:manage、exam:manage、exam:take）       |
+    | `user_roles`       | 使用者 ↔ 角色 N:N 關聯                                   |
+    | `role_permissions` | 角色 ↔ 權限 N:N 關聯                                     |
+
+    **`users` 關鍵欄位：**
+
+    | 欄位            | 說明                                                          |
+    | --------------- | ------------------------------------------------------------- |
+    | `username`      | 登入帳號；批次匯入時由系統產生（如 `candidate_20260509_001`） |
+    | `password_hash` | bcrypt hash；明文密碼僅在建立當下回傳給面試主管，不儲存       |
+    | `is_superuser`  | Root 標記；service 層 RBAC 直接 short-circuit 放行            |
+    | `created_by`    | 建立者 FK（self-referential，nullable）；superuser 建立時為 NULL，interviewer 建立 candidate 時自動填入自身 id；`GET /api/users`、`PUT`、`DELETE` 均依此做 ownership 過濾 |
+    | `deleted_at`    | 軟刪除；查詢時 `WHERE deleted_at IS NULL`                     |
+
+    **角色與權限預設綁定：**
+
+    | 角色             | 權限             |
+    | ---------------- | ---------------- |
+    | `interviewer`    | `exam:manage`    |
+    | `problem_setter` | `problem:manage` |
+    | `candidate`      | `exam:take`      |
+
+    > Root 不在 roles 表中，以 `users.is_superuser=TRUE` 表示。ownership 規則（面試者只能看自己的資料）不進 RBAC，由 service 層業務邏輯處理。
+
+    ### Problem 模組
+
+    | Table                     | 用途                                                               |
+    | ------------------------- | ------------------------------------------------------------------ |
+    | `problems`                | 題目主表，含 Markdown 描述、難度、時間/記憶體/輸出限制，支援軟刪除 |
+    | `problem_testcases`       | 測資，一題多筆；區分 `is_public`（公開）與隱藏                     |
+    | `language_defaults`       | 全域語言倍率（cpp17 1.0x / python3 3.0x time, 2.0x memory）        |
+    | `problem_language_limits` | 題目層級的語言倍率覆寫；無 row 則用 `language_defaults` 預設值     |
+
+    **關鍵設計：**
+
+    - `time_limit_ms` / `memory_limit_mb` 為 C++ baseline；其他語言的有效限制 = baseline × 語言倍率
+    - `output_limit_kb` 預設 64KB，防止暴力輸出灌爆系統
+    - 已被 `exam_session_problems` 引用的題目不可刪除（回 409），避免破壞歷史考試資料
+
+    **`problem_testcases` 關鍵欄位：**
+
+    | 欄位          | 說明                                                                                            |
+    | ------------- | ----------------------------------------------------------------------------------------------- |
+    | `order_index` | 同題內測資順序（從 1 開始）                                                                     |
+    | `is_public`   | TRUE = 面試者可看 input/expected output，失敗時可看 actual output；FALSE = 隱藏測資，僅用來判分 |
+
+    ### Exam 模組
+
+    | Table                   | 用途                                                                |
+    | ----------------------- | ------------------------------------------------------------------- |
+    | `exam_sessions`         | 某面試者的某次考試實例；每次重考都是新的 row                        |
+    | `exam_session_problems` | 考試中派的每一題，含 `score_weight`、`score`、`final_submission_id` |
+
+    **`exam_sessions` 狀態機：**
+
+    ```
+    not_started ──[面試者點「開始考試」]──> in_progress
+    in_progress ──[面試者提交 / 時間到]──> submitted
+    not_started ──[面試主管取消]──────────> cancelled
+    in_progress ──[面試主管取消]──────────> cancelled
+    ```
+
+    **`exam_session_problems` 關鍵欄位：**
+
+    | 欄位                  | 說明                                                       |
+    | --------------------- | ---------------------------------------------------------- |
+    | `score_weight`        | 這題在本場考試的滿分配額，派題時固定                       |
+    | `final_submission_id` | 指向「最後一次提交」；每次新提交評測完成後更新             |
+    | `score`               | 實際得分：全 AC（public + hidden）= `score_weight`，否則 0 |
+
+    **`DEFERRABLE INITIALLY DEFERRED` 設計：** `final_submission_id` 與 `submissions.exam_session_problem_id` 存在循環外鍵，DEFERRABLE 讓 transaction commit 時才檢查，避免新增 submission 時的順序問題。
+
+    ### Submission 模組
+
+    | Table                         | 用途                                                                |
+    | ----------------------------- | ------------------------------------------------------------------- |
+    | `submissions`                 | 每次提交一筆，含 `submission_type`（simple/formal）與評測狀態       |
+    | `submission_testcase_results` | per-testcase 評測結果，`is_public=FALSE` 的 `actual_output` 存 NULL |
+
+    **`submissions` 關鍵欄位：**
+
+    | 欄位                       | 說明                                                          |
+    | -------------------------- | ------------------------------------------------------------- |
+    | `exam_session_problem_id`  | 綁定到「哪場考試的哪題」（不直接綁 problem_id）               |
+    | `candidate_id`             | 冗餘欄位，避免每次 join 兩層；查詢個人歷史時很方便            |
+    | `submission_type`          | `simple`（public 測資）或 `formal`（全部測資，AC 才更新分數） |
+    | `verdict`                  | `status='done'` 時才有意義                                    |
+    | `runtime_ms` / `memory_kb` | 取所有測資中最大值                                            |
+
+    **不可變欄位（application 層強制）：** `exam_session_problem_id`、`candidate_id`、`language`、`source_code`、`submitted_at`；`status`、`verdict`、`runtime_ms`、`memory_kb`、`judged_at` 由 worker 寫入一次。
+
+    ### Index 策略
+
+    | Index                                                                        | 主要查詢場景                               |
+    | ---------------------------------------------------------------------------- | ------------------------------------------ |
+    | `idx_users_deleted_at`（partial, `WHERE deleted_at IS NULL`）                | 查詢有效使用者                             |
+    | `idx_problems_difficulty`（partial, `WHERE deleted_at IS NULL`）             | 隨機派題按難度篩選                         |
+    | `idx_exam_sessions_candidate`（`candidate_id, created_at DESC`）             | 派題避重複：撈某面試者所有歷史 session     |
+    | `idx_submissions_esp`（`exam_session_problem_id, submitted_at DESC`）        | 查某題最後一次提交 / 提交歷史              |
+    | `idx_submissions_status`（partial, `WHERE status IN ('pending','judging')`） | Worker 撈待處理任務（作為 MQ 的 fallback） |
+
+    ---
+
+    ## 情境資料覆蓋
+
+    ### 靜態參考資料（`09-seed.sql`）
+
+    | 類型 | 內容                                                                    |
+    | ---- | ----------------------------------------------------------------------- |
+    | 角色 | interviewer、problem_setter、candidate                                  |
+    | 權限 | problem:manage、exam:manage、exam:take                                  |
+    | 語言 | cpp17（C++17, 1.0x/1.0x）、python3（Python 3, 3.0x time / 2.0x memory） |
+
+    ### 情境測試資料（`10-scenarios.sql`）
+
+    | 類型   | 內容                                                                                                                                | 可驗證的功能              |
+    | ------ | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+    | 使用者 | 9 位：`root`（superuser）、`alice`（interviewer）、`bob`（interviewer + problem_setter）、`carol`（problem_setter）、5 位 candidate；`alice`/`bob`/`carol` 的 `created_by = root.id`，5 位 candidate 的 `created_by` 依 id 輪流分配給三位 interviewer | RBAC / 多角色 / ownership |
+    | 題庫   | 8 題，涵蓋 easy / medium / hard，含 public / hidden testcases                                                                       | 難度篩選、hidden 過濾     |
+    | 考試   | 6 場，涵蓋 `not_started`、`in_progress`、`submitted`、`cancelled`                                                                   | 狀態機覆蓋                |
+    | 提交   | 多次提交，含 AC / WA / TLE / CE 等 verdict 與 per-testcase results                                                                  | Mock judge 推進、分數計算 |
+    | 重考   | Henry 有兩場考試，題目不重複                                                                                                        | 隨機派題排除歷史題目      |
+
+    > `09-seed.sql` 只放靜態參考資料；使用者、題目、考試與提交情境集中在 `10-scenarios.sql`，方便未來拆成 dev / test seed。
+
+    ### 測試角色資料
+
+    | username | password | role |
+    |---|---|---|
+    | `root` | `Root@1234` | superuser |
+    | `alice` | `Test@1234` | interviewer |
+    | `bob` | `Test@1234` | interviewer + problem_setter |
+    | `carol` | `Test@1234` | problem_setter |
+    | `candidate_20260509_001` | `Cand@1234` | candidate |
+    | `candidate_20260509_002` | `Cand@1234` | candidate |
+    | `candidate_20260509_003` | `Cand@1234` | candidate |
+    | `candidate_20260509_004` | `Cand@1234` | candidate |
+    | `candidate_20260509_005` | `Cand@1234` | candidate |
+
+    ---
+
+    ## 剩餘工作
+
+    - **版本化 migration 策略**：目前 00–11 SQL 是 init scripts（`docker-entrypoint-initdb.d/` 風格），生產環境需要可回滾的版本化 migration（如 Flyway、golang-migrate）。M3 的 `created_by` 欄位已同步更新至 `02-iam.sql`（fresh DB）與 `backend/src/db/migrate.ts`（`ALTER TABLE ... IF NOT EXISTS`，現有 DB）。
+    - **考試過期處理**：`expired` 狀態目前保留但未啟用；需要 cron job 或 lazy update 將到期的 `in_progress` session 標記為 `submitted`。
+    - **未來 schema 演進**（視需求觸發）：
+      - 測資搬到 MinIO/S3（`input_data` → object_key）
+      - 程式碼搬到 MinIO（`source_code` → object_key）
+      - 題目版本化（`exam_session_problems` FK 改到版本表）
+      - 反作弊事件表（`anticheat_events`）
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: oct

@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: oct
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done"]
+        - name: wait-rabbitmq
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z rabbitmq 5672; do echo waiting for rabbitmq; sleep 2; done"]
+      containers:
+        - name: worker
+          image: ghcr.io/kxiangw/oct-worker:352cabdff3
+          imagePullPolicy: Always
+          env:
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: oct-secrets
+                  key: RABBITMQ_URL
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: oct-secrets
+                  key: DATABASE_URL
+            - name: HOST_WORK_DIR
+              value: "/tmp/judge"
+            - name: SANDBOX_RUNTIME
+              value: "runc"
+            - name: NODE_ENV
+              value: "production"
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+            - name: judge-work
+              mountPath: /tmp/judge
+      volumes:
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
+        - name: judge-work
+          hostPath:
+            path: /tmp/judge
+            type: DirectoryOrCreate
+      securityContext:
+        runAsNonRoot: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  namespace: oct
+spec:
+  selector:
+    app: worker
+  ports:
+    - port: 8080
+      targetPort: 8080

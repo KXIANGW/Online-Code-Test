@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: oct-app
+  namespace: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: >-
+      backend=ghcr.io/kxiangw/oct-backend,
+      frontend=ghcr.io/kxiangw/oct-frontend,
+      worker=ghcr.io/kxiangw/oct-worker
+    argocd-image-updater.argoproj.io/backend.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/backend.allow-tags: "regexp:^[0-9a-f]{10}$"
+    argocd-image-updater.argoproj.io/frontend.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/frontend.allow-tags: "regexp:^[0-9a-f]{10}$"
+    argocd-image-updater.argoproj.io/worker.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/worker.allow-tags: "regexp:^[0-9a-f]{10}$"
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/kxiangw/Online-Code-Test
+    targetRevision: HEAD
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: oct
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
