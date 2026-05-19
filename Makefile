@@ -65,7 +65,7 @@ sandbox-images:
 	$(MAKE) -C worker build-sandbox-images
 
 dev: bootstrap sandbox-images
-	docker compose up -d postgres rabbitmq redis backend worker
+	docker compose up -d --build postgres rabbitmq redis backend worker
 
 # ── Demo: 100 concurrent observability ────────────────────────────────────
 # Pre-req:
