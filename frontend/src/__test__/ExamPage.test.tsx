@@ -1347,4 +1347,103 @@ describe("ExamPage", () => {
     expect(within(panel).getByText("正式")).toBeInTheDocument();
     expect(within(panel).queryByText("一般")).not.toBeInTheDocument();
   });
+
+  // ── Cross-problem isolation (output tab) ──────────────────────────────────
+
+  it("output tab shows 尚未執行 after switching to a problem that has no run result", async () => {
+    // given — run on problem 1
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), { target: { value: "print('hi')" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("底部面板")).toHaveTextContent("一般提交：pending"),
+    );
+
+    // when — switch to problem 2
+    fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "執行結果" }));
+
+    // expect — problem 2 has no run result
+    expect(screen.getByText("尚未執行")).toBeInTheDocument();
+  });
+
+  it("output tab restores run result when switching back to the problem that was run", async () => {
+    // given — run on problem 1, switch away, switch back
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), { target: { value: "print('hi')" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("底部面板")).toHaveTextContent("一般提交：pending"),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
+
+    // when — switch back to problem 1
+    fireEvent.click(screen.getByRole("tab", { name: /Two Sum/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "執行結果" }));
+
+    // expect — problem 1's run result is still visible
+    expect(screen.getByLabelText("底部面板")).toHaveTextContent("一般提交：pending");
+  });
+
+  // ── Cross-problem isolation (history tab) ─────────────────────────────────
+
+  it("history tab shows 尚無提交記錄 for a problem with no submissions when another problem has submissions", async () => {
+    // given — problem 1 has a formal submission pre-loaded, problem 2 has none
+    mockListSessionSubmissions.mockResolvedValue([mockSubmissions[1]!]); // formal for problem 1
+    await renderExamPage();
+
+    // when — switch to problem 2 and open history
+    fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+
+    // expect — problem 2 history is empty even though problem 1 has submissions
+    expect(screen.getByText("尚無提交記錄")).toBeInTheDocument();
+  });
+
+  it("history tab restores submissions when switching back to the problem that was submitted", async () => {
+    // given — problem 1 has a formal submission pre-loaded
+    mockListSessionSubmissions.mockResolvedValue([mockSubmissions[1]!]);
+    await renderExamPage();
+    // navigate away to problem 2 then back
+    fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
+
+    // when — switch back to problem 1 and open history
+    fireEvent.click(screen.getByRole("tab", { name: /Two Sum/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+
+    // expect — problem 1's submission is visible again
+    const panel = screen.getByLabelText("底部面板");
+    expect(within(panel).getByText("1. Two Sum")).toBeInTheDocument();
+    expect(within(panel).getByText("AC")).toBeInTheDocument();
+  });
+
+  it("submitting on problem 2 does not pollute problem 1 history tab", async () => {
+    // given — createSubmission returns espId 102 (problem 2)
+    mockCreateSubmission.mockResolvedValue({
+      id: 9002,
+      examSessionProblemId: 102,
+      language: "python3",
+      submissionType: "formal",
+      status: "pending",
+      verdict: null,
+      runtimeMs: null,
+      memoryKb: null,
+      submittedAt: "2026-01-01T00:10:00.000Z",
+      judgedAt: null,
+    });
+    await renderExamPage();
+
+    // switch to problem 2 and submit
+    fireEvent.click(screen.getByRole("tab", { name: /Binary Search/ }));
+    fireEvent.change(screen.getByLabelText("Code editor"), { target: { value: "code" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalled());
+
+    // when — switch to problem 1 and open history
+    fireEvent.click(screen.getByRole("tab", { name: /Two Sum/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+
+    // expect — problem 1 history is empty (submission belonged to problem 2)
+    expect(screen.getByText("尚無提交記錄")).toBeInTheDocument();
+  });
 });

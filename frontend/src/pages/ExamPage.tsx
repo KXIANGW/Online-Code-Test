@@ -711,37 +711,46 @@ export default function ExamPage() {
                   </div>
                 ))}
               {bottomTab === "output" &&
-                (runResult ? (
+                (activeRunResult ? (
                   <div className="space-y-2 text-slate-600">
                     <p>
                       一般提交：
-                      {runResult.status === "done" ? runResult.verdict : runResult.status}
+                      {activeRunResult.status === "done"
+                        ? activeRunResult.verdict
+                        : activeRunResult.status}
                     </p>
-                    {runResult.runtimeMs !== null && <p>執行時間：{runResult.runtimeMs} ms</p>}
+                    {activeRunResult.runtimeMs !== null && (
+                      <p>執行時間：{activeRunResult.runtimeMs} ms</p>
+                    )}
                   </div>
                 ) : (
                   <p className="text-center py-6">尚未執行</p>
                 ))}
               {bottomTab === "history" &&
-                (submissions.length === 0 ? (
-                  <p className="text-center py-6">尚無提交記錄</p>
-                ) : (
-                  <div className="space-y-2">
-                    {submissions.map((submission) => (
-                      <div
-                        key={submission.id}
-                        className="flex items-center justify-between rounded-md border border-slate-100 px-3 py-2 text-slate-600"
-                      >
-                        <span>
-                          {submission.orderIndex}. {submission.problemTitle}
-                        </span>
-                        <span>{submission.submissionType === "simple" ? "一般" : "正式"}</span>
-                        <span>{submission.verdict ?? submission.status}</span>
-                        <span>{submission.language}</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
+                (() => {
+                  const activeSubmissions = submissions.filter(
+                    (s) => s.examSessionProblemId === activeProblem?.id,
+                  );
+                  return activeSubmissions.length === 0 ? (
+                    <p className="text-center py-6">尚無提交記錄</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {activeSubmissions.map((submission) => (
+                        <div
+                          key={submission.id}
+                          className="flex items-center justify-between rounded-md border border-slate-100 px-3 py-2 text-slate-600"
+                        >
+                          <span>
+                            {submission.orderIndex}. {submission.problemTitle}
+                          </span>
+                          <span>{submission.submissionType === "simple" ? "一般" : "正式"}</span>
+                          <span>{submission.verdict ?? submission.status}</span>
+                          <span>{submission.language}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
             </div>
           </div>
         </div>
