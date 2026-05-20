@@ -117,8 +117,8 @@ describe("ProblemSetterDashboardPage()", () => {
 
     // expect
     expect(await screen.findByText("Two Sum")).toBeInTheDocument();
-    // "easy" appears as both a filter button and a badge — at least 2 matches
-    expect(screen.getAllByText("easy").length).toBeGreaterThanOrEqual(2);
+    // "簡單" appears as both a filter button and a badge — at least 2 matches
+    expect(screen.getAllByText("簡單").length).toBeGreaterThanOrEqual(2);
     // time/memory text is split across React children; match with regex
     expect(screen.getByText(/1000\s*ms\s*·\s*256\s*MB/)).toBeInTheDocument();
   });
@@ -181,7 +181,7 @@ describe("ProblemSetterDashboardPage()", () => {
     await screen.findByText("Two Sum");
 
     // when
-    await user.click(screen.getByRole("button", { name: "easy" }));
+    await user.click(screen.getByRole("button", { name: "簡單" }));
 
     // expect
     expect(screen.getByText("Two Sum")).toBeInTheDocument();
@@ -196,7 +196,7 @@ describe("ProblemSetterDashboardPage()", () => {
     mockGetProblems.mockResolvedValue(mockProblemSummaries);
     renderPage();
     await screen.findByText("Two Sum");
-    await user.click(screen.getByRole("button", { name: "hard" }));
+    await user.click(screen.getByRole("button", { name: "困難" }));
 
     // when
     await user.click(screen.getByRole("button", { name: "全部" }));

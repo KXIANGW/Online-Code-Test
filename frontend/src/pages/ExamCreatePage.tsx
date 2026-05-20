@@ -11,21 +11,16 @@ import type {
   CreateUserRequest,
   RandomDistribution,
 } from "../types";
+import { DIFFICULTY_LABEL, DIFFICULTY_TEXT_COLOR } from "../config/difficulty";
 
 type ExamMode = "manual" | "random";
 type DiffTab = Difficulty;
 
 const DIFF_TABS: { value: DiffTab; label: string }[] = [
-  { value: "easy", label: "簡單" },
-  { value: "medium", label: "中等" },
-  { value: "hard", label: "困難" },
+  { value: "easy", label: DIFFICULTY_LABEL.easy },
+  { value: "medium", label: DIFFICULTY_LABEL.medium },
+  { value: "hard", label: DIFFICULTY_LABEL.hard },
 ];
-
-const DIFF_COLOR: Record<Difficulty, string> = {
-  easy: "text-green-600",
-  medium: "text-amber-500",
-  hard: "text-red-500",
-};
 
 // ── 主組件 ──────────────────────────────────────────────────────────────────
 
@@ -294,7 +289,7 @@ export default function ExamCreatePage() {
                           />
                           <div className="flex-1 text-sm text-slate-800">
                             {p.title}{" "}
-                            <span className={`text-xs ml-2 ${DIFF_COLOR[p.difficulty]}`}>
+                            <span className={`text-xs ml-2 ${DIFFICULTY_TEXT_COLOR[p.difficulty]}`}>
                               {p.timeLimitMs}ms
                             </span>
                           </div>
