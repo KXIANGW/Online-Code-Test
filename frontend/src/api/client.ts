@@ -3,6 +3,7 @@ import type {
   LoginRequest,
   LoginResponse,
   ExamSession,
+  ExamTemplate,
   ExamSessionProblem,
   Language,
   PublicTestcase,
@@ -19,7 +20,8 @@ import type {
   UpdateProblemRequest,
   Testcase,
   CreateTestcaseRequest,
-  CreateExamSessionRequest,
+  CreateExamTemplateManualRequest,
+  CreateExamTemplateRandomRequest,
   CreateSubmissionRequest,
 } from "../types";
 
@@ -149,10 +151,33 @@ export async function deleteTestcase(problemId: number, tcId: number): Promise<v
   await api.delete(`/problems/${problemId}/testcases/${tcId}`);
 }
 
-export async function createExamSession(
-  req: CreateExamSessionRequest,
-): Promise<ExamSession> {
-  const { data } = await api.post<ExamSession>("/exam-sessions", req);
+export async function createExamTemplateManual(
+  req: CreateExamTemplateManualRequest,
+): Promise<ExamTemplate> {
+  const { data } = await api.post<ExamTemplate>("/exam-sessions/templates/manual", req);
+  return data;
+}
+
+export async function createExamTemplateRandom(
+  req: CreateExamTemplateRandomRequest,
+): Promise<ExamTemplate> {
+  const { data } = await api.post<ExamTemplate>("/exam-sessions/templates/random", req);
+  return data;
+}
+
+export async function listExamTemplates(): Promise<ExamTemplate[]> {
+  const { data } = await api.get<ExamTemplate[]>("/exam-sessions/templates");
+  return data;
+}
+
+export async function assignExamToCandidates(
+  templateId: number,
+  candidateIds: number[],
+): Promise<ExamSession[]> {
+  const { data } = await api.post<ExamSession[]>(
+    `/exam-sessions/templates/${templateId}/assign`,
+    { candidateIds },
+  );
   return data;
 }
 

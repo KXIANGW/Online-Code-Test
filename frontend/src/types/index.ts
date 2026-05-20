@@ -244,6 +244,31 @@ export type CreateExamSessionRequest =
   | CreateExamSessionManualRequest
   | CreateExamSessionRandomRequest;
 
+// ── Exam Template (two-stage flow) ───────────────────────────────────────────
+
+export interface ExamTemplate {
+  id: number;
+  title: string;
+  durationMinutes: number;
+  createdBy: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface CreateExamTemplateManualRequest {
+  title: string;
+  durationMinutes: number;
+  problems: ManualProblemEntry[];
+}
+
+export interface CreateExamTemplateRandomRequest {
+  title: string;
+  durationMinutes: number;
+  distribution: RandomDistribution;
+  scoreWeight: number;
+}
+
 // ── Submission Request ────────────────────────────────────────────────────────
 export type SubmissionType = "simple" | "formal";
 
