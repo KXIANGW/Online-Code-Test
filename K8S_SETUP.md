@@ -247,43 +247,20 @@ kubectl get nodes
 # 預期輸出：k3s-master   Ready   control-plane
 ```
 
-#### macOS — Rancher Desktop（替代方案）
-
-若已安裝 Rancher Desktop：前往 **Preferences → Container Engine** 選擇 `dockerd (moby)`（必選，worker 需要 Docker socket），kubeconfig 會自動設定，可直接跳至「安裝 Argo CD」。
-
-#### Linux — k3s + Docker
-
-```bash
-# 1. 安裝 Docker
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-newgrp docker
-
-# 2. 安裝 k3s（使用 Docker 作為 container runtime）
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--docker" sh -
-
-# 3. 設定 kubeconfig
-mkdir -p ~/.kube
-sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-sudo chown $USER:$USER ~/.kube/config
-chmod 600 ~/.kube/config
-
-# 4. 確認節點 Ready
-kubectl get nodes
-```
-
-> `--docker` flag 讓 k3s 使用 Docker daemon 作為 container runtime，worker pod 才能掛載 `/var/run/docker.sock` 並正常執行沙盒容器。
-
 ---
 
 ### 二、安裝 Argo CD
 
 ```bash
-kubectl create namespace argocd
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace oct --dry-run=client -o yaml | kubectl apply -f -
+
 kubectl apply -n argocd \
   -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml \
   --server-side --force-conflicts
 ```
+
+> `argocd` namespace 用於安裝 Argo CD；`oct` namespace 用於部署 OCT 應用與建立 GHCR imagePullSecret。
 
 > **K3S 注意事項：** 加上 `--server-side --force-conflicts` 可避免 K3S 上 Argo CD CRD 的 annotation 超過 262144 bytes 的錯誤。
 
