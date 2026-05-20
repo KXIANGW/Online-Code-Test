@@ -2,23 +2,8 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getSessionResult, getSubmissionDetail, listSessionSubmissions } from "../api/client";
 import { NavBar } from "../components/NavBar";
-import type { ExamStatus, SessionResult, SubmissionSummary, TestcaseResult } from "../types";
-
-const STATUS_LABEL: Record<ExamStatus, string> = {
-  not_started: "待考",
-  in_progress: "進行中",
-  submitted: "已交卷",
-  expired: "已逾時",
-  cancelled: "已取消",
-};
-
-const STATUS_COLOR: Record<ExamStatus, string> = {
-  not_started: "bg-amber-50 text-amber-600",
-  in_progress: "bg-blue-50 text-blue-600",
-  submitted: "bg-green-50 text-green-600",
-  expired: "bg-slate-100 text-slate-500",
-  cancelled: "bg-slate-100 text-slate-400",
-};
+import type { SessionResult, SubmissionSummary, TestcaseResult } from "../types";
+import { STATUS_LABEL, STATUS_COLOR } from "../config/examStatus";
 
 const TC_VERDICT_COLOR: Record<string, string> = {
   AC: "text-green-600",
