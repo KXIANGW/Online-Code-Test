@@ -29,6 +29,7 @@ import { formatTimeLeft, useExamTimer } from "../hooks/useExamTimer";
 import { useJudgeSocket } from "../hooks/useJudgeSocket";
 import { STORAGE_KEYS } from "../config/storage";
 import { ROUTES } from "../config/routes";
+import { SUBMISSION_TYPE_LABEL } from "../config/submission";
 
 const MONACO_LANG: Record<string, string> = {
   python3: "python",
@@ -746,7 +747,7 @@ export default function ExamPage() {
                           <span>
                             {submission.orderIndex}. {submission.problemTitle}
                           </span>
-                          <span>{submission.submissionType === "simple" ? "一般" : "正式"}</span>
+                          <span>{SUBMISSION_TYPE_LABEL[submission.submissionType]}</span>
                           <span>{submission.verdict ?? submission.status}</span>
                           <span>{submission.language}</span>
                         </div>
