@@ -27,6 +27,7 @@ import {
 } from "../api/client";
 import { formatTimeLeft, useExamTimer } from "../hooks/useExamTimer";
 import { useJudgeSocket } from "../hooks/useJudgeSocket";
+import { STORAGE_KEYS } from "../config/storage";
 
 const MONACO_LANG: Record<string, string> = {
   python3: "python",
@@ -95,14 +96,14 @@ export default function ExamPage() {
         for (const p of sessionProblems) {
           // Restore code for each enabled language from per-language localStorage keys
           for (const lang of enabledLangs) {
-            const lsKey = `oct:draft:${sessionId}:${p.problemId}:${lang.language}`;
+            const lsKey = STORAGE_KEYS.draftKey(sessionId, p.problemId, lang.language);
             const code = localStorage.getItem(lsKey);
             if (code !== null) {
               initialCodes[`${p.problemId}:${lang.language}`] = code;
             }
           }
           // Restore the last-used language from a separate key
-          const lastLang = localStorage.getItem(`oct:lang:${sessionId}:${p.problemId}`);
+          const lastLang = localStorage.getItem(STORAGE_KEYS.langKey(sessionId, p.problemId));
           initialLangs[p.problemId] =
             lastLang && enabledLanguageIds.has(lastLang) ? lastLang : defaultLang;
         }
@@ -130,7 +131,7 @@ export default function ExamPage() {
               if (!missingIds.includes(pid)) continue;
               if (!enabledLanguageIds.has(lang)) continue;
               setCodes((prev) => ({ ...prev, [`${pid}:${lang}`]: code }));
-              localStorage.setItem(`oct:draft:${sessionId}:${pid}:${lang}`, code);
+              localStorage.setItem(STORAGE_KEYS.draftKey(sessionId, pid, lang), code);
             }
           } catch {
             // Redis restore failed — draft code may be missing, editor will be empty
@@ -200,7 +201,7 @@ export default function ExamPage() {
     const lang = selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
     setCodes((prev) => ({ ...prev, [`${activeProblemId}:${lang}`]: code }));
 
-    const lsKey = `oct:draft:${sessionId}:${activeProblemId}:${lang}`;
+    const lsKey = STORAGE_KEYS.draftKey(sessionId, activeProblemId, lang);
 
     if (lsDebounceRef.current) clearTimeout(lsDebounceRef.current);
     lsDebounceRef.current = setTimeout(() => {
@@ -220,7 +221,7 @@ export default function ExamPage() {
     // Flush active language's draft to localStorage immediately before switching problems
     const lang = selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
     localStorage.setItem(
-      `oct:draft:${sessionId}:${activeProblemId}:${lang}`,
+      STORAGE_KEYS.draftKey(sessionId, activeProblemId, lang),
       codes[`${activeProblemId}:${lang}`] ?? "",
     );
     setActiveProblemId(problemId);
@@ -526,21 +527,22 @@ export default function ExamPage() {
 
                 // Flush current language's code to localStorage before switching
                 localStorage.setItem(
-                  `oct:draft:${sessionId}:${activeProblemId}:${currentLang}`,
+                  STORAGE_KEYS.draftKey(sessionId, activeProblemId, currentLang),
                   currentCode,
                 );
 
                 // Load new language's code from localStorage (or empty)
                 const newCode =
-                  localStorage.getItem(`oct:draft:${sessionId}:${activeProblemId}:${newLang}`) ??
-                  "";
+                  localStorage.getItem(
+                    STORAGE_KEYS.draftKey(sessionId, activeProblemId, newLang),
+                  ) ?? "";
                 setCodes((prev) => ({
                   ...prev,
                   [`${activeProblemId}:${newLang}`]: newCode,
                 }));
 
                 // Persist last-used language for this problem
-                localStorage.setItem(`oct:lang:${sessionId}:${activeProblemId}`, newLang);
+                localStorage.setItem(STORAGE_KEYS.langKey(sessionId, activeProblemId), newLang);
 
                 setSelectedLangs((prev) => ({
                   ...prev,
