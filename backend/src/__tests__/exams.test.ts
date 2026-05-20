@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { buildApp } from "./helpers/app";
 import { truncateTestTables, seedUser, loginAs } from "./helpers/db";
 import { db } from "../db/client";
@@ -108,6 +110,23 @@ async function createSession(
   expect(res.statusCode).toBe(201);
   return res.json<Array<{ id: number }>>()[0]!.id;
 }
+
+// ── infra/postgres init contract ─────────────────────────────────────────────
+
+describe("infra/postgres exam schema contract", () => {
+  it("initializes the template + session schema used by Drizzle", () => {
+    const examSql = readFileSync(
+      resolve(__dirname, "../../../infra/postgres/04-exam.sql"),
+      "utf8",
+    );
+
+    expect(examSql).toMatch(/CREATE TABLE exams\b/);
+    expect(examSql).toMatch(/CREATE TABLE exam_problems\b/);
+    expect(examSql).toMatch(/exam_id\s+BIGINT\s+NOT NULL REFERENCES exams\(id\)/);
+    const sessionTable = examSql.match(/CREATE TABLE exam_sessions \([\s\S]*?\n\);/)?.[0] ?? "";
+    expect(sessionTable).not.toMatch(/duration_minutes\s+INT\s+NOT NULL/);
+  });
+});
 
 // ── POST /api/exam-sessions/templates/manual ─────────────────────────────────
 
@@ -391,6 +410,42 @@ describe("POST /api/exam-sessions/templates/:id/assign", () => {
     });
     expect(res.statusCode).toBe(404);
   });
+
+  it("rejects assigning the same active template to the same candidate twice", async () => {
+    const { easy } = await getProblemIds();
+    const templateId = await createTemplate(aliceToken, easy);
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${templateId}/assign`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [davidId] },
+    });
+    expect(first.statusCode).toBe(201);
+
+    const duplicate = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${templateId}/assign`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [davidId] },
+    });
+    expect(duplicate.statusCode).toBe(409);
+
+    const sessionId = first.json<Array<{ id: number }>>()[0]!.id;
+    await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${sessionId}/cancel`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+
+    const reassigned = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${templateId}/assign`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [davidId] },
+    });
+    expect(reassigned.statusCode).toBe(201);
+  });
 });
 
 // ── GET /api/exam-sessions ─────────────────────────────────────────────────────
@@ -427,6 +482,36 @@ describe("GET /api/exam-sessions", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json<unknown[]>();
     expect(body).toHaveLength(2); // alice's 2, not bob's
+  });
+
+  it("returns joined session DTOs for interviewer and candidate dashboards", async () => {
+    const { easy } = await getProblemIds();
+    await createSession(aliceToken, davidId, easy);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/exam-sessions",
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const [session] = res.json<Array<{
+      id: number;
+      examId: number;
+      examTitle: string;
+      candidateId: number;
+      candidate: { id: number; username: string; displayName: string | null };
+      durationMinutes: number;
+      status: string;
+    }>>();
+    expect(session).toMatchObject({
+      examTitle: "Test Exam",
+      candidateId: davidId,
+      durationMinutes: 60,
+      status: "not_started",
+      candidate: { id: davidId, username: "david", displayName: "David" },
+    });
+    expect(session!.examId).toEqual(expect.any(Number));
   });
 
   it("candidate sees only sessions where they are the candidate", async () => {

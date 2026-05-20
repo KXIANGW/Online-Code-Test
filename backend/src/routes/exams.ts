@@ -96,20 +96,8 @@ export const examRoutes: FastifyPluginAsync = async (app) => {
 
 
   // 5. 獲取考試場次列表
-  app.get("/", { preHandler: [authenticate] }, async (request, reply) => {
-    try {
-      return await listExamSessions(request.user);
-    } catch (error: any) {
-      // 💡 這裡會直接印出是誰在 listExamSessions 裡面搞鬼
-      console.error("❌ [Debug Route GET /] Error caught:", {
-        message: error.message,
-        name: error.name,
-        statusCode: error.statusCode,
-        stack: error.stack,
-        user: request.user // 印出當前登入的 user 權限內容到底長怎樣
-      });
-      throw error;
-    }
+  app.get("/", { preHandler: [authenticate] }, async (request) => {
+    return listExamSessions(request.user);
   });
 
   
@@ -122,17 +110,7 @@ export const examRoutes: FastifyPluginAsync = async (app) => {
   // 7. 面試者進入並開始測驗
   app.post("/:id/start", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
-    try {
-      return await startExamSession(request.user, parsePositiveIntParam(id, "id"));
-    } catch (error: any) {
-      // 💡 這裡會印出 start 失敗的真正原因
-      console.error(`❌ [Debug Route POST /${id}/start] Error caught:`, {
-        message: error.message,
-        stack: error.stack,
-        user: request.user
-      });
-      throw error;
-    }
+    return startExamSession(request.user, parsePositiveIntParam(id, "id"));
   });
 
   // 8. 面試者主動提交考卷
@@ -182,17 +160,10 @@ export const examRoutes: FastifyPluginAsync = async (app) => {
 
     const result = saveDraftBody.safeParse(request.body);
     if (!result.success) {
-      // 💡 如果是 Zod 驗證失敗，這裡會印出到底是哪個欄位（code 或 language）不符合格式
-      console.error("❌ [Debug Route Draft] Zod validation failed:", result.error.format());
       throw BadRequestError(result.error.message);
     }
 
-    try {
-      return await saveDraft(request.user, sessionId, pid, result.data);
-    } catch (error: any) {
-      console.error("❌ [Debug Route Draft] saveDraft service exploded:", error);
-      throw error;
-    }
+    return saveDraft(request.user, sessionId, pid, result.data);
   });
 
   // 13. 讀取草稿

@@ -21,6 +21,7 @@ import {
 
 type CurrentUser = FastifyJWT["user"];
 type Difficulty = "easy" | "medium" | "hard";
+type ExamStatus = "not_started" | "in_progress" | "submitted" | "expired" | "cancelled";
 
 
 function canManageExam(user: CurrentUser): boolean {
@@ -29,6 +30,84 @@ function canManageExam(user: CurrentUser): boolean {
 
 function canTakeExam(user: CurrentUser): boolean {
   return user.isSuperuser || user.permissions.includes("exam:take");
+}
+
+function mapSessionDto(row: {
+  id: number;
+  examId: number;
+  examTitle: string;
+  candidateId: number;
+  candidateUsername: string;
+  candidateDisplayName: string | null;
+  createdBy: number;
+  status: ExamStatus;
+  durationMinutes: number;
+  actualStartAt: Date | null;
+  expiresAt: Date | null;
+  submittedAt: Date | null;
+  totalScore: number;
+  maxScore: number;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    id: row.id,
+    examId: row.examId,
+    examTitle: row.examTitle,
+    candidateId: row.candidateId,
+    candidate: {
+      id: row.candidateId,
+      username: row.candidateUsername,
+      displayName: row.candidateDisplayName,
+    },
+    createdBy: row.createdBy,
+    status: row.status,
+    durationMinutes: row.durationMinutes,
+    actualStartAt: row.actualStartAt,
+    expiresAt: row.expiresAt,
+    submittedAt: row.submittedAt,
+    totalScore: row.totalScore,
+    maxScore: row.maxScore,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+async function getSessionDtosByIds(sessionIds: number[]) {
+  if (sessionIds.length === 0) return [];
+
+  const rows = await db
+    .select({
+      id: examSessions.id,
+      examId: examSessions.examId,
+      examTitle: exams.title,
+      candidateId: examSessions.candidateId,
+      candidateUsername: users.username,
+      candidateDisplayName: users.displayName,
+      createdBy: examSessions.createdBy,
+      status: examSessions.status,
+      durationMinutes: exams.durationMinutes,
+      actualStartAt: examSessions.actualStartAt,
+      expiresAt: examSessions.expiresAt,
+      submittedAt: examSessions.submittedAt,
+      totalScore: examSessions.totalScore,
+      maxScore: examSessions.maxScore,
+      createdAt: examSessions.createdAt,
+      updatedAt: examSessions.updatedAt,
+    })
+    .from(examSessions)
+    .innerJoin(exams, eq(examSessions.examId, exams.id))
+    .innerJoin(users, eq(examSessions.candidateId, users.id))
+    .where(inArray(examSessions.id, sessionIds));
+
+  const byId = new Map(rows.map((row) => [row.id, mapSessionDto(row)]));
+  return sessionIds.map((id) => byId.get(id)).filter((row): row is NonNullable<typeof row> => !!row);
+}
+
+async function getSessionDtoById(sessionId: number) {
+  const [session] = await getSessionDtosByIds([sessionId]);
+  if (!session) throw NotFoundError("exam session");
+  return session;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -182,6 +261,7 @@ export async function assignExamToCandidates(
   if (!data.candidateIds || data.candidateIds.length === 0) {
     throw BadRequestError("candidateIds list cannot be empty");
   }
+  assertNoDuplicates(data.candidateIds, "Duplicate candidate assignment");
 
   // 1. 校驗考卷模板是否存在
   const [examTemplate] = await db.select().from(exams).where(eq(exams.id, examId));
@@ -198,8 +278,21 @@ export async function assignExamToCandidates(
     if (!currentUser.isSuperuser && candidateCreatedBy !== currentUser.id) throw ForbiddenError();
   }
 
+  const activeDuplicates = await db
+    .select({ candidateId: examSessions.candidateId })
+    .from(examSessions)
+    .where(and(
+      eq(examSessions.examId, examId),
+      inArray(examSessions.candidateId, data.candidateIds),
+      inArray(examSessions.status, ["not_started", "in_progress"]),
+    ));
+
+  if (activeDuplicates.length > 0) {
+    throw ConflictError("Active exam session already exists for this template and candidate");
+  }
+
   // 4. 利用 Transaction 執行全成功或全失敗的批次指派
-  return db.transaction(async (tx) => {
+  const createdSessions = await db.transaction(async (tx) => {
     const createdSessions = [];
 
     for (const candidateId of data.candidateIds) {
@@ -233,6 +326,8 @@ export async function assignExamToCandidates(
 
     return createdSessions;
   });
+
+  return getSessionDtosByIds(createdSessions.map((session) => session.id));
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -265,57 +360,40 @@ export async function listExamSessions(currentUser: CurrentUser) {
   const isManager = canManageExam(currentUser);
   const isCandidate = canTakeExam(currentUser);
 
-  // 💡 這裡會直接告訴我們，當下這個 candToken 進來時，這兩個核心權限到底是 true 還是 false
-  console.log("🔍 [Debug Service listExamSessions] Privilege Check:", {
-    userId: currentUser.id,
-    isSuperuser: currentUser.isSuperuser,
-    permissions: currentUser.permissions,
-    canManageExam: isManager,
-    canTakeExam: isCandidate,
-  });
-
   if (!isManager && !isCandidate) {
-    console.warn("⚠️ [Debug Service] Throwing ForbiddenError from top guard!");
     throw ForbiddenError();
   }
 
   let sessions;
-  try {
-    if (currentUser.isSuperuser) {
-      sessions = await db.select().from(examSessions);
-    } else if (isManager) {
-      sessions = await db
-        .select()
-        .from(examSessions)
-        .where(eq(examSessions.createdBy, currentUser.id));
-    } else {
-      sessions = await db
-        .select()
-        .from(examSessions)
-        .where(eq(examSessions.candidateId, currentUser.id));
-    }
-    
-    console.log(`📊 [Debug Service] Successfully fetched ${sessions.length} sessions from DB`);
-    return Promise.all(sessions.map(expireIfNeeded));
-
-  } catch (dbError: any) {
-    // 💡 如果問題是出在 Drizzle 查詢（例如欄位對不上），這裡會抓到
-    console.error("❌ [Debug Service] DB Query exploded:", dbError);
-    throw dbError;
+  if (currentUser.isSuperuser) {
+    sessions = await db.select().from(examSessions);
+  } else if (isManager) {
+    sessions = await db
+      .select()
+      .from(examSessions)
+      .where(eq(examSessions.createdBy, currentUser.id));
+  } else {
+    sessions = await db
+      .select()
+      .from(examSessions)
+      .where(eq(examSessions.candidateId, currentUser.id));
   }
+
+  const freshSessions = await Promise.all(sessions.map(expireIfNeeded));
+  return getSessionDtosByIds(freshSessions.map((session) => session.id));
 }
 
 export async function getExamSession(currentUser: CurrentUser, id: number) {
   const session = await getFreshSessionOrThrow(id);
 
-  if (currentUser.isSuperuser) return session;
+  if (currentUser.isSuperuser) return getSessionDtoById(session.id);
   if (canManageExam(currentUser)) {
     if (session.createdBy !== currentUser.id) throw ForbiddenError();
-    return session;
+    return getSessionDtoById(session.id);
   }
 
   if (session.candidateId !== currentUser.id) throw ForbiddenError();
-  return session;
+  return getSessionDtoById(session.id);
 }
 
 /**
@@ -350,12 +428,7 @@ export async function startExamSession(currentUser: CurrentUser, id: number) {
     throw ConflictError(`Cannot start exam session: current status is '${session.status}'`);
   }
 
-  const updated = await db
-    .select()
-    .from(examSessions)
-    .where(eq(examSessions.id, id));
-
-  return updated[0]!;
+  return getExamSession(currentUser, id);
 }
 
 export async function submitExamSession(currentUser: CurrentUser, id: number) {
@@ -377,7 +450,7 @@ export async function submitExamSession(currentUser: CurrentUser, id: number) {
     .where(eq(examSessions.id, id))
     .returning();
 
-  return updated!;
+  return getExamSession(currentUser, updated!.id);
 }
 
 export async function cancelExamSession(currentUser: CurrentUser, id: number) {
@@ -405,7 +478,7 @@ export async function cancelExamSession(currentUser: CurrentUser, id: number) {
     .then((esps) => clearSessionDrafts(id, esps.map((e) => e.problemId)))
     .catch(() => {});
 
-  return updated[0]!;
+  return getExamSession(currentUser, updated[0]!.id);
 }
 
 export async function getExamSessionProblems(currentUser: CurrentUser, sessionId: number) {
