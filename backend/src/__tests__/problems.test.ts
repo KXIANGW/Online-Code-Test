@@ -415,6 +415,7 @@ describe("DELETE /api/problems/:id", () => {
     const carolToken = await loginAs(app, "carol", "Test@1234");
     const aliceToken = await loginAs(app, "alice", "Test@1234");
 
+    // 1. Carol 建立基礎題目
     const createRes = await app.inject({
       method: "POST",
       url: "/api/problems",
@@ -423,23 +424,39 @@ describe("DELETE /api/problems/:id", () => {
     });
     const { id: problemId } = createRes.json<{ id: number }>();
 
-    // alice creates an exam session referencing the problem
-    await app.inject({
+    // 2. Alice 建立考卷模板，並綁定該題目
+    const examRes = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
+      url: "/api/exam-sessions/templates/manual", // 💡 對應 app.post("/templates/manual")
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: {
-        candidateId: candidate1Id,
+        title: "Test Exam Template Containing This Problem",
         durationMinutes: 60,
-        problems: [{ problemId, scoreWeight: 100, orderIndex: 1 }],
+        problems: [
+          { problemId, scoreWeight: 100, orderIndex: 1 }
+        ],
       },
     });
 
+    const { id: examId } = examRes.json<{ id: number }>();
+
+    // 3. Alice 批次指派考卷給考生（產生 Exam Session 實體）
+    const assignRes = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${examId}/assign`, // 💡 對應 app.post("/templates/:id/assign")
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        candidateIds: [candidate1Id],
+      },
+    });
+
+    // 4. Carol 嘗試刪除題目
     const delRes = await app.inject({
       method: "DELETE",
       url: `/api/problems/${problemId}`,
       headers: { authorization: `Bearer ${carolToken}` },
     });
+
     expect(delRes.statusCode).toBe(409);
   });
 
@@ -550,6 +567,7 @@ describe("GET /api/languages", () => {
 describe("POST /api/problems with languageLimits", () => {
   it("problem_setter can create a problem with language limits", async () => {
     const token = await loginAs(app, "carol", "Test@1234");
+
     const res = await app.inject({
       method: "POST",
       url: "/api/problems",
@@ -562,6 +580,7 @@ describe("POST /api/problems with languageLimits", () => {
         ],
       },
     });
+
     expect(res.statusCode).toBe(201);
     const { id } = res.json<{ id: number }>();
 
@@ -570,8 +589,10 @@ describe("POST /api/problems with languageLimits", () => {
       url: `/api/problems/${id}`,
       headers: { authorization: `Bearer ${token}` },
     });
+
     expect(detailRes.statusCode).toBe(200);
     const body = detailRes.json<{ languageLimits: { language: string }[] }>();
+
     expect(body.languageLimits).toHaveLength(2);
     expect(body.languageLimits.map((l) => l.language).sort()).toEqual(["cpp17", "python3"]);
   });

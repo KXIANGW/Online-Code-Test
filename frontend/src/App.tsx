@@ -7,7 +7,9 @@ import AdminDashboardPage from "./pages/AdminDashboardPage"; // Root: is_superus
 import ExamResultPage from "./pages/ExamResultPage";
 import ProblemSetterDashboardPage from "./pages/ProblemSetterDashboardPage";
 import ProblemFormPage from "./pages/ProblemFormPage";
-import ExamCreatePage from "./pages/ExamCreatePage";
+import CandidateCreatePage from "./pages/CandidateCreatePage";
+import TemplateCreatePage from "./pages/TemplateCreatePage";
+import TemplateAssignPage from "./pages/TemplateAssignPage";
 import ExamPage from "./pages/ExamPage";
 import CandidateResultPage from "./pages/CandidateResultPage";
 import { useAuthStore } from "./stores/authStore";
@@ -170,12 +172,32 @@ export default function App() {
           }
         />
 
-        {/* 面試官：建立考試 */}
+        {/* 面試官：建立考生帳號 */}
         <Route
-          path="/interviewer/new"
+          path="/interviewer/candidates/new"
           element={
             <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
-              <ExamCreatePage />
+              <CandidateCreatePage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 面試官：建立考試模板 */}
+        <Route
+          path="/interviewer/templates/new"
+          element={
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
+              <TemplateCreatePage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 面試官：分配考試 */}
+        <Route
+          path="/interviewer/templates/:id/assign"
+          element={
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
+              <TemplateAssignPage />
             </RoleBasedRoute>
           }
         />

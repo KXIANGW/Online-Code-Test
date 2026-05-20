@@ -244,7 +244,10 @@ export const mockExamSessions: ExamSession[] = [
   {
     // Not yet started — shows on dashboard as "Pending"
     id: 1,
+    examId: 101,
+    examTitle: "考試 #1",
     candidateId: 1,
+    candidate: { id: 1, username: "candidate01", displayName: "Alice Chen" },
     createdBy: 2,
     status: "not_started",
     durationMinutes: 90,
@@ -259,7 +262,10 @@ export const mockExamSessions: ExamSession[] = [
   {
     // Active exam — used in ExamPage mock
     id: 2,
+    examId: 102,
+    examTitle: "考試 #2",
     candidateId: 1,
+    candidate: { id: 1, username: "candidate01", displayName: "Alice Chen" },
     createdBy: 2,
     status: "in_progress",
     durationMinutes: 90,
@@ -274,7 +280,10 @@ export const mockExamSessions: ExamSession[] = [
   {
     // Completed — shows final score on dashboard
     id: 3,
+    examId: 103,
+    examTitle: "考試 #3",
     candidateId: 1,
+    candidate: { id: 1, username: "candidate01", displayName: "Alice Chen" },
     createdBy: 2,
     status: "submitted",
     durationMinutes: 90,

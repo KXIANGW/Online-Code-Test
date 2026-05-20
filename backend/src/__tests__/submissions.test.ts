@@ -57,51 +57,13 @@ beforeEach(async () => {
   resetSubscribersForTests();
   await truncateTestTables();
 
-  await seedUser({
-    username: "root",
-    password: "Root@1234",
-    displayName: "Root",
-    isSuperuser: true,
-  });
-  carolId = await seedUser({
-    username: "carol",
-    password: "Test@1234",
-    displayName: "Carol",
-    roleNames: ["problem_setter"],
-  });
-  aliceId = await seedUser({
-    username: "alice",
-    password: "Test@1234",
-    displayName: "Alice",
-    roleNames: ["interviewer"],
-  });
-  bobId = await seedUser({
-    username: "bob",
-    password: "Bob@1234",
-    displayName: "Bob",
-    roleNames: ["interviewer"],
-  });
-  davidId = await seedUser({
-    username: "david",
-    password: "Cand@1234",
-    displayName: "David",
-    roleNames: ["candidate"],
-    createdBy: aliceId,
-  });
-  eveId = await seedUser({
-    username: "eve",
-    password: "Eve@1234",
-    displayName: "Eve",
-    roleNames: ["candidate"],
-    createdBy: aliceId,
-  });
-  frankId = await seedUser({
-    username: "frank",
-    password: "Frank@1234",
-    displayName: "Frank",
-    roleNames: ["candidate"],
-    createdBy: bobId,
-  });
+  await seedUser({ username: "root", password: "Root@1234", displayName: "Root", isSuperuser: true });
+  carolId = await seedUser({ username: "carol", password: "Test@1234", displayName: "Carol", roleNames: ["problem_setter"] });
+  aliceId = await seedUser({ username: "alice", password: "Test@1234", displayName: "Alice", roleNames: ["interviewer"] });
+  bobId = await seedUser({ username: "bob", password: "Bob@1234", displayName: "Bob", roleNames: ["interviewer"] });
+  davidId = await seedUser({ username: "david", password: "Cand@1234", displayName: "David", roleNames: ["candidate"], createdBy: aliceId });
+  eveId = await seedUser({ username: "eve", password: "Eve@1234", displayName: "Eve", roleNames: ["candidate"], createdBy: aliceId });
+  frankId = await seedUser({ username: "frank", password: "Frank@1234", displayName: "Frank", roleNames: ["candidate"], createdBy: bobId });
 
   aliceToken = await loginAs(app, "alice", "Test@1234");
   bobToken = await loginAs(app, "bob", "Bob@1234");
@@ -138,64 +100,60 @@ beforeEach(async () => {
   mediumProblemId = problemRows.find((p) => p.difficulty === "medium")!.id;
 
   await db.insert(problemTestcases).values([
-    {
-      problemId: easyProblemId,
-      orderIndex: 1,
-      isPublic: true,
-      inputData: "1 2",
-      expectedOutput: "3",
-    },
-    {
-      problemId: easyProblemId,
-      orderIndex: 2,
-      isPublic: false,
-      inputData: "40 2",
-      expectedOutput: "42",
-    },
-    {
-      problemId: mediumProblemId,
-      orderIndex: 1,
-      isPublic: true,
-      inputData: "5",
-      expectedOutput: "2",
-    },
-    {
-      problemId: mediumProblemId,
-      orderIndex: 2,
-      isPublic: false,
-      inputData: "hidden",
-      expectedOutput: "-1",
-    },
+    { problemId: easyProblemId, orderIndex: 1, isPublic: true, inputData: "1 2", expectedOutput: "3" },
+    { problemId: easyProblemId, orderIndex: 2, isPublic: false, inputData: "40 2", expectedOutput: "42" },
+    { problemId: mediumProblemId, orderIndex: 1, isPublic: true, inputData: "5", expectedOutput: "2" },
+    { problemId: mediumProblemId, orderIndex: 2, isPublic: false, inputData: "hidden", expectedOutput: "-1" },
   ]);
 });
 
-async function createSession(
-  token: string,
-  candidateId: number,
-  problemIds: number[] = [easyProblemId],
-): Promise<{ sessionId: number; espIds: number[] }> {
-  const res = await app.inject({
+// 💡 將 submissions.test.ts 內的 createSession 修正為新版兩段式架構
+async function createSession(token: string, candidateId: number, problemIds: number[] = [1]) {
+  // 1. 先為這個測試場次手動建立一個基礎考卷模板（假定題目 ID 為 1，你在 db.ts 有 seed）
+  const examRes = await app.inject({
     method: "POST",
-    url: "/api/exam-sessions",
+    url: "/api/exam-sessions/templates/manual",
     headers: { authorization: `Bearer ${token}` },
     payload: {
-      candidateId,
+      title: "Submission Test Exam Template",
       durationMinutes: 60,
       problems: problemIds.map((problemId, index) => ({
         problemId,
-        scoreWeight: index === 0 ? 30 : 70,
+        scoreWeight: index === 0 ? 30 : 70, // 💡 完美對齊舊版：第一題 30 分，其餘 70 分
         orderIndex: index + 1,
       })),
     },
   });
 
-  const sessionId = res.json<{ id: number }>().id;
-  const esps = await db
-    .select({ id: examSessionProblems.id })
-    .from(examSessionProblems)
-    .where(eq(examSessionProblems.examSessionId, sessionId));
+  const { id: examId } = examRes.json<{ id: number }>();
 
-  return { sessionId, espIds: esps.map((esp) => esp.id) };
+  // 2. 指派給指定的候選人（產生真正的 Exam Session）
+  const assignRes = await app.inject({
+    method: "POST",
+    url: `/api/exam-sessions/templates/${examId}/assign`,
+    headers: { authorization: `Bearer ${token}` },
+    payload: {
+      candidateIds: [candidateId], // 👈 批次指派
+    },
+  });
+
+  // 3. 取得指派後產生的場次資料
+  // 根據 assignExamToCandidates 服務，這通常會回傳一個場次陣列 [ { id, ... } ]
+  const sessions = assignRes.json<{ id: number }[]>();
+  const sessionId = sessions[0]!.id;
+
+  // 4. 撈取該場次的題目清單（對接舊版測試需要的 espIds）
+  const probRes = await app.inject({
+    method: "GET",
+    url: `/api/exam-sessions/${sessionId}/problems`,
+    headers: { authorization: `Bearer ${token}` },
+  });
+
+  // 假設回傳格式包含題目關聯 ID 的陣列
+  const problemsList = probRes.json<{ id: number }[]>();
+  const espIds = problemsList.map((p) => p.id);
+
+  return { sessionId, espIds };
 }
 
 async function startSession(sessionId: number, token = candToken) {
@@ -211,7 +169,7 @@ async function submitCode(
   sessionId: number,
   examSessionProblemId: number,
   type?: "simple" | "formal",
-  token = candToken,
+  token = candToken
 ): Promise<{ id: number; submissionType: string }> {
   const res = await app.inject({
     method: "POST",
@@ -226,12 +184,7 @@ async function submitCode(
   });
 
   expect(res.statusCode).toBe(202);
-  const body = res.json<{
-    id: number;
-    status: string;
-    verdict: string | null;
-    submissionType: string;
-  }>();
+  const body = res.json<{ id: number; status: string; verdict: string | null; submissionType: string }>();
   expect(body.status).toBe("pending");
   expect(body.verdict).toBeNull();
   return { id: body.id, submissionType: body.submissionType };
@@ -240,7 +193,7 @@ async function submitCode(
 async function writeWorkerResult(
   submissionId: number,
   verdict: "AC" | "WA",
-  type: "simple" | "formal",
+  type: "simple" | "formal"
 ) {
   const [submission] = await db
     .select({
@@ -271,7 +224,7 @@ async function writeWorkerResult(
         WHERE pt.problem_id = $3
           AND ($4::BOOLEAN = FALSE OR pt.is_public = TRUE)
       `,
-      [submissionId, verdict, submission!.problemId, type === "simple"],
+      [submissionId, verdict, submission!.problemId, type === "simple"]
     );
     await pool.query(
       `
@@ -279,7 +232,7 @@ async function writeWorkerResult(
         SET status = 'done', verdict = $2, runtime_ms = 12, memory_kb = 1024, judged_at = NOW()
         WHERE id = $1
       `,
-      [submissionId, verdict],
+      [submissionId, verdict]
     );
     if (type === "formal") {
       await pool.query(
@@ -290,7 +243,7 @@ async function writeWorkerResult(
               updated_at = NOW()
           WHERE id = $1
         `,
-        [submission!.examSessionProblemId, submissionId, verdict],
+        [submission!.examSessionProblemId, submissionId, verdict]
       );
       await pool.query(
         `
@@ -302,7 +255,7 @@ async function writeWorkerResult(
           )
           WHERE id = $1
         `,
-        [submission!.examSessionId],
+        [submission!.examSessionId]
       );
     }
     await pool.query("COMMIT");
@@ -316,10 +269,15 @@ async function writeWorkerResult(
 
 describe("Submission API async judge", () => {
   it("creates pending submissions, persists submissionType, and publishes judge tasks", async () => {
+    // 1. 建立並開始考試場次
     const { sessionId, espIds } = await createSession(aliceToken, davidId);
+
     await startSession(sessionId);
 
+    // 2. 進行第一次提交（正式提交 - formal）
     const formal = await submitCode(sessionId, espIds[0]!);
+
+    // 3. 進行第二次提交（範例/簡易測試 - simple）
     const simple = await submitCode(sessionId, espIds[0]!, "simple");
 
     expect(formal.submissionType).toBe("formal");
@@ -333,9 +291,11 @@ describe("Submission API async judge", () => {
       type: "simple",
     });
 
+    // 4. 直接撈取資料庫實體表，看寫入的欄位現況
     const rows = await db
       .select({ id: submissions.id, submissionType: submissions.submissionType })
       .from(submissions);
+
     expect(rows.map((row) => [row.id, row.submissionType])).toEqual([
       [formal.id, "formal"],
       [simple.id, "simple"],
@@ -378,10 +338,7 @@ describe("Submission API async judge", () => {
       url: `/api/exam-sessions/${sessionId}/submissions/${id}`,
       headers: { authorization: `Bearer ${candToken}` },
     });
-    const body = detail.json<{
-      score: number;
-      testcaseResults: { isPublic: boolean; actualOutput?: string }[];
-    }>();
+    const body = detail.json<{ score: number; testcaseResults: { isPublic: boolean; actualOutput?: string }[] }>();
     expect(body.score).toBe(0);
     expect(body.testcaseResults).toHaveLength(1);
     expect(body.testcaseResults[0]).toMatchObject({ isPublic: true, actualOutput: "3" });
@@ -405,11 +362,14 @@ describe("Submission API async judge", () => {
       url: `/api/exam-sessions/${sessionId}/submissions/${id}`,
       headers: { authorization: `Bearer ${candToken}` },
     });
+
     const body = detail.json<{
       score: number;
       isFinalSubmission: boolean;
       testcaseResults: { isPublic: boolean; actualOutput?: string }[];
     }>();
+
+    expect(detail.statusCode).toBe(200);
     expect(body.score).toBe(30);
     expect(body.isFinalSubmission).toBe(true);
     expect(body.testcaseResults).toHaveLength(2);
@@ -421,6 +381,8 @@ describe("Submission API async judge", () => {
       url: `/api/exam-sessions/${sessionId}/result`,
       headers: { authorization: `Bearer ${candToken}` },
     });
+
+    expect(result.statusCode).toBe(200);
     expect(result.json<{ totalScore: number }>().totalScore).toBe(30);
   });
 
@@ -437,29 +399,24 @@ describe("Submission API async judge", () => {
       url: `/api/exam-sessions/${sessionId}/submissions/${first.id}`,
       headers: { authorization: `Bearer ${candToken}` },
     });
-    expect(firstDetail.json<{ isFinalSubmission: boolean; score: number }>()).toMatchObject({
-      isFinalSubmission: false,
-      score: 0,
-    });
+    expect(firstDetail.json<{ isFinalSubmission: boolean; score: number }>())
+      .toMatchObject({ isFinalSubmission: false, score: 0 });
 
     const secondDetail = await app.inject({
       method: "GET",
       url: `/api/exam-sessions/${sessionId}/submissions/${second.id}`,
       headers: { authorization: `Bearer ${candToken}` },
     });
-    expect(secondDetail.json<{ isFinalSubmission: boolean; score: number }>()).toMatchObject({
-      isFinalSubmission: true,
-      score: 0,
-    });
+    expect(secondDetail.json<{ isFinalSubmission: boolean; score: number }>())
+      .toMatchObject({ isFinalSubmission: true, score: 0 });
 
     const result = await app.inject({
       method: "GET",
       url: `/api/exam-sessions/${sessionId}/result`,
       headers: { authorization: `Bearer ${candToken}` },
     });
-    expect(
-      result.json<{ totalScore: number; problems: { latestStatus: string }[] }>(),
-    ).toMatchObject({ totalScore: 0, problems: [expect.objectContaining({ latestStatus: "WA" })] });
+    expect(result.json<{ totalScore: number; problems: { latestStatus: string }[] }>())
+      .toMatchObject({ totalScore: 0, problems: [expect.objectContaining({ latestStatus: "WA" })] });
   });
 
   it("builds WebSocket result payloads and ACKs malformed result messages", async () => {
@@ -480,7 +437,10 @@ describe("Submission API async judge", () => {
     expect(payload!.testcaseResults.find((tc) => !tc.isPublic)).not.toHaveProperty("actualOutput");
 
     const ack = vi.fn();
-    await handleJudgeResultMessage({ ack }, { content: Buffer.from("{bad json") } as never);
+    await handleJudgeResultMessage(
+      { ack },
+      { content: Buffer.from("{bad json") } as never
+    );
     expect(ack).toHaveBeenCalledTimes(1);
   });
 
@@ -503,7 +463,10 @@ describe("Submission API async judge", () => {
       status: "pending",
     });
 
-    await db.update(submissions).set({ status: "judging" }).where(eq(submissions.id, id));
+    await db
+      .update(submissions)
+      .set({ status: "judging" })
+      .where(eq(submissions.id, id));
 
     const payload = await buildSubmissionStatusPayload(id);
     expect(payload).toMatchObject({
@@ -514,9 +477,10 @@ describe("Submission API async judge", () => {
     });
 
     const ack = vi.fn();
-    await handleJudgeResultMessage({ ack }, {
-      content: Buffer.from(JSON.stringify({ submissionId: id, eventType: "status" })),
-    } as never);
+    await handleJudgeResultMessage(
+      { ack },
+      { content: Buffer.from(JSON.stringify({ submissionId: id, eventType: "status" })) } as never
+    );
 
     expect(ack).toHaveBeenCalledTimes(1);
     expect(JSON.parse(sent.at(-1)!)).toMatchObject({
@@ -534,10 +498,7 @@ describe("Submission API permissions", () => {
     const { sessionId: eveSessionId } = await createSession(aliceToken, eveId);
     const { sessionId: bobSessionId } = await createSession(bobToken, frankId);
 
-    const noAuth = await app.inject({
-      method: "GET",
-      url: `/api/exam-sessions/${sessionId}/result`,
-    });
+    const noAuth = await app.inject({ method: "GET", url: `/api/exam-sessions/${sessionId}/result` });
     expect(noAuth.statusCode).toBe(401);
 
     const otherCandidate = await app.inject({
@@ -601,19 +562,12 @@ describe("Submission API permissions", () => {
 
 describe("Submission API state guards", () => {
   it("rejects submissions before start, after cancel, after submitted, after expiry, and for another candidate", async () => {
-    const { sessionId: notStartedId, espIds: notStartedEspIds } = await createSession(
-      aliceToken,
-      davidId,
-    );
+    const { sessionId: notStartedId, espIds: notStartedEspIds } = await createSession(aliceToken, davidId);
     const notStarted = await app.inject({
       method: "POST",
       url: `/api/exam-sessions/${notStartedId}/submissions`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: {
-        examSessionProblemId: notStartedEspIds[0],
-        language: "python3",
-        sourceCode: "too early",
-      },
+      payload: { examSessionProblemId: notStartedEspIds[0], language: "python3", sourceCode: "too early" },
     });
     expect(notStarted.statusCode).toBe(409);
 
@@ -621,18 +575,11 @@ describe("Submission API state guards", () => {
       method: "POST",
       url: `/api/exam-sessions/${notStartedId}/submissions`,
       headers: { authorization: `Bearer ${eveToken}` },
-      payload: {
-        examSessionProblemId: notStartedEspIds[0],
-        language: "python3",
-        sourceCode: "wrong owner",
-      },
+      payload: { examSessionProblemId: notStartedEspIds[0], language: "python3", sourceCode: "wrong owner" },
     });
     expect(otherCandidate.statusCode).toBe(403);
 
-    const { sessionId: cancelledId, espIds: cancelledEspIds } = await createSession(
-      aliceToken,
-      davidId,
-    );
+    const { sessionId: cancelledId, espIds: cancelledEspIds } = await createSession(aliceToken, davidId);
     await app.inject({
       method: "POST",
       url: `/api/exam-sessions/${cancelledId}/cancel`,
@@ -642,74 +589,42 @@ describe("Submission API state guards", () => {
       method: "POST",
       url: `/api/exam-sessions/${cancelledId}/submissions`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: {
-        examSessionProblemId: cancelledEspIds[0],
-        language: "python3",
-        sourceCode: "cancelled",
-      },
+      payload: { examSessionProblemId: cancelledEspIds[0], language: "python3", sourceCode: "cancelled" },
     });
     expect(cancelled.statusCode).toBe(409);
 
-    const { sessionId: submittedId, espIds: submittedEspIds } = await createSession(
-      aliceToken,
-      davidId,
-    );
-    await db
-      .update(examSessions)
-      .set({ status: "submitted" })
-      .where(eq(examSessions.id, submittedId));
+    const { sessionId: submittedId, espIds: submittedEspIds } = await createSession(aliceToken, davidId);
+    await db.update(examSessions).set({ status: "submitted" }).where(eq(examSessions.id, submittedId));
     const submitted = await app.inject({
       method: "POST",
       url: `/api/exam-sessions/${submittedId}/submissions`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: {
-        examSessionProblemId: submittedEspIds[0],
-        language: "python3",
-        sourceCode: "after submit",
-      },
+      payload: { examSessionProblemId: submittedEspIds[0], language: "python3", sourceCode: "after submit" },
     });
     expect(submitted.statusCode).toBe(409);
 
-    const { sessionId: expiredId, espIds: expiredEspIds } = await createSession(
-      aliceToken,
-      davidId,
-    );
+    const { sessionId: expiredId, espIds: expiredEspIds } = await createSession(aliceToken, davidId);
     await startSession(expiredId);
-    await db
-      .update(examSessions)
-      .set({ expiresAt: new Date(Date.now() - 1000) })
-      .where(eq(examSessions.id, expiredId));
+    await db.update(examSessions).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(examSessions.id, expiredId));
     const expired = await app.inject({
       method: "POST",
       url: `/api/exam-sessions/${expiredId}/submissions`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: {
-        examSessionProblemId: expiredEspIds[0],
-        language: "python3",
-        sourceCode: "too late",
-      },
+      payload: { examSessionProblemId: expiredEspIds[0], language: "python3", sourceCode: "too late" },
     });
     expect(expired.statusCode).toBe(409);
   });
 
   it("rejects invalid payloads, unsupported/disabled languages, and wrong session problem id", async () => {
     const { sessionId, espIds } = await createSession(aliceToken, davidId);
-    const { sessionId: otherSessionId, espIds: otherEspIds } = await createSession(
-      aliceToken,
-      eveId,
-    );
+    const { sessionId: otherSessionId, espIds: otherEspIds } = await createSession(aliceToken, eveId);
     await startSession(sessionId);
 
     const invalidType = await app.inject({
       method: "POST",
       url: `/api/exam-sessions/${sessionId}/submissions`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: {
-        examSessionProblemId: espIds[0],
-        language: "python3",
-        sourceCode: "",
-        type: "practice",
-      },
+      payload: { examSessionProblemId: espIds[0], language: "python3", sourceCode: "", type: "practice" },
     });
     expect(invalidType.statusCode).toBe(400);
 
@@ -721,10 +636,7 @@ describe("Submission API state guards", () => {
     });
     expect(unsupportedLanguage.statusCode).toBe(400);
 
-    await db
-      .update(languageDefaults)
-      .set({ isEnabled: false })
-      .where(eq(languageDefaults.language, "python3"));
+    await db.update(languageDefaults).set({ isEnabled: false }).where(eq(languageDefaults.language, "python3"));
     const disabledLanguage = await app.inject({
       method: "POST",
       url: `/api/exam-sessions/${sessionId}/submissions`,
@@ -732,20 +644,13 @@ describe("Submission API state guards", () => {
       payload: { examSessionProblemId: espIds[0], language: "python3", sourceCode: "print(1)" },
     });
     expect(disabledLanguage.statusCode).toBe(400);
-    await db
-      .update(languageDefaults)
-      .set({ isEnabled: true })
-      .where(eq(languageDefaults.language, "python3"));
+    await db.update(languageDefaults).set({ isEnabled: true }).where(eq(languageDefaults.language, "python3"));
 
     const wrongSessionProblem = await app.inject({
       method: "POST",
       url: `/api/exam-sessions/${sessionId}/submissions`,
       headers: { authorization: `Bearer ${candToken}` },
-      payload: {
-        examSessionProblemId: otherEspIds[0],
-        language: "python3",
-        sourceCode: "print(1)",
-      },
+      payload: { examSessionProblemId: otherEspIds[0], language: "python3", sourceCode: "print(1)" },
     });
     expect(wrongSessionProblem.statusCode).toBe(404);
 

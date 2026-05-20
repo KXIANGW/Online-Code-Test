@@ -80,7 +80,10 @@ vi.mock("../components/NavBar", () => ({
 // ── Local mock data (separate from mock-data.ts: tests expect "Binary Search") ─
 const mockExamPageSession: ExamSession = {
   id: 42,
+  examId: 420,
+  examTitle: "考試 #42",
   candidateId: 1,
+  candidate: { id: 1, username: "candidate01", displayName: "Alice Chen" },
   createdBy: 2,
   status: "not_started",
   durationMinutes: 90,

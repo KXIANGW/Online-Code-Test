@@ -2,9 +2,11 @@
 
 ## 目前狀態
 
-目前專案已完成 PostgreSQL schema/seed/scenario data 與 Backend API M1，包括 JWT auth、IAM、Problem、Exam、Language、RBAC 與 112 筆 integration tests；M2 已完成 RabbitMQ 非同步判題整合（移除 mock judge）與 WebSocket 即時推播，前端仍維持健康狀態頁，正式前端功能留待後續實作。M3 新增 `users.created_by` 欄位，interviewer 僅能管理自己建立的 candidate，並補上 `PUT /api/users/:id` 端點。M4 整合 Redis：語言列表、題目列表、題目詳情與使用者 profile 均透過 cache-aside 模式加速讀取；新增 Draft 自動儲存 API（`PUT/GET /api/exam-sessions/:id/drafts`），以 Redis 持久化候選人作答草稿，Redis 不可用時自動降級不影響考試流程，測試數增至 122 筆。
+目前專案已完成 PostgreSQL schema/seed/scenario data 與 Backend API M1，包括 JWT auth、IAM、Problem、Exam、Language、RBAC 與 112 筆 integration tests；M2 已完成 RabbitMQ 非同步判題整合（移除 mock judge）與 WebSocket 即時推播，前端仍維持健康狀態頁，正式前端功能留待後續實作。M3 新增 users.created_by 欄位，interviewer 僅能管理自己建立的 candidate，並補上 PUT /api/users/:id 端點。M4 整合 Redis：語言列表、題目列表、題目詳情與使用者 profile 均透過 cache-aside 模式加速讀取；新增 Draft 自動儲存 API（PUT/GET /api/exam-sessions/:id/drafts），以 Redis 持久化候選人作答草稿，Redis 不可用時自動降級不影響考試流程。
 
-Database schema 已完整建置（見 `infra/postgres/` 下的 00-11 SQL 腳本，以及對應的 Drizzle ORM schema `backend/src/db/schema.ts`）。Backend 以 Routes（HTTP 薄層）+ Services（業務邏輯、RBAC）分層實作，M2 新增 MQ 發布/消費與 WebSocket hub；M3 新增 ownership 欄位與 idempotent migration；M4 新增 Redis client、cache helpers 與 draft service。
+最新功能更新：正式重構 Exam 模組為兩段式派考流（考卷模板管理 $\rightarrow$ 批次指派場次）。面試主管（Interviewer）可先靈活封裝「手動挑題」或「隨機分佈」的考卷模板（Exam Template），再將模板批次指派（Assign）給一至多位候選人，藉此生成各自獨立的 Exam Sessions。此更動徹底解耦了模板與實體考試場次的關聯，並在物理層面補齊了 exams 與 exam_problems 結構。同時，核心 Service 層導入了批次 Upsert（Idempotent Bulk Insert）技術，物理免疫高並發或測試環境下的唯一性衝突（23505 Duplicate Key）。測試案例數增至 132 筆。
+
+Database schema 已完整建置（見 infra/postgres/ 下的 SQL 腳本，以及對應的 Drizzle ORM schema backend/src/db/schema.ts）。Backend 以 Routes（HTTP 薄層）+ Services（業務邏輯、RBAC）分層實作，M2 新增 MQ 發布/消費與 WebSocket hub；M3 新增 ownership 欄位與 idempotent migration；M4 新增 Redis client、cache helpers 與 draft service。
 
 ---
 
@@ -105,11 +107,13 @@ backend/src/
 | DELETE | `/api/problems/:id/testcases/:tcId` | `problem:manage` | 刪除測資 |
 | PUT | `/api/problems/:id/languages` | `problem:manage` | 覆寫此題的語言時間/記憶體倍率；空陣列代表清除覆寫 |
 
-### Exam
+### Exam（全新兩段式：模板管理與批次指派）
 
 | Method | Path | 權限 | 說明 |
 |--------|------|------|------|
-| POST | `/api/exam-sessions` | `exam:manage` | 建 session 並派題；body 可為手動 `problems` 或隨機 `distribution` |
+| POST | `/api/exam-sessions/templates/manual` | `exam:manage` | [階段一] 建立手動挑題的考卷模板；傳入題目陣列與各題獨立的 scoreWeight 配分 |
+| POST | `/api/exam-sessions/templates/random` | `exam:manage` | [階段一] 建立隨機分佈模板；由系統根據難度條件（easy/medium/hard）在派考時動態抽題 |
+| POST | `/api/exam-sessions/templates/:id/assign` | `exam:manage` | [階段二] 將考卷模板批次指派給一至多位候選人 (candidateIds)，正式生成獨立的實體 Exam Sessions |
 | GET | `/api/exam-sessions` | `exam:manage` / `exam:take` / superuser | superuser 看全部；interviewer 看自己建立；candidate 看自己的 |
 | GET | `/api/exam-sessions/:id` | ownership check | Session 詳情 |
 | POST | `/api/exam-sessions/:id/start` | `exam:take`（本人）| 面試者開始考試，寫入 `actual_start_at`、`expires_at` |
@@ -153,7 +157,7 @@ backend/src/
 | `auth.test.ts` | 8 | 登入成功/失敗、軟刪除帳號、body validation、未認證與 malformed JWT 401 |
 | `users.test.ts` | 37 | superuser / interviewer / candidate 的 IAM 權限、`created_by` ownership（只看/改/刪自己建立的 candidate）、重複 username、未知 role、batch bounds 與軟刪除 |
 | `problems.test.ts` | 30 | 題目 CRUD、測資 CRUD、hidden testcase sanitization、Language API、languageLimits、deleted problem guards、constraint conflicts |
-| `exams.test.ts` | 32 | 手動/隨機派題、歷史題目排除、session visibility、start/cancel ownership、session problems、random pool conflicts；草稿儲存/讀取、ownership guard、session 狀態 guard、Redis 降級行為 |
+| `exams.test.ts` | 33 | 手動/隨機派題、歷史題目排除、session visibility、start/cancel ownership、session problems、random pool conflicts；草稿儲存/讀取、ownership guard、session 狀態 guard、Redis 降級行為 |
 | `submissions.test.ts` | 12 | async judge 狀態、submission history/result、source code visibility、RBAC/ownership、session 狀態 guard、final formal scoring |
 | `system.test.ts` | 3 | `/api/ping`、`/api/health`、`/api/ws` authentication/error behavior |
 

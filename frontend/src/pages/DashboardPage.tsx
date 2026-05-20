@@ -47,11 +47,12 @@ function ExamSessionCard({
 }) {
   const navigate = useNavigate();
   const timeLeft = useExamTimer(session.expiresAt);
+  const title = session.examTitle || `考試 #${session.id}`;
 
   return (
     <div className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
       <div>
-        <p className="text-sm font-medium text-slate-800">考試 #{session.id}</p>
+        <p className="text-sm font-medium text-slate-800">{title}</p>
         {session.status === "in_progress" && session.expiresAt && (
           <p className="text-xs text-slate-400 mt-0.5">剩餘：{formatTimeLeft(timeLeft ?? 0)}</p>
         )}

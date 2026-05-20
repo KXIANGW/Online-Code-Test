@@ -32,10 +32,11 @@ services:
     volumes:
       - ./infra/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 10s
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5672 || exit 1"] # test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 3s         # 從 10s 縮短到 3s，反應更快
       timeout: 5s
       retries: 10
+      start_period: 15s    # 給它 15 秒暖身時間，這期間不計入失敗
 
   redis:
     image: redis:7-alpine
@@ -75,10 +76,10 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${BACKEND_PORT:-3000}/api/health || exit 1"]
-      interval: 10s
+      interval: 3s
       timeout: 5s
-      retries: 6
-      start_period: 15s
+      retries: 30
+      start_period: 60s
 
   worker:
     build:
@@ -99,11 +100,11 @@ services:
       rabbitmq:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/healthz"]
-      interval: 10s
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1"] # 換成 wget 較安全
+      interval: 5s         # 縮短間隔
       timeout: 5s
-      retries: 6
-      start_period: 20s
+      retries: 10
+      start_period: 30s
 
   frontend:
     build:

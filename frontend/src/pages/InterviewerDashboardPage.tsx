@@ -2,14 +2,29 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { NavBar } from "../components/NavBar";
 import { useInterviewerStore } from "../stores/interviewerStore";
-import { getExamSessions, getSessionResult } from "../api/client";
-import type { ExamStatus, SessionResult } from "../types";
-import { STATUS_LABEL, STATUS_COLOR } from "../config/examStatus";
+import {
+  getExamSessions,
+  getSessionResult,
+  listExamTemplates,
+  getUsers,
+  assignExamToCandidates,
+} from "../api/client";
+import type { ExamStatus, SessionResult, ExamTemplate, UserSummary } from "../types";
+import { STATUS_COLOR, STATUS_LABEL } from "../config/examStatus";
+import { DIFFICULTY_LABEL } from "../config/difficulty";
 import { ROUTES } from "../config/routes";
 
-type Tab = "all" | "in_progress" | "not_started" | "ended";
+type MainTab = "candidates" | "templates" | "assignments" | "records";
+type RecordTab = "all" | "in_progress" | "not_started" | "ended";
 
-const TABS: { value: Tab; label: string }[] = [
+const MAIN_TABS: { value: MainTab; label: string }[] = [
+  { value: "candidates", label: "考生帳號" },
+  { value: "templates", label: "考試模板" },
+  { value: "assignments", label: "考試分發" },
+  { value: "records", label: "考試紀錄" },
+];
+
+const RECORD_TABS: { value: RecordTab; label: string }[] = [
   { value: "all", label: "全部" },
   { value: "in_progress", label: "進行中" },
   { value: "not_started", label: "待考" },
@@ -60,47 +75,97 @@ export default function InterviewerDashboardPage() {
   const navigate = useNavigate();
   const results = useInterviewerStore((s) => s.results);
   const setResults = useInterviewerStore((s) => s.setResults);
-  const [activeTab, setActiveTab] = useState<Tab>("all");
+  const templates = useInterviewerStore((s) => s.templates);
+  const setTemplates = useInterviewerStore((s) => s.setTemplates);
+  const candidates = useInterviewerStore((s) => s.candidates);
+  const setCandidates = useInterviewerStore((s) => s.setCandidates);
+
+  const [mainTab, setMainTab] = useState<MainTab>("templates");
+  const [recordTab, setRecordTab] = useState<RecordTab>("all");
   const [loading, setLoading] = useState(true);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<number>>(
+    () => new Set(),
+  );
+  const [assigning, setAssigning] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [assignSuccess, setAssignSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    getExamSessions()
-      .then((sessions) => Promise.all(sessions.map((s) => getSessionResult(s.id))))
-      .then((data) => {
-        setResults(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [setResults]);
+    loadDashboardData().finally(() => setLoading(false));
+  }, [setResults, setTemplates, setCandidates]);
 
-  const filtered =
-    activeTab === "all"
+  async function loadDashboardData() {
+    const [sessions, templateList, userList] = await Promise.all([
+      getExamSessions(),
+      listExamTemplates(),
+      getUsers(),
+    ]);
+    const resultList = await Promise.all(sessions.map((s) => getSessionResult(s.id)));
+    setResults(resultList);
+    setTemplates(templateList);
+    setCandidates(userList.filter((u) => u.roles.includes("candidate")));
+  }
+
+  function toggleCandidate(candidateId: number) {
+    setAssignError(null);
+    setAssignSuccess(null);
+    setSelectedCandidateIds((current) => {
+      const next = new Set(current);
+      if (next.has(candidateId)) {
+        next.delete(candidateId);
+      } else {
+        next.add(candidateId);
+      }
+      return next;
+    });
+  }
+
+  async function handleAssign() {
+    const templateId = Number(selectedTemplateId);
+    const candidateIds = Array.from(selectedCandidateIds);
+    if (!templateId || candidateIds.length === 0) {
+      setAssignError("請選擇模板與至少一位考生");
+      return;
+    }
+
+    setAssigning(true);
+    setAssignError(null);
+    setAssignSuccess(null);
+    try {
+      await assignExamToCandidates(templateId, candidateIds);
+      setAssignSuccess("分發成功");
+      setSelectedCandidateIds(new Set());
+      await loadDashboardData();
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || "分發失敗";
+      setAssignError(msg);
+    } finally {
+      setAssigning(false);
+    }
+  }
+
+  const filteredRecords =
+    recordTab === "all"
       ? results
-      : activeTab === "ended"
-        ? results.filter((r) => r.status === "submitted" || r.status === "expired")
-        : results.filter((r) => r.status === activeTab);
+      : recordTab === "ended"
+      ? results.filter((r) => r.status === "submitted" || r.status === "expired")
+      : results.filter((r) => r.status === recordTab);
 
   return (
     <div className="min-h-screen bg-slate-50">
       <NavBar homeHref={ROUTES.INTERVIEWER} />
       <main className="max-w-4xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-semibold text-slate-800">考試管理</h1>
-          <button
-            onClick={() => navigate(ROUTES.INTERVIEWER_NEW)}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            建立考試
-          </button>
-        </div>
+        <h1 className="text-xl font-semibold text-slate-800 mb-6">考試管理</h1>
 
-        <div className="flex gap-1 mb-4 border-b border-slate-200">
-          {TABS.map((tab) => (
+        {/* Main tabs */}
+        <div className="flex gap-1 mb-6 border-b border-slate-200">
+          {MAIN_TABS.map((tab) => (
             <button
               key={tab.value}
-              onClick={() => setActiveTab(tab.value)}
+              onClick={() => setMainTab(tab.value)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                activeTab === tab.value
+                mainTab === tab.value
                   ? "border-blue-600 text-blue-600"
                   : "border-transparent text-slate-500 hover:text-slate-700"
               }`}
@@ -112,14 +177,218 @@ export default function InterviewerDashboardPage() {
 
         {loading ? (
           <p className="text-sm text-slate-400 text-center py-12">載入中...</p>
-        ) : filtered.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-12">目前沒有考試紀錄</p>
         ) : (
-          <div className="space-y-3">
-            {filtered.map((r) => (
-              <SessionCard key={r.id} result={r} />
-            ))}
-          </div>
+          <>
+            {/* Tab: 考生帳號 */}
+            {mainTab === "candidates" && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm text-slate-600">
+                    共管理 <span className="font-semibold text-slate-800">{candidates.length}</span> 位考生
+                  </p>
+                  <button
+                    onClick={() => navigate(ROUTES.INTERVIEWER_CANDIDATES_NEW)}
+                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    ＋ 建立帳號
+                  </button>
+                </div>
+                {candidates.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-12">目前沒有考生帳號</p>
+                ) : (
+                  <div className="space-y-2">
+                    {candidates.map((c: UserSummary) => (
+                      <div
+                        key={c.id}
+                        className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between"
+                      >
+                        <div>
+                          <p className="font-medium text-slate-800 text-sm">
+                            {c.displayName ?? c.username}
+                          </p>
+                          <p className="text-xs text-slate-400">@{c.username}</p>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                          {new Date(c.createdAt).toLocaleDateString("zh-TW")}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab: 考試模板 */}
+            {mainTab === "templates" && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm text-slate-600">
+                    共 <span className="font-semibold text-slate-800">{templates.length}</span> 個模板
+                  </p>
+                  <button
+                    onClick={() => navigate(ROUTES.INTERVIEWER_TEMPLATES_NEW)}
+                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    ＋ 建立模板
+                  </button>
+                </div>
+                {templates.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-12">目前沒有考試模板</p>
+                ) : (
+                  <div className="space-y-3">
+                    {templates.map((t: ExamTemplate) => {
+                      const templateProblems = t.problems ?? [];
+                      return (
+                        <div
+                          key={t.id}
+                          className="bg-white rounded-xl border border-slate-200 p-5"
+                        >
+                          <div className="space-y-1">
+                            <p className="font-medium text-slate-800">{t.title}</p>
+                            <p className="text-xs text-slate-400">
+                              {t.durationMinutes} 分鐘 ·{" "}
+                              {new Date(t.createdAt).toLocaleDateString("zh-TW")}
+                            </p>
+                          </div>
+                          {templateProblems.length > 0 && (
+                            <div className="mt-4 border-t border-slate-100 pt-3">
+                              <p className="text-xs font-semibold text-slate-500 mb-2">題目</p>
+                              <div className="space-y-2">
+                                {templateProblems.map((problem) => (
+                                  <div
+                                    key={`${t.id}-${problem.problemId}`}
+                                    className="flex items-center justify-between gap-3 text-sm"
+                                  >
+                                    <p className="font-medium text-slate-700">
+                                      {problem.orderIndex}. {problem.title}
+                                    </p>
+                                    <p className="text-xs text-slate-400 whitespace-nowrap">
+                                      {DIFFICULTY_LABEL[problem.difficulty]} · {problem.scoreWeight} 分
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab: 考試分發 */}
+            {mainTab === "assignments" && (
+              <div className="space-y-5">
+                <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+                  <div>
+                    <label
+                      htmlFor="assignment-template"
+                      className="block text-xs font-semibold text-slate-500 mb-1"
+                    >
+                      考試模板
+                    </label>
+                    <select
+                      id="assignment-template"
+                      aria-label="考試模板"
+                      value={selectedTemplateId}
+                      onChange={(e) => {
+                        setSelectedTemplateId(e.target.value);
+                        setAssignError(null);
+                        setAssignSuccess(null);
+                      }}
+                      className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                    >
+                      <option value="">請選擇考試模板</option>
+                      {templates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.title}（{template.durationMinutes} 分鐘）
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <p className="block text-xs font-semibold text-slate-500 mb-2">
+                      選擇考生
+                    </p>
+                    {candidates.length === 0 ? (
+                      <p className="text-sm text-slate-400 py-4">目前沒有考生可分發</p>
+                    ) : (
+                      <div className="space-y-2 max-h-72 overflow-auto pr-1">
+                        {candidates.map((candidate) => {
+                          const name = candidate.displayName ?? candidate.username;
+                          return (
+                            <label
+                              key={candidate.id}
+                              className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+                            >
+                              <span>
+                                <span className="block text-sm font-medium text-slate-800">
+                                  {name}
+                                </span>
+                                <span className="block text-xs text-slate-400">
+                                  @{candidate.username}
+                                </span>
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={selectedCandidateIds.has(candidate.id)}
+                                onChange={() => toggleCandidate(candidate.id)}
+                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {assignError && <p className="text-xs text-red-500">{assignError}</p>}
+                  {assignSuccess && <p className="text-xs text-green-600">{assignSuccess}</p>}
+                  <button
+                    type="button"
+                    onClick={handleAssign}
+                    disabled={assigning || !selectedTemplateId || selectedCandidateIds.size === 0}
+                    className="w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {assigning ? "分發中..." : `確認分發（${selectedCandidateIds.size} 人）`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Tab: 考試紀錄 */}
+            {mainTab === "records" && (
+              <div>
+                <div className="flex gap-1 mb-4 border-b border-slate-200">
+                  {RECORD_TABS.map((tab) => (
+                    <button
+                      key={tab.value}
+                      onClick={() => setRecordTab(tab.value)}
+                      className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                        recordTab === tab.value
+                          ? "border-blue-600 text-blue-600"
+                          : "border-transparent text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                {filteredRecords.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-12">目前沒有考試紀錄</p>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredRecords.map((r) => (
+                      <SessionCard key={r.id} result={r} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>
