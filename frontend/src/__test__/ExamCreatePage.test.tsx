@@ -11,7 +11,9 @@ const mockNavigate = vi.hoisted(() => vi.fn());
 const mockLogout = vi.hoisted(() => vi.fn());
 const mockUseAuthStore = vi.hoisted(() => vi.fn());
 const mockGetProblems = vi.hoisted(() => vi.fn());
-const mockCreateExamSession = vi.hoisted(() => vi.fn());
+const mockCreateExamTemplateManual = vi.hoisted(() => vi.fn());
+const mockCreateExamTemplateRandom = vi.hoisted(() => vi.fn());
+const mockAssignExamToCandidates = vi.hoisted(() => vi.fn());
 const mockCreateUser = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -21,7 +23,9 @@ vi.mock("react-router-dom", async (importOriginal) => {
 vi.mock("../stores/authStore", () => ({ useAuthStore: mockUseAuthStore }));
 vi.mock("../api/client", () => ({
   getProblems: mockGetProblems,
-  createExamSession: mockCreateExamSession,
+  createExamTemplateManual: mockCreateExamTemplateManual,
+  createExamTemplateRandom: mockCreateExamTemplateRandom,
+  assignExamToCandidates: mockAssignExamToCandidates,
   createUser: mockCreateUser,
 }));
 
@@ -49,6 +53,16 @@ const mockCreatedUser: CreateUserResponse = {
   displayName: "Test Candidate",
 };
 
+const mockCreatedTemplate = {
+  id: 42,
+  title: "Test Exam",
+  durationMinutes: 90,
+  createdBy: 10,
+  createdAt: "2026-05-14T00:00:00.000Z",
+  updatedAt: "2026-05-14T00:00:00.000Z",
+  deletedAt: null,
+};
+
 const mockCreatedSession: ExamSession = {
   id: 1,
   candidateId: 99,
@@ -74,6 +88,14 @@ async function setupCandidate(username = "candidate01") {
   return user;
 }
 
+async function fillTitle(title = "Test Exam") {
+  const user = userEvent.setup();
+  const titleInput = screen.getByRole("textbox", { name: /考試標題/ });
+  await user.clear(titleInput);
+  await user.type(titleInput, title);
+  return user;
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 describe("ExamCreatePage()", () => {
   beforeEach(() => {
@@ -81,7 +103,9 @@ describe("ExamCreatePage()", () => {
     mockLogout.mockReset();
     mockUseAuthStore.mockReset();
     mockGetProblems.mockReset();
-    mockCreateExamSession.mockReset();
+    mockCreateExamTemplateManual.mockReset();
+    mockCreateExamTemplateRandom.mockReset();
+    mockAssignExamToCandidates.mockReset();
     mockCreateUser.mockReset();
     setupAuthStore();
     mockGetProblems.mockResolvedValue(mockProblemSummaries);
@@ -330,7 +354,8 @@ describe("ExamCreatePage()", () => {
     await waitFor(() =>
       expect(screen.getByText("請至少選擇一個題目")).toBeInTheDocument(),
     );
-    expect(mockCreateExamSession).not.toHaveBeenCalled();
+    expect(mockCreateExamTemplateManual).not.toHaveBeenCalled();
+    expect(mockAssignExamToCandidates).not.toHaveBeenCalled();
   });
 
   it("shows error when submitting random mode with all distribution counts = 0", async () => {
@@ -353,20 +378,23 @@ describe("ExamCreatePage()", () => {
         screen.getByText("請至少在難度分佈中填寫一題"),
       ).toBeInTheDocument(),
     );
-    expect(mockCreateExamSession).not.toHaveBeenCalled();
+    expect(mockCreateExamTemplateRandom).not.toHaveBeenCalled();
+    expect(mockAssignExamToCandidates).not.toHaveBeenCalled();
   });
 
   // ── Submit: manual mode ───────────────────────────────────────────────────
 
-  it("calls createUser then createExamSession with correct manual payload and navigates", async () => {
+  it("calls createUser then createExamTemplateManual then assign with correct payload and navigates", async () => {
     // given
     mockCreateUser.mockResolvedValue(mockCreatedUser);
-    mockCreateExamSession.mockResolvedValue(mockCreatedSession);
+    mockCreateExamTemplateManual.mockResolvedValue(mockCreatedTemplate);
+    mockAssignExamToCandidates.mockResolvedValue([mockCreatedSession]);
     renderPage();
     await waitFor(() =>
       expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
     );
     await setupCandidate("candidate01");
+    await fillTitle("My Exam");
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
     const weightInput = screen.getByRole("spinbutton", { name: "Two Sum 配分" });
@@ -383,27 +411,32 @@ describe("ExamCreatePage()", () => {
       ),
     );
     await waitFor(() =>
-      expect(mockCreateExamSession).toHaveBeenCalledWith({
-        candidateId: 99,
+      expect(mockCreateExamTemplateManual).toHaveBeenCalledWith({
+        title: "My Exam",
         durationMinutes: 90,
         problems: [{ problemId: 1, scoreWeight: 50, orderIndex: 1 }],
       }),
+    );
+    await waitFor(() =>
+      expect(mockAssignExamToCandidates).toHaveBeenCalledWith(42, [99]),
     );
     expect(mockNavigate).toHaveBeenCalledWith("/interviewer");
   });
 
   // ── Submit: random mode ───────────────────────────────────────────────────
 
-  it("calls createUser then createExamSession with correct random payload and navigates", async () => {
+  it("calls createUser then createExamTemplateRandom then assign with correct payload and navigates", async () => {
     // given
     mockCreateUser.mockResolvedValue(mockCreatedUser);
-    mockCreateExamSession.mockResolvedValue(mockCreatedSession);
+    mockCreateExamTemplateRandom.mockResolvedValue(mockCreatedTemplate);
+    mockAssignExamToCandidates.mockResolvedValue([mockCreatedSession]);
     renderPage();
     await waitFor(() =>
       expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
     );
     const user = userEvent.setup();
     await setupCandidate("candidate01");
+    await fillTitle("Random Exam");
     await user.click(screen.getByRole("button", { name: "隨機派題" }));
     const easyInput = screen.getByRole("spinbutton", { name: "隨機簡單題數" });
     await user.clear(easyInput);
@@ -414,22 +447,25 @@ describe("ExamCreatePage()", () => {
 
     // expect
     await waitFor(() =>
-      expect(mockCreateExamSession).toHaveBeenCalledWith({
-        candidateId: 99,
+      expect(mockCreateExamTemplateRandom).toHaveBeenCalledWith({
+        title: "Random Exam",
         durationMinutes: 90,
         distribution: { easy: 1 },
         scoreWeight: 100,
       }),
+    );
+    await waitFor(() =>
+      expect(mockAssignExamToCandidates).toHaveBeenCalledWith(42, [99]),
     );
     expect(mockNavigate).toHaveBeenCalledWith("/interviewer");
   });
 
   // ── API failures ──────────────────────────────────────────────────────────
 
-  it("shows error message when createExamSession rejects", async () => {
+  it("shows error message when createExamTemplateManual rejects", async () => {
     // given
     mockCreateUser.mockResolvedValue(mockCreatedUser);
-    mockCreateExamSession.mockRejectedValue(
+    mockCreateExamTemplateManual.mockRejectedValue(
       new Error("500 Internal Server Error"),
     );
     renderPage();
@@ -437,6 +473,7 @@ describe("ExamCreatePage()", () => {
       expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
     );
     await setupCandidate();
+    await fillTitle("Failing Exam");
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
 
@@ -460,6 +497,7 @@ describe("ExamCreatePage()", () => {
       expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
     );
     await setupCandidate();
+    await fillTitle("Test Exam");
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
 

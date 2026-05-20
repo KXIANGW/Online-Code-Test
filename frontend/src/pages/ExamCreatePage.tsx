@@ -2,12 +2,18 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogPanel, DialogTitle } from "@headlessui/react";
 import { NavBar } from "../components/NavBar";
-import { getProblems, createExamSession, createUser } from "../api/client";
-// 修正 Import路徑與類型名稱
+import {
+  getProblems,
+  createExamTemplateManual,
+  createExamTemplateRandom,
+  assignExamToCandidates,
+  createUser,
+} from "../api/client";
 import type {
   ProblemSummary,
   Difficulty,
-  CreateExamSessionRequest,
+  CreateExamTemplateManualRequest,
+  CreateExamTemplateRandomRequest,
   CreateUserRequest,
   RandomDistribution,
 } from "../types";
@@ -68,6 +74,7 @@ export default function ExamCreatePage() {
   });
   const [randomScoreWeight, setRandomScoreWeight] = useState(100);
 
+  const [title, setTitle] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -128,10 +135,28 @@ export default function ExamCreatePage() {
     );
   }
 
-  // 最終提交：連鎖 API 呼叫
   async function handleSubmit() {
     if (!pendingUser) {
       setSubmitError("請先設定面試者資訊");
+      return;
+    }
+
+    if (mode === "manual") {
+      if (selectedProblems.length === 0) {
+        setSubmitError("請至少選擇一個題目");
+        return;
+      }
+    } else {
+      const totalProblems =
+        distribution.easy + distribution.medium + distribution.hard;
+      if (totalProblems === 0) {
+        setSubmitError("請至少在難度分佈中填寫一題");
+        return;
+      }
+    }
+
+    if (!title.trim()) {
+      setSubmitError("請填寫考試標題");
       return;
     }
 
@@ -139,45 +164,36 @@ export default function ExamCreatePage() {
     setSubmitError(null);
 
     try {
-      // 1. 建立使用者帳號
       const newUser = await createUser(pendingUser);
 
-      // 2. 準備 ExamSession 請求
-      let req: CreateExamSessionRequest;
-
+      let template;
       if (mode === "manual") {
-        if (selectedProblems.length === 0)
-          throw new Error("請至少選擇一個題目");
-
-        req = {
-          candidateId: newUser.id,
+        const req: CreateExamTemplateManualRequest = {
+          title: title.trim(),
           durationMinutes,
           problems: selectedProblems.map((sp, idx) => ({
             problemId: sp.problemId,
             scoreWeight: sp.scoreWeight,
-            orderIndex: idx + 1, // 根據選擇順序賦予 Index
+            orderIndex: idx + 1,
           })),
         };
+        template = await createExamTemplateManual(req);
       } else {
-        const totalProblems =
-          distribution.easy + distribution.medium + distribution.hard;
-        if (totalProblems === 0) throw new Error("請至少在難度分佈中填寫一題");
-
-        // 過濾掉為 0 的難度以符合 RandomDistribution 類型
         const finalDist: RandomDistribution = {};
         if (distribution.easy > 0) finalDist.easy = distribution.easy;
         if (distribution.medium > 0) finalDist.medium = distribution.medium;
         if (distribution.hard > 0) finalDist.hard = distribution.hard;
 
-        req = {
-          candidateId: newUser.id,
+        const req: CreateExamTemplateRandomRequest = {
+          title: title.trim(),
           durationMinutes,
           distribution: finalDist,
           scoreWeight: randomScoreWeight,
         };
+        template = await createExamTemplateRandom(req);
       }
 
-      await createExamSession(req);
+      await assignExamToCandidates(template.id, [newUser.id]);
       navigate("/interviewer");
     } catch (err: any) {
       const msg =
@@ -257,6 +273,19 @@ export default function ExamCreatePage() {
                   value={durationMinutes}
                   onChange={(e) => setDurationMinutes(Number(e.target.value))}
                   className="w-32 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  考試標題
+                </label>
+                <input
+                  type="text"
+                  aria-label="考試標題"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="例如：後端工程師初試卷"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
             </section>
