@@ -4,6 +4,7 @@ import { getProblems, deleteProblem } from "../api/client";
 import { NavBar } from "../components/NavBar";
 import type { Difficulty, ProblemSummary } from "../types";
 import { DIFFICULTY_LABEL, DIFFICULTY_BADGE_COLOR } from "../config/difficulty";
+import { ROUTES } from "../config/routes";
 
 type DifficultyFilter = Difficulty | "all";
 
@@ -50,7 +51,7 @@ export default function ProblemSetterDashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <NavBar homeHref="/problem-setter" />
+      <NavBar homeHref={ROUTES.PROBLEM_SETTER} />
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -59,7 +60,7 @@ export default function ProblemSetterDashboardPage() {
           </div>
           <button
             type="button"
-            onClick={() => navigate("/problem-setter/new")}
+            onClick={() => navigate(ROUTES.PROBLEM_SETTER_NEW)}
             className="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition"
           >
             + 新增題目
@@ -147,7 +148,7 @@ export default function ProblemSetterDashboardPage() {
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => navigate(`/problem-setter/${problem.id}/edit`)}
+                        onClick={() => navigate(ROUTES.problemEdit(problem.id))}
                         className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap"
                       >
                         編輯

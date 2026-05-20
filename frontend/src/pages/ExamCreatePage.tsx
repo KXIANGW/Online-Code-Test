@@ -12,6 +12,7 @@ import type {
   RandomDistribution,
 } from "../types";
 import { DIFFICULTY_LABEL, DIFFICULTY_TEXT_COLOR } from "../config/difficulty";
+import { ROUTES } from "../config/routes";
 
 type ExamMode = "manual" | "random";
 type DiffTab = Difficulty;
@@ -159,7 +160,7 @@ export default function ExamCreatePage() {
       }
 
       await createExamSession(req);
-      navigate("/interviewer");
+      navigate(ROUTES.INTERVIEWER);
     } catch (err: any) {
       const msg = err.response?.data?.message || err.message || "建立失敗，請檢查資料正確性";
       setSubmitError(msg);
@@ -179,10 +180,10 @@ export default function ExamCreatePage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <NavBar homeHref="/interviewer" />
+      <NavBar homeHref={ROUTES.INTERVIEWER} />
       <main className="max-w-3xl mx-auto px-4 py-8">
         <button
-          onClick={() => navigate("/interviewer")}
+          onClick={() => navigate(ROUTES.INTERVIEWER)}
           className="text-sm text-slate-500 hover:text-slate-700 mb-6 flex items-center gap-1"
         >
           ← 返回考試管理

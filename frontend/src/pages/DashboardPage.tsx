@@ -6,6 +6,7 @@ import { getExamSessions, startExamSession } from "../api/client";
 import { NavBar } from "../components/NavBar";
 import { formatTimeLeft, useExamTimer } from "../hooks/useExamTimer";
 import { STORAGE_KEYS } from "../config/storage";
+import { ROUTES } from "../config/routes";
 
 function SectionCard({
   title,
@@ -66,7 +67,7 @@ function ExamSessionCard({
 
       {session.status === "in_progress" && (
         <button
-          onClick={() => navigate(`/exam/${session.id}`)}
+          onClick={() => navigate(ROUTES.examPage(session.id))}
           className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
         >
           繼續考試
@@ -114,12 +115,12 @@ export default function DashboardPage() {
     const started = await startExamSession(sessionId);
     clearSessionLocalStorage(sessionId);
     setSessions(sessions.map((session) => (session.id === sessionId ? started : session)));
-    navigate(`/exam/${sessionId}`);
+    navigate(ROUTES.examPage(sessionId));
   }
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <NavBar homeHref="/dashboard" />
+      <NavBar homeHref={ROUTES.DASHBOARD} />
 
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
         <SectionCard title="進行中" badge={inProgress.length} badgeColor="bg-blue-50 text-blue-600">
