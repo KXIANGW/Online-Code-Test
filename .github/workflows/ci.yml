@@ -127,6 +127,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/${{ steps.tag.outputs.owner }}/oct-${{ matrix.service }}:${{ steps.tag.outputs.value }}
           build-args: ${{ matrix.build-args }}
@@ -173,6 +174,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ghcr.io/${{ steps.tag.outputs.owner }}/oct-sandbox-${{ matrix.lang }}:${{ steps.tag.outputs.value }}

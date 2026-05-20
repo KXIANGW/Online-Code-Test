@@ -47,6 +47,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ env.REGISTRY }}/${{ steps.version.outputs.owner }}/oct-${{ matrix.service }}:${{ steps.version.outputs.value }}
           build-args: ${{ matrix.build-args }}
