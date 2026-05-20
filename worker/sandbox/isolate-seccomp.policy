@@ -1,0 +1,95 @@
+# Isolate seccomp policy file for the OCT sandbox.
+#
+# Loaded by the Worker via `isolate --seccomp-policy=/etc/oct/seccomp.policy`.
+#
+# Format (parsed by isolate's seccomp.c):
+#   <action> <syscall_name> [errno_value]
+#
+# Actions: allow | errno | kill | log | trace | trap
+# When action is `errno` without an explicit value, isolate returns ENOSYS (38).
+#
+# The default policy in isolate already does most of what we want; this file
+# layers extra defence-in-depth aligned with what Docker's default seccomp
+# profile (docker/default) blocks for unprivileged containers. The candidate
+# code does not need any of these for stdin/stdout algorithmic problems.
+#
+# IMPORTANT: review each entry when bumping isolate; the parser is line-based
+# and stops at the first invalid token.
+
+# --- Namespace manipulation -------------------------------------------------
+# A candidate must never create new user/mount/net namespaces inside the box;
+# isolate already runs in a fresh namespace and re-entering is a known escape
+# vector (CVE-2017-1000366 family).
+errno unshare
+errno setns
+errno clone3
+
+# --- Process tracing / inspection ------------------------------------------
+# ptrace gives access to other processes' memory. Reject it outright.
+errno ptrace
+errno process_vm_readv
+errno process_vm_writev
+errno kcmp
+
+# --- Kernel keyring ---------------------------------------------------------
+# CVE-2016-0728 made keyring abuse a known LPE primitive.
+errno keyctl
+errno add_key
+errno request_key
+
+# --- eBPF / perf events -----------------------------------------------------
+# Loading BPF programs has been a recurring source of LPE bugs. We deny it.
+errno bpf
+errno perf_event_open
+
+# --- Kernel modules / firmware ---------------------------------------------
+errno init_module
+errno finit_module
+errno delete_module
+
+# --- Filesystem manipulation that bypasses chroot --------------------------
+errno mount
+errno umount
+errno umount2
+errno pivot_root
+errno chroot
+errno open_tree
+errno move_mount
+errno fsopen
+errno fsconfig
+errno fsmount
+errno fspick
+
+# --- Time travel and clock manipulation ------------------------------------
+# Setting the system clock requires CAP_SYS_TIME but make it explicit.
+errno settimeofday
+errno clock_settime
+errno adjtimex
+errno clock_adjtime
+errno stime
+
+# --- Reboots and machine-wide effects --------------------------------------
+errno reboot
+errno kexec_load
+errno kexec_file_load
+
+# --- Quotas / accounting / swap --------------------------------------------
+errno quotactl
+errno acct
+errno swapon
+errno swapoff
+
+# --- Personality / ABI switching -------------------------------------------
+# Used to disable ASLR and other mitigations; deny.
+errno personality
+
+# --- Module-style userfaultfd (CVE-2016-3070 family) -----------------------
+errno userfaultfd
+
+# --- Raw I/O ports and DMA -------------------------------------------------
+errno iopl
+errno ioperm
+
+# --- Audit subsystem --------------------------------------------------------
+# Candidate has nothing to do with audit; isolating it shrinks attack surface.
+errno _sysctl
