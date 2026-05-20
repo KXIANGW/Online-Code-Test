@@ -5,6 +5,7 @@ import { NavBar } from "../components/NavBar";
 import type { SessionResult, SubmissionSummary, TestcaseResult } from "../types";
 import { STATUS_LABEL, STATUS_COLOR } from "../config/examStatus";
 import { ROUTES } from "../config/routes";
+import { SUBMISSION_TYPE_LABEL } from "../config/submission";
 
 const TC_VERDICT_COLOR: Record<string, string> = {
   AC: "text-green-600",
@@ -263,7 +264,7 @@ export default function ExamResultPage() {
                                 {submission.orderIndex}. {submission.problemTitle}
                               </p>
                               <span className="text-xs rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">
-                                {submission.submissionType === "simple" ? "一般" : "正式"}
+                                {SUBMISSION_TYPE_LABEL[submission.submissionType]}
                               </span>
                               {submission.isFinalSubmission && (
                                 <span className="text-xs rounded-full bg-green-50 px-2 py-0.5 text-green-600">
