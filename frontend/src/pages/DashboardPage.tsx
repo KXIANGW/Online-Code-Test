@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { getExamSessions, startExamSession } from "../api/client";
 import { NavBar } from "../components/NavBar";
 import { formatTimeLeft, useExamTimer } from "../hooks/useExamTimer";
+import { STORAGE_KEYS } from "../config/storage";
 
 function SectionCard({
   title,
@@ -97,8 +98,8 @@ export default function DashboardPage() {
   }, []);
 
   function clearSessionLocalStorage(sessionId: number) {
-    const prefix = `oct:draft:${sessionId}:`;
-    const langPrefix = `oct:lang:${sessionId}:`;
+    const prefix = STORAGE_KEYS.draftPrefix(sessionId);
+    const langPrefix = STORAGE_KEYS.langPrefix(sessionId);
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
