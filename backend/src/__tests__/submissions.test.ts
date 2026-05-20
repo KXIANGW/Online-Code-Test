@@ -107,33 +107,53 @@ beforeEach(async () => {
   ]);
 });
 
-async function createSession(
-  token: string,
-  candidateId: number,
-  problemIds: number[] = [easyProblemId]
-): Promise<{ sessionId: number; espIds: number[] }> {
-  const res = await app.inject({
+// 💡 將 submissions.test.ts 內的 createSession 修正為新版兩段式架構
+async function createSession(token: string, candidateId: number, problemIds: number[] = [1]) {
+  // 1. 先為這個測試場次手動建立一個基礎考卷模板（假定題目 ID 為 1，你在 db.ts 有 seed）
+  const examRes = await app.inject({
     method: "POST",
-    url: "/api/exam-sessions",
+    url: "/api/exam-sessions/templates/manual",
     headers: { authorization: `Bearer ${token}` },
     payload: {
-      candidateId,
+      title: "Submission Test Exam Template",
       durationMinutes: 60,
       problems: problemIds.map((problemId, index) => ({
         problemId,
-        scoreWeight: index === 0 ? 30 : 70,
+        scoreWeight: index === 0 ? 30 : 70, // 💡 完美對齊舊版：第一題 30 分，其餘 70 分
         orderIndex: index + 1,
       })),
     },
   });
+  
+  const { id: examId } = examRes.json<{ id: number }>();
 
-  const sessionId = res.json<{ id: number }>().id;
-  const esps = await db
-    .select({ id: examSessionProblems.id })
-    .from(examSessionProblems)
-    .where(eq(examSessionProblems.examSessionId, sessionId));
+  // 2. 指派給指定的候選人（產生真正的 Exam Session）
+  const assignRes = await app.inject({
+    method: "POST",
+    url: `/api/exam-sessions/templates/${examId}/assign`,
+    headers: { authorization: `Bearer ${token}` },
+    payload: {
+      candidateIds: [candidateId], // 👈 批次指派
+    },
+  });
 
-  return { sessionId, espIds: esps.map((esp) => esp.id) };
+  // 3. 取得指派後產生的場次資料
+  // 根據 assignExamToCandidates 服務，這通常會回傳一個場次陣列 [ { id, ... } ]
+  const sessions = assignRes.json<{ id: number }[]>();
+  const sessionId = sessions[0]!.id;
+
+  // 4. 撈取該場次的題目清單（對接舊版測試需要的 espIds）
+  const probRes = await app.inject({
+    method: "GET",
+    url: `/api/exam-sessions/${sessionId}/problems`,
+    headers: { authorization: `Bearer ${token}` },
+  });
+  
+  // 假設回傳格式包含題目關聯 ID 的陣列
+  const problemsList = probRes.json<{ id: number }[]>();
+  const espIds = problemsList.map((p) => p.id);
+
+  return { sessionId, espIds };
 }
 
 async function startSession(sessionId: number, token = candToken) {
@@ -249,10 +269,16 @@ async function writeWorkerResult(
 
 describe("Submission API async judge", () => {
   it("creates pending submissions, persists submissionType, and publishes judge tasks", async () => {
+    // 1. 建立並開始考試場次
     const { sessionId, espIds } = await createSession(aliceToken, davidId);
-    await startSession(sessionId);
 
+    const startRes = await startSession(sessionId);
+    console.log("startSession Response Status/Body:", startRes);
+
+    // 2. 進行第一次提交（正式提交 - formal）
     const formal = await submitCode(sessionId, espIds[0]!);
+
+    // 3. 進行第二次提交（範例/簡易測試 - simple）
     const simple = await submitCode(sessionId, espIds[0]!, "simple");
 
     expect(formal.submissionType).toBe("formal");
@@ -266,9 +292,11 @@ describe("Submission API async judge", () => {
       type: "simple",
     });
 
+    // 4. 直接撈取資料庫實體表，看寫入的欄位現況
     const rows = await db
       .select({ id: submissions.id, submissionType: submissions.submissionType })
       .from(submissions);
+      
     expect(rows.map((row) => [row.id, row.submissionType])).toEqual([
       [formal.id, "formal"],
       [simple.id, "simple"],
@@ -330,27 +358,45 @@ describe("Submission API async judge", () => {
     const { id } = await submitCode(sessionId, espIds[0]!, "formal");
     await writeWorkerResult(id, "AC", "formal");
 
+    // 1. 查詢單一提交的詳細報告（包含測資結果）
     const detail = await app.inject({
       method: "GET",
       url: `/api/exam-sessions/${sessionId}/submissions/${id}`,
       headers: { authorization: `Bearer ${candToken}` },
     });
+
+    // 📡 偵錯點 A：確認提交詳細報告的格式，觀察分數、isFinalSubmission 欄位以及 testcaseResults 陣列
+    console.log("=== 🔍 [DEBUG A] GET /submissions/:id (Submission Report) ===");
+    console.log("Status:", detail.statusCode);
+    console.log("Body:", JSON.stringify(detail.json(), null, 2));
+
     const body = detail.json<{
       score: number;
       isFinalSubmission: boolean;
       testcaseResults: { isPublic: boolean; actualOutput?: string }[];
     }>();
+
+    expect(detail.statusCode).toBe(200);
     expect(body.score).toBe(30);
     expect(body.isFinalSubmission).toBe(true);
     expect(body.testcaseResults).toHaveLength(2);
     expect(body.testcaseResults.find((tc) => tc.isPublic)).toHaveProperty("actualOutput", "3");
     expect(body.testcaseResults.find((tc) => !tc.isPublic)).not.toHaveProperty("actualOutput");
 
+    // 2. 查詢該場考試的最終分數/結果
     const result = await app.inject({
       method: "GET",
       url: `/api/exam-sessions/${sessionId}/result`,
       headers: { authorization: `Bearer ${candToken}` },
     });
+
+    // 📡 偵錯點 B：確認獲取考試總分 API 的回應，檢查 totalScore 是否正確加總
+    console.log("=== 🔍 [DEBUG B] GET /exam-sessions/:id/result ===");
+    console.log("Status:", result.statusCode);
+    console.log("Body:", JSON.stringify(result.json(), null, 2));
+    console.log("====================================================");
+
+    expect(result.statusCode).toBe(200);
     expect(result.json<{ totalScore: number }>().totalScore).toBe(30);
   });
 
