@@ -64,7 +64,7 @@ async function connectOnce(): Promise<void> {
     sandboxRuntime: config.sandboxRuntime,
     rootfsBaseDir: config.rootfsBaseDir,
     isolateBoxId: config.isolateBoxId,
-    seccompPolicyPath: config.seccompPolicyPath,
+    seccompBundleDir: config.seccompBundleDir || undefined,
   });
   console.log(`[worker] sandbox engine = ${engine.name}`);
   const nextChannel = await nextConnection.createChannel();

@@ -25,7 +25,7 @@ const pythonSpec = {
   image: "oct-sandbox-python:3.11",
   source: { filename: "solution.py" },
   run: {
-    cmd: ["python3", "/code/solution.py"],
+    cmd: ["/usr/local/bin/python3", "/code/solution.py"],
     env: { PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1" },
   },
   enabled: true,
@@ -35,7 +35,7 @@ const cppSpec = {
   id: "cpp17",
   image: "oct-sandbox-cpp:12",
   source: { filename: "solution.cpp" },
-  compile: { cmd: ["g++", "solution.cpp", "-O2", "-std=c++17", "-o", "solution", "-lm"] },
+  compile: { cmd: ["/usr/local/bin/g++", "solution.cpp", "-O2", "-std=c++17", "-o", "solution", "-lm"] },
   run: { cmd: ["/code/solution"] },
   enabled: true,
 };

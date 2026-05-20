@@ -18,5 +18,8 @@ export const config = {
   isolateBoxId: process.env["ISOLATE_BOX_ID"]
     ? Number(process.env["ISOLATE_BOX_ID"])
     : undefined,
-  seccompPolicyPath: process.env["SECCOMP_POLICY_PATH"],
+  // Directory containing the seccomp wrapper + policy (default matches the
+  // Dockerfile layout); set to empty string to disable seccomp.
+  seccompBundleDir:
+    process.env["SECCOMP_BUNDLE_DIR"] ?? "/etc/oct",
 };

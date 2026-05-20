@@ -98,11 +98,38 @@ services:
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://oct:oct_dev_password@rabbitmq:5672}
       DATABASE_URL: ${DATABASE_URL:-postgres://oct:oct_dev_password_change_me@postgres:5432/oct}
       HOST_WORK_DIR: ${HOST_WORK_DIR:-/tmp/judge}
+      # Sandbox engine selection. Defaults to docker for backwards-compatible
+      # local dev. To run with isolate locally:
+      #   make build-isolate-rootfs    (extracts cpp17 / python3 rootfs to /tmp/oct-rootfs)
+      #   SANDBOX_ENGINE=isolate docker compose up worker
+      SANDBOX_ENGINE: ${SANDBOX_ENGINE:-docker}
       SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-runc}
+      ROOTFS_BASE_DIR: /var/lib/oct/rootfs
+      # SECCOMP_POLICY_PATH intentionally unset: upstream isolate v2.0
+      # doesn't accept --seccomp-policy. The policy file is still shipped at
+      # /etc/oct/seccomp.policy for use with a patched isolate.
       NODE_ENV: ${NODE_ENV:-development}
+    # SYS_ADMIN is required by isolate's namespace + cgroup syscalls when
+    # SANDBOX_ENGINE=isolate. Unused (but harmless) when ENGINE=docker.
+    cap_add:
+      - SYS_ADMIN
+    # Share the host's cgroup namespace. Without this, the container gets
+    # its own cgroup view and isolate's `mkdir /sys/fs/cgroup/box-0` does
+    # not result in a kernel-populated cgroup (memory.events etc.), which
+    # makes --cg fail. In production K8s the kubelet delegates a writable
+    # cgroup subtree per Pod, so this is a docker-compose-only concern.
+    cgroup: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${HOST_WORK_DIR:-/tmp/judge}:${HOST_WORK_DIR:-/tmp/judge}
+      # Local Isolate rootfs cache, populated by `make build-isolate-rootfs`.
+      # type=bind so docker doesn't auto-create an empty named volume.
+      - type: bind
+        source: ${HOST_ROOTFS_DIR:-/tmp/oct-rootfs}
+        target: /var/lib/oct/rootfs
+        read_only: true
+        bind:
+          create_host_path: true
     depends_on:
       postgres:
         condition: service_healthy

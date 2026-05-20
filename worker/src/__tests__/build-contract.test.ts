@@ -25,45 +25,76 @@ describe("sandbox image build contract", () => {
     }
   });
 
-  it("prepares sandbox image tags before the Kubernetes worker starts", () => {
+  it("waits for the DaemonSet-managed language rootfs before the Kubernetes worker starts", () => {
+    // Post-Phase-4: the Worker no longer pulls sandbox images itself.
+    // Per-language rootfs is unpacked onto hostPath by the
+    // language-rootfs-puller DaemonSet (k8s/08a-language-puller.yaml).
+    // The Worker just waits for the symlinks to appear before consuming.
     const repoRoot = path.resolve(__dirname, "../../..");
     const workerManifest = fs.readFileSync(path.join(repoRoot, "k8s/08-worker.yaml"), "utf8");
     const [deployment] = yaml.loadAll(workerManifest) as Array<Record<string, any>>;
-    const initContainers = deployment.spec.template.spec.initContainers as Array<Record<string, any>>;
-    const volumes = deployment.spec.template.spec.volumes as Array<Record<string, any>>;
+    const podSpec = deployment.spec.template.spec;
+    const initContainers = podSpec.initContainers as Array<Record<string, any>>;
+    const volumes = podSpec.volumes as Array<Record<string, any>>;
+    const workerContainer = podSpec.containers.find(
+      (c: Record<string, any>) => c.name === "worker",
+    );
+    const workerEnv = (workerContainer.env as Array<Record<string, any>>).reduce(
+      (acc, e) => ({ ...acc, [e.name]: e.value ?? e.valueFrom }),
+      {} as Record<string, any>,
+    );
 
-    const prepare = initContainers.find((container) => container.name === "prepare-sandbox-images");
-    const command = prepare?.command?.join(" ") ?? "";
-    const args = prepare?.args?.join(" ") ?? "";
+    // The legacy initContainer must be gone.
+    expect(
+      initContainers.find((c) => c.name === "prepare-sandbox-images"),
+    ).toBeUndefined();
+    // docker.sock must not be mounted anywhere on the Worker any more.
+    const mountsAndVolumes = [
+      ...(workerContainer.volumeMounts ?? []),
+      ...volumes,
+    ];
+    for (const item of mountsAndVolumes) {
+      expect(JSON.stringify(item)).not.toContain("/var/run/docker.sock");
+    }
 
-    expect(prepare).toBeTruthy();
-    expect(prepare?.image).toBe("docker:27-cli");
-    expect(command).toContain("sh -c");
-    expect(args).toContain("docker pull ghcr.io/kxiangw/oct-sandbox-cpp:latest");
-    expect(args).toContain("docker pull ghcr.io/kxiangw/oct-sandbox-python:latest");
-    expect(args).toContain("docker tag ghcr.io/kxiangw/oct-sandbox-cpp:latest oct-sandbox-cpp:12");
-    expect(args).toContain(
-      "docker tag ghcr.io/kxiangw/oct-sandbox-python:latest oct-sandbox-python:3.11",
+    // Worker is wired to use IsolateEngine reading from the hostPath rootfs.
+    expect(workerEnv["SANDBOX_ENGINE"]).toBe("isolate");
+    expect(workerEnv["ROOTFS_BASE_DIR"]).toBe("/var/lib/oct/rootfs");
+
+    // wait-rootfs initContainer blocks until the DaemonSet has unpacked at
+    // least the two seed languages.
+    const waitRootfs = initContainers.find((c) => c.name === "wait-rootfs");
+    expect(waitRootfs).toBeTruthy();
+    const waitArgs = waitRootfs?.command?.join("\n") ?? "";
+    expect(waitArgs).toContain("/var/lib/oct/rootfs/$lang");
+    expect(waitArgs).toContain("cpp17");
+    expect(waitArgs).toContain("python3");
+
+    // The hostPath the DaemonSet writes to is mounted readonly into the Worker.
+    const rootfsMount = (workerContainer.volumeMounts as Array<Record<string, any>>)
+      .find((m) => m.name === "rootfs-cache");
+    expect(rootfsMount).toEqual(
+      expect.objectContaining({ mountPath: "/var/lib/oct/rootfs", readOnly: true }),
     );
-    expect(args).toContain("docker ps --format '{{.Image}}'");
-    expect(args).toContain("docker ps -a --filter status=exited --format '{{.ID}} {{.Image}}'");
-    expect(args).toContain("docker rm \"$container_id\"");
-    expect(args).toContain("awk '$1 ~ /^ghcr.io\\/kxiangw\\/oct-/ {print $2}'");
-    expect(args).toContain("docker image rm \"$image_id\"");
-    expect(prepare?.volumeMounts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ name: "docker-sock", mountPath: "/var/run/docker.sock" }),
-        expect.objectContaining({ name: "ghcr-docker-config", mountPath: "/root/.docker" }),
-      ]),
+  });
+
+  it("ships a corresponding language-rootfs-puller DaemonSet manifest", () => {
+    const repoRoot = path.resolve(__dirname, "../../..");
+    const manifest = fs.readFileSync(
+      path.join(repoRoot, "k8s/08a-language-puller.yaml"),
+      "utf8",
     );
-    expect(volumes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: "ghcr-docker-config",
-          secret: expect.objectContaining({ secretName: "ghcr-secret" }),
-        }),
-      ]),
-    );
+    const docs = yaml.loadAll(manifest) as Array<Record<string, any>>;
+    const kinds = docs.map((d) => d.kind);
+    expect(kinds).toContain("ConfigMap");
+    expect(kinds).toContain("DaemonSet");
+    expect(kinds).toContain("Service");
+
+    const daemonSet = docs.find((d) => d.kind === "DaemonSet");
+    const podSpec = daemonSet?.spec?.template?.spec;
+    const volumes = podSpec?.volumes as Array<Record<string, any>>;
+    const rootfsHost = volumes.find((v) => v.name === "rootfs-cache");
+    expect(rootfsHost?.hostPath?.path).toBe("/var/lib/oct/rootfs");
   });
 
   it("keeps Docker Compose and Kubernetes worker host work directories separate", () => {

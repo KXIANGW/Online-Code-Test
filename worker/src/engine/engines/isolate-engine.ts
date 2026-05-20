@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "child_process";
 import fs from "fs-extra";
 import path from "path";
-import { truncateUtf8 } from "../sandbox";
+import { prepareSandboxWorkDir, truncateUtf8 } from "../sandbox";
 import { classifyVerdict, parseIsolateMeta, type Verdict } from "../meta-parser";
 import { RootfsResolver, RootfsNotReadyError } from "../rootfs-resolver";
 import type { CompileResult } from "../compiler";
@@ -21,17 +21,30 @@ const COMPILE_MEM_MB = 512;
 const COMPILE_PIDS = 256;
 const COMPILE_TIME_SEC = 30;
 
+// Isolate doesn't inherit the host PATH after chroot, so bare command names
+// like "g++" or "python3" won't resolve. Apply a Debian-/Alpine-friendly
+// default; languages can still override via spec.run.env.PATH.
+const DEFAULT_CHROOT_PATH =
+  "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+
 // Process abstraction so unit tests can inject a fake spawn(). The default
 // implementation calls child_process.spawn on the host "isolate" binary.
 export type IsolateSpawner = (args: string[]) => ChildProcess;
 
-const defaultSpawner: IsolateSpawner = (args) => spawn("isolate", args, { stdio: "ignore" });
+const defaultSpawner: IsolateSpawner = (args) =>
+  spawn("isolate", args, { stdio: ["ignore", "pipe", "pipe"] });
 
 export interface IsolateSeccompPolicy {
-  // Absolute path of the seccomp policy file, passed as
-  // `--seccomp-policy=<path>`. Optional — Phase 2-B will add the policy file
-  // and reference it from config.
-  policyPath?: string;
+  // Host directory containing two files:
+  //   - seccomp-wrapper : binary that installs the seccomp-bpf filter then
+  //     execve()'s the real candidate command
+  //   - seccomp.policy  : the policy file consumed by the wrapper
+  //
+  // When configured, IsolateEngine binds this dir at /oct (readonly) inside
+  // the sandbox and prepends `/oct/seccomp-wrapper /oct/seccomp.policy --`
+  // before the candidate's argv. Upstream isolate v2.0 has no
+  // --seccomp-policy of its own; the wrapper is what closes the syscall gap.
+  bundleDir: string;
 }
 
 export interface IsolateEngineOptions {
@@ -52,7 +65,9 @@ interface RunIsolateArgs {
   timeLimitMs: number;
   wallTimeLimitMs?: number;
   pidsLimit: number;
-  writable: boolean;
+  // /code is always rw — isolate has to write stdout/stderr files there.
+  // This flag toggles whether stdin is wired (runOne yes, compile no).
+  withStdin: boolean;
 }
 
 interface RunIsolateResult {
@@ -79,6 +94,10 @@ export class IsolateEngine implements SandboxEngine {
   async compile(task: CompileTask): Promise<CompileResult> {
     if (!task.spec.compile) return { success: true };
     try {
+      // isolate runs each box under a private high UID (>=60000); the host
+      // work directory must be world-writable so the candidate can produce
+      // the compiled binary / stdout / stderr files.
+      await prepareSandboxWorkDir(task.hostWorkDir);
       const result = await this.runInIsolate({
         spec: task.spec,
         hostWorkDir: task.hostWorkDir,
@@ -86,10 +105,15 @@ export class IsolateEngine implements SandboxEngine {
         memoryLimitMb: COMPILE_MEM_MB,
         timeLimitMs: COMPILE_TIME_SEC * 1000,
         pidsLimit: COMPILE_PIDS,
-        writable: true,
+        withStdin: false,
       });
 
-      if (result.meta.status === "OK" && result.exitCode === 0) {
+      // Isolate omits "status:" from the meta file when the process exits 0;
+      // any non-OK status is explicitly written. Treat null-or-OK + exitcode 0
+      // as compile success and surface everything else as a CE.
+      const okStatus = result.meta.status === null || result.meta.status === "OK";
+      const okExit = result.meta.exitcode === null || result.meta.exitcode === 0;
+      if (okStatus && okExit) {
         return { success: true };
       }
       return {
@@ -107,6 +131,7 @@ export class IsolateEngine implements SandboxEngine {
 
   async runOne(task: RunTask): Promise<RunOneResult> {
     try {
+      await prepareSandboxWorkDir(task.hostWorkDir);
       await fs.writeFile(path.join(task.hostWorkDir, STDIN_FILE), task.inputData);
 
       const cmd = task.spec.run.entrypointPath
@@ -121,7 +146,7 @@ export class IsolateEngine implements SandboxEngine {
         timeLimitMs: task.timeLimitMs,
         wallTimeLimitMs: task.timeLimitMs * 2,
         pidsLimit: 64,
-        writable: false,
+        withStdin: true,
       });
 
       const classification = classifyVerdict({
@@ -165,7 +190,7 @@ export class IsolateEngine implements SandboxEngine {
     await fs.remove(metaPath).catch(() => undefined);
 
     // Phase 1: init box
-    await this.runIsolate(["--box-id", String(this.boxId), "--cg", "--init"]);
+    await this.runIsolate([`--box-id=${this.boxId}`, "--cg", "--init"]);
 
     try {
       const isolateArgs = this.buildRunArgs(args, chroot, metaPath);
@@ -175,7 +200,7 @@ export class IsolateEngine implements SandboxEngine {
       const stderr = await this.readOutput(args.hostWorkDir, STDERR_FILE);
       return { exitCode, meta, stdout, stderr };
     } finally {
-      await this.runIsolate(["--box-id", String(this.boxId), "--cg", "--cleanup"]).catch(
+      await this.runIsolate([`--box-id=${this.boxId}`, "--cg", "--cleanup"]).catch(
         () => undefined
       );
     }
@@ -183,60 +208,102 @@ export class IsolateEngine implements SandboxEngine {
 
   private buildRunArgs(
     args: RunIsolateArgs,
-    chroot: string,
+    rootfs: string,
     metaPath: string
   ): string[] {
     const memKb = args.memoryLimitMb * 1024;
     const timeSec = (args.timeLimitMs / 1000).toFixed(3);
     const wallSec = (((args.wallTimeLimitMs ?? args.timeLimitMs * 2) / 1000)).toFixed(3);
 
-    const env = args.spec.run.env ?? {};
+    const env: Record<string, string> = { PATH: DEFAULT_CHROOT_PATH, ...(args.spec.run.env ?? {}) };
     const envArgs: string[] = [];
-    for (const [k, v] of Object.entries(env)) envArgs.push("--env", `${k}=${v}`);
+    for (const [k, v] of Object.entries(env)) envArgs.push(`--env=${k}=${v}`);
 
+    // Seccomp bundle: bind the worker's wrapper + policy into the sandbox so
+    // the wrapper can be exec'd before the candidate. Doing this here keeps
+    // the rootfs binds below unchanged regardless of seccomp config.
+    const SECCOMP_INSIDE = "/oct-seccomp";
+    const seccompDirs: string[] = [];
+    let candidateCmd = args.cmd;
+    if (this.seccomp) {
+      seccompDirs.push(`--dir=${SECCOMP_INSIDE}=${this.seccomp.bundleDir}`);
+      candidateCmd = [
+        `${SECCOMP_INSIDE}/seccomp-wrapper`,
+        `${SECCOMP_INSIDE}/seccomp.policy`,
+        "--",
+        ...args.cmd,
+      ];
+    }
+
+    // Isolate v2.0 doesn't have --chroot. Instead, we keep its default
+    // sandbox skeleton (which provides /box, /dev, /tmp, /proc) and
+    // OVERRIDE the system-library paths to point at the per-language
+    // rootfs the DaemonSet unpacked under hostPath. Later rules supersede
+    // earlier ones with the same <in> path. ":maybe" tolerates rootfs that
+    // don't ship a particular top-level (e.g. alpine has no /lib64).
+    //
+    // Why not --no-default-dirs: isolate hard-codes its working directory
+    // (/box) to be created from the defaults. Disabling them makes the
+    // default --chdir fail before our rules apply.
+    const rootfsDirs = [
+      `/usr=${rootfs}/usr`,
+      `/lib=${rootfs}/lib`,
+      `/lib64=${rootfs}/lib64:maybe`,
+      `/bin=${rootfs}/bin`,
+      `/sbin=${rootfs}/sbin:maybe`,
+      `/etc=${rootfs}/etc:maybe`,
+      `/opt=${rootfs}/opt:maybe`,
+    ].map((rule) => `--dir=${rule}`);
+
+    // isolate's long-form flags require `--flag=value` (single argv entry).
+    // Passing `["--mem", "256"]` results in getopt treating "256" as the
+    // positional command, which then becomes an `execve("256")` failure.
     const flags = [
-      "--box-id",
-      String(this.boxId),
+      `--box-id=${this.boxId}`,
       "--cg",
-      "--chroot",
-      chroot,
-      `--dir=${INSIDE_CODE_DIR}=${args.hostWorkDir}${args.writable ? ":rw" : ""}`,
-      "--processes",
-      String(args.pidsLimit),
-      "--mem",
-      String(memKb),
-      "--time",
-      timeSec,
-      "--wall-time",
-      wallSec,
-      "--stack",
-      "65536",
-      "--cwd",
-      INSIDE_CODE_DIR,
-      "--stdin",
-      `${INSIDE_CODE_DIR}/${STDIN_FILE}`,
-      "--stdout",
-      `${INSIDE_CODE_DIR}/${STDOUT_FILE}`,
-      "--stderr",
-      `${INSIDE_CODE_DIR}/${STDERR_FILE}`,
-      "--meta",
-      metaPath,
+      ...rootfsDirs,
+      ...seccompDirs,
+      // The candidate work directory — host hostWorkDir mounted at /code.
+      // Always rw because isolate writes stdout.txt / stderr.txt here, and
+      // compile writes the produced binary here.
+      `--dir=${INSIDE_CODE_DIR}=${args.hostWorkDir}:rw`,
+      `--processes=${args.pidsLimit}`,
+      `--mem=${memKb}`,
+      `--time=${timeSec}`,
+      `--wall-time=${wallSec}`,
+      "--stack=65536",
+      `--chdir=${INSIDE_CODE_DIR}`,
+      `--stdout=${INSIDE_CODE_DIR}/${STDOUT_FILE}`,
+      `--stderr=${INSIDE_CODE_DIR}/${STDERR_FILE}`,
+      `--meta=${metaPath}`,
       ...envArgs,
     ];
 
-    if (this.seccomp?.policyPath) {
-      flags.push("--seccomp-policy", this.seccomp.policyPath);
+    if (args.withStdin) {
+      flags.push(`--stdin=${INSIDE_CODE_DIR}/${STDIN_FILE}`);
     }
 
-    flags.push("--run", "--", ...args.cmd);
+    flags.push("--run", "--", ...candidateCmd);
     return flags;
   }
 
   private runIsolate(args: string[]): Promise<number> {
     return new Promise<number>((resolve, reject) => {
       const child = this.spawner(args);
+      let stderr = "";
+      child.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString("utf8");
+      });
       child.once("error", reject);
-      child.once("close", (code) => resolve(code ?? -1));
+      child.once("close", (code) => {
+        // Isolate writes setup errors (cgroup access, mount failures, etc.)
+        // to its own stderr — surface non-zero exits with that text so the
+        // caller can distinguish setup failures from candidate failures.
+        if (code !== 0 && stderr.trim()) {
+          console.error(`[isolate] exit=${code}: ${stderr.trim()}`);
+        }
+        resolve(code ?? -1);
+      });
     });
   }
 

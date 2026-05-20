@@ -109,8 +109,10 @@ describe("IsolateEngine.compile", () => {
     expect(calls).toHaveLength(3);
     expect(calls[0]).toContain("--init");
     expect(calls[2]).toContain("--cleanup");
-    // run args must include chroot + writable bind mount of work dir + compile cmd
-    expect(calls[1]).toContain("--chroot");
+    // run args must override /usr / /lib / /bin etc. with the language rootfs
+    // and writable-bind the candidate work dir at /code.
+    expect(calls[1]?.some((arg) => arg.startsWith("--dir=/usr=") && arg.includes("/cpp17/usr"))).toBe(true);
+    expect(calls[1]?.some((arg) => arg.startsWith("--dir=/lib=") && arg.includes("/cpp17/lib"))).toBe(true);
     expect(calls[1]?.some((arg) => arg.startsWith("--dir=/code=") && arg.endsWith(":rw"))).toBe(true);
     expect(calls[1]).toEqual(expect.arrayContaining(["/usr/bin/g++", "solution.cpp", "-o", "solution"]));
   });
@@ -192,8 +194,9 @@ describe("IsolateEngine.runOne", () => {
     const inputContents = await fs.readFile(path.join(workDir, "input.txt"), "utf8");
     expect(inputContents).toBe("input\n");
 
-    // Run-phase args (calls[1]) should be readonly bind-mount and include the user run cmd
-    expect(calls[1]?.some((arg) => arg.startsWith("--dir=/code=") && !arg.endsWith(":rw"))).toBe(true);
+    // Run-phase args (calls[1]) bind-mount work dir rw at /code (so isolate
+    // can write stdout.txt / stderr.txt) and include the user run cmd.
+    expect(calls[1]?.some((arg) => arg.startsWith("--dir=/code=") && arg.endsWith(":rw"))).toBe(true);
     expect(calls[1]).toContain("/code/solution");
   });
 
@@ -264,7 +267,7 @@ describe("IsolateEngine.runOne", () => {
     expect(result.verdict).toBe("MLE");
   });
 
-  it("attaches --seccomp-policy when seccompPolicyPath is configured", async () => {
+  it("binds the seccomp bundle and prepends the wrapper before the candidate cmd when seccomp is configured", async () => {
     const { spawner, calls } = buildFakeSpawner([
       { exitCode: 0 },
       {
@@ -280,7 +283,7 @@ describe("IsolateEngine.runOne", () => {
     const engine = new IsolateEngine({
       rootfsResolver: new RootfsResolver({ baseDir: rootfsRoot }),
       spawner,
-      seccomp: { policyPath: "/etc/oct/seccomp.policy" },
+      seccomp: { bundleDir: "/etc/oct" },
     });
 
     await engine.runOne({
@@ -292,7 +295,22 @@ describe("IsolateEngine.runOne", () => {
       outputLimitKb: 64,
     });
 
-    expect(calls[1]).toEqual(expect.arrayContaining(["--seccomp-policy", "/etc/oct/seccomp.policy"]));
+    // 1. /etc/oct gets bound at /oct-seccomp inside the sandbox.
+    expect(calls[1]).toEqual(
+      expect.arrayContaining(["--dir=/oct-seccomp=/etc/oct"])
+    );
+    // 2. The candidate command is prefixed with the wrapper invocation.
+    const runIdx = calls[1]!.indexOf("--run");
+    expect(runIdx).toBeGreaterThan(-1);
+    const afterRun = calls[1]!.slice(runIdx + 1);
+    expect(afterRun.slice(0, 4)).toEqual([
+      "--",
+      "/oct-seccomp/seccomp-wrapper",
+      "/oct-seccomp/seccomp.policy",
+      "--",
+    ]);
+    // 3. The original /code/solution still appears as the candidate.
+    expect(afterRun).toContain("/code/solution");
   });
 
   it("uses entrypointPath override when language sets it", async () => {

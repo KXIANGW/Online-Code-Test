@@ -24,7 +24,10 @@ export interface SandboxEngineConfig {
   // Isolate-engine specific (all optional with sensible defaults)
   rootfsBaseDir?: string;
   isolateBoxId?: number;
-  seccompPolicyPath?: string;
+  // Host directory containing seccomp-wrapper + seccomp.policy. When set,
+  // IsolateEngine binds it into the sandbox and runs the candidate through
+  // the wrapper for a Docker-equivalent seccomp-bpf syscall blacklist.
+  seccompBundleDir?: string;
 }
 
 export function parseEngineKind(raw: string | undefined): SandboxEngineKind {
@@ -43,7 +46,7 @@ export async function createSandboxEngine(config: SandboxEngineConfig): Promise<
       return new IsolateEngine({
         rootfsResolver: new RootfsResolver({ baseDir: config.rootfsBaseDir }),
         boxId: config.isolateBoxId,
-        seccomp: config.seccompPolicyPath ? { policyPath: config.seccompPolicyPath } : undefined,
+        seccomp: config.seccompBundleDir ? { bundleDir: config.seccompBundleDir } : undefined,
       });
   }
 }

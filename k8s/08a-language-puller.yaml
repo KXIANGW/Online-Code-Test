@@ -1,0 +1,115 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: language-rootfs-puller
+  namespace: oct
+data:
+  languages.yaml: |
+    version: 1
+    languages:
+      - id: cpp17
+        # The OCI image whose rootfs the puller unpacks under
+        # /var/lib/oct/rootfs/cpp17-<digest>. Tag is intentionally a moving
+        # ref; the puller compares registry digest with cached digest before
+        # acting, so polling is cheap.
+        image: "ghcr.io/kxiangw/oct-sandbox-cpp:latest"
+        enabled: true
+        source:
+          filename: "solution.cpp"
+        run:
+          cmd: ["/code/solution"]
+      - id: python3
+        image: "ghcr.io/kxiangw/oct-sandbox-python:latest"
+        enabled: true
+        source:
+          filename: "solution.py"
+        run:
+          cmd: ["python3", "/code/solution.py"]
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: language-rootfs-puller
+  namespace: oct
+spec:
+  selector:
+    matchLabels:
+      app: language-rootfs-puller
+  template:
+    metadata:
+      labels:
+        app: language-rootfs-puller
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: puller
+          image: ghcr.io/kxiangw/oct-language-rootfs-puller:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: LANGUAGES_FILE
+              value: "/config/languages.yaml"
+            - name: ROOTFS_BASE_DIR
+              value: "/var/lib/oct/rootfs"
+            - name: PORT
+              value: "8081"
+            - name: POLL_INTERVAL_MS
+              value: "300000"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            privileged: false
+            capabilities:
+              add: ["SYS_ADMIN"]
+              drop: ["ALL"]
+            allowPrivilegeEscalation: true
+            runAsUser: 0
+          volumeMounts:
+            - name: rootfs-cache
+              mountPath: /var/lib/oct/rootfs
+            - name: languages
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: rootfs-cache
+          hostPath:
+            path: /var/lib/oct/rootfs
+            type: DirectoryOrCreate
+        - name: languages
+          configMap:
+            name: language-rootfs-puller
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: language-rootfs-puller
+  namespace: oct
+spec:
+  type: ClusterIP
+  selector:
+    app: language-rootfs-puller
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http
