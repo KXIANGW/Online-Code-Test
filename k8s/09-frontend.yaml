@@ -21,7 +21,7 @@ spec:
           command: ["sh", "-c", "until nc -z backend 3000; do echo waiting for backend; sleep 3; done"]
       containers:
         - name: frontend
-          image: ghcr.io/kxiangw/oct-frontend:352cabdff3
+          image: ghcr.io/kxiangw/oct-frontend:e326e09c15
           imagePullPolicy: Always
           ports:
             - containerPort: 80

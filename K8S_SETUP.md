@@ -323,8 +323,11 @@ kubectl create secret generic ghcr-creds \
 
 ```bash
 kubectl apply -f k8s/argocd/image-updater-config.yaml
+kubectl apply -f k8s/argocd/image-updater.yaml
 kubectl rollout restart deployment/argocd-image-updater-controller -n argocd
 ```
+
+> Argo CD Image Updater v1.2.0 透過 `ImageUpdater` CR 選取要管理的 Application；`k8s/` 目錄包含 `kustomization.yaml`，讓 `oct-app` 以 Kustomize source 被 Image Updater 支援。
 
 #### 4.3 Git repo credentials（argocd namespace）
 

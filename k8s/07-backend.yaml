@@ -27,7 +27,7 @@ spec:
           command: ["sh", "-c", "until nc -z redis 6379; do echo waiting for redis; sleep 2; done"]
       containers:
         - name: backend
-          image: ghcr.io/kxiangw/oct-backend:352cabdff3
+          image: ghcr.io/kxiangw/oct-backend:e326e09c15
           imagePullPolicy: Always
           env:
             - name: DATABASE_URL
