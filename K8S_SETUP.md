@@ -314,7 +314,7 @@ kubectl create secret docker-registry ghcr-secret \
 
 ```bash
 kubectl create secret generic ghcr-creds \
-  --from-literal=creds=$(echo -n "ChiaPin-Yi:<github-pat-read-packages>" | base64) \
+  --from-literal=creds=ChiaPin-Yi:<github-pat-read-packages> \
   -n argocd \
   --dry-run=client -o yaml | kubectl apply -f -
 ```

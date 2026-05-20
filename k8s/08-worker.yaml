@@ -28,7 +28,7 @@ spec:
           command: ["sh", "-c", "until nc -z rabbitmq 5672; do echo waiting for rabbitmq; sleep 2; done"]
       containers:
         - name: worker
-          image: ghcr.io/kxiangw/oct-worker:e326e09c15
+          image: ghcr.io/kxiangw/oct-worker:791678336e
           imagePullPolicy: Always
           env:
             - name: RABBITMQ_URL
