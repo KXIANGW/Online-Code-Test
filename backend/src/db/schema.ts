@@ -156,28 +156,74 @@ export const problemLanguageLimits = pgTable(
 );
 
 // ── Exam ──────────────────────────────────────────────────────────────────────
+
+/**
+ * 1. 考試模板表 (Exams)
+ * 儲存主管建立的「考卷範本」，例如：「2026 後端工程師初試卷」
+ * 這裡「不」綁定任何候選人，純粹作為考卷的設定與時長。
+ */
+export const exams = pgTable("exams", {
+  id:              bigserial("id", { mode: "number" }).primaryKey(),
+  title:           varchar("title", { length: 255 }).notNull(),            // 考卷標題
+  durationMinutes: integer("duration_minutes").notNull(),                  
+  createdBy:       bigint("created_by", { mode: "number" }).notNull()
+                     .references((): AnyPgColumn => users.id),             // 建立此考卷的主管
+  createdAt:       timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:       timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  deletedAt:       timestamp("deleted_at", { withTimezone: true }),
+});
+
+/**
+ * 2. 考卷題目關聯表 (Exam Problems)
+ * 記錄這張考卷裡面，主管挑選了哪些題目、順序為何、配分幾分。
+ */
+export const examProblems = pgTable("exam_problems", {
+  id:              bigserial("id", { mode: "number" }).primaryKey(),
+  examId:          bigint("exam_id", { mode: "number" }).notNull()
+                     .references((): AnyPgColumn => exams.id, { onDelete: "cascade" }),
+  problemId:       bigint("problem_id", { mode: "number" }).notNull()
+                     .references((): AnyPgColumn => problems.id),
+  orderIndex:      integer("order_index").notNull(),                       // 題目在考卷中的順序
+  scoreWeight:     integer("score_weight").notNull().default(100),         // 該題配分 (原存在 session_problems，移至模板更合理)
+  createdAt:       timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * 3. 考試場次實體表 (Exam Sessions) - 關鍵多對多橋樑
+ * 當主管選擇「將某一場考試(examId) 分配給 多個面試者(candidateIds)」時，
+ * 後端會在這裡批次插入多筆資料。
+ */
 export const examSessions = pgTable("exam_sessions", {
   id:              bigserial("id", { mode: "number" }).primaryKey(),
-  candidateId:     bigint("candidate_id", { mode: "number" }).notNull(),
-  createdBy:       bigint("created_by",   { mode: "number" }).notNull(),
+  examId:          bigint("exam_id", { mode: "number" }).notNull()
+                     .references((): AnyPgColumn => exams.id),             // 關聯對應的考卷模板
+  candidateId:     bigint("candidate_id", { mode: "number" }).notNull()
+                     .references((): AnyPgColumn => users.id),             // 分配給哪位面試者
+  createdBy:       bigint("created_by", { mode: "number" }).notNull()
+                     .references((): AnyPgColumn => users.id),             // 執行派考動作的主管
   status:          examStatusEnum("status").notNull().default("not_started"),
-  durationMinutes: integer("duration_minutes").notNull(),
-  actualStartAt:   timestamp("actual_start_at", { withTimezone: true }),
-  expiresAt:       timestamp("expires_at",       { withTimezone: true }),
-  submittedAt:     timestamp("submitted_at",     { withTimezone: true }),
-  totalScore:      integer("total_score").notNull().default(0),
-  maxScore:        integer("max_score").notNull().default(0),
+  actualStartAt:   timestamp("actual_start_at", { withTimezone: true }),   // 自由進場：按下「開始」的時間
+  expiresAt:       timestamp("expires_at", { withTimezone: true }),       // 系統自動收卷的絕對死線
+  submittedAt:     timestamp("submitted_at", { withTimezone: true }),     // 實際交卷時間
+  totalScore:      integer("total_score").notNull().default(0),            // 該面試者此場總得分
+  maxScore:        integer("max_score").notNull().default(0),              // 該場考試的總滿分
   createdAt:       timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt:       timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * 4. 考生場次題目快照表 (Exam Session Problems)
+ * 維持你們原本的設計，當面試者開始測驗時，把考卷題目實體化到這裡，
+ * 用來記錄該面試者「這一題」拿了幾分、最終提交的程式碼(finalSubmissionId)是什麼。
+ */
 export const examSessionProblems = pgTable("exam_session_problems", {
   id:                bigserial("id", { mode: "number" }).primaryKey(),
-  examSessionId:     bigint("exam_session_id", { mode: "number" }).notNull(),
-  problemId:         bigint("problem_id",      { mode: "number" }).notNull(),
+  examSessionId:     bigint("exam_session_id", { mode: "number" }).notNull()
+                       .references((): AnyPgColumn => examSessions.id, { onDelete: "cascade" }),
+  problemId:         bigint("problem_id", { mode: "number" }).notNull()
+                       .references((): AnyPgColumn => problems.id),
   orderIndex:        integer("order_index").notNull(),
   scoreWeight:       integer("score_weight").notNull(),
-  // Circular FK to submissions — lazy reference breaks TypeScript circular dependency
   finalSubmissionId: bigint("final_submission_id", { mode: "number" })
                        .references((): AnyPgColumn => submissions.id),
   score:             integer("score").notNull().default(0),
