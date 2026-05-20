@@ -716,7 +716,7 @@ describe("GET /api/exam-sessions/:id/problems", () => {
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: { candidateIds: [davidId] },
     });
-    const sessionId = assignRes.json<Array<{ id: number }>>()[0].id;
+    const sessionId = assignRes.json<Array<{ id: number }>>()[0]!.id;
 
     const listRes = await app.inject({
       method: "GET",
@@ -803,7 +803,7 @@ describe("PUT /api/exam-sessions/:id/drafts/:problemId and GET /:id/drafts", () 
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: { candidateIds: [davidId] },
     });
-    sessionId = assignRes.json<Array<{ id: number }>>()[0].id;
+    sessionId = assignRes.json<Array<{ id: number }>>()[0]!.id;
 
     await app.inject({
       method: "POST",
