@@ -1,6 +1,6 @@
 import { db } from "../db/client";
-import { problems, problemTestcases, examSessionProblems, problemLanguageLimits } from "../db/schema";
-import { eq, isNull, sql } from "drizzle-orm";
+import { problems, problemTestcases, examSessionProblems, problemLanguageLimits, examProblems, languageDefaults } from "../db/schema";
+import { eq, isNull, sql, and, inArray } from "drizzle-orm";
 import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 import { cacheGet, cacheSet, cacheDel } from "../db/redis";
@@ -79,6 +79,24 @@ function sanitizeProblemCache(raw: RawProblemCache, currentUser: CurrentUser) {
   return { ...raw.problem, testcases: sanitizedTestcases, languageLimits: raw.languageLimits };
 }
 
+async function validateLanguagesExist(languages: string[]): Promise<void> {
+  if (!languages || languages.length === 0) return;
+
+  const validLanguages = await db
+    .select({ language: languageDefaults.language })
+    .from(languageDefaults)
+    .where(
+      and(
+        inArray(languageDefaults.language, languages),
+        eq(languageDefaults.isEnabled, true)
+      )
+    );
+
+  if (validLanguages.length !== languages.length) {
+    throw BadRequestError("Unknown or disabled language selection");
+  }
+}
+
 // ── Service functions ─────────────────────────────────────────────────────────
 
 export async function listProblems(currentUser: CurrentUser) {
@@ -126,9 +144,17 @@ export async function createProblem(
   }
 ) {
   requireProblemManage(currentUser);
+  // 看進來 Service 的 data 到底長成什麼妖魔鬼怪？
+  console.log("=== 🎯 [SERVICE ENTRY DEBUG] createProblem data ===");
+  console.log("data.languageLimits:", JSON.stringify(data.languageLimits, null, 2));
+  console.log("==================================================");
 
   assertUniqueValues(data.testcases?.map((tc) => tc.orderIndex) ?? [], "Duplicate testcase orderIndex");
   assertUniqueValues(data.languageLimits?.map((ll) => ll.language) ?? [], "Duplicate language limit");
+
+  if (data.languageLimits && data.languageLimits.length > 0) {
+    await validateLanguagesExist(data.languageLimits.map((ll) => ll.language));
+  }
 
   const problem = await db.transaction(async (tx) => {
     const problemRows = await tx
@@ -146,12 +172,20 @@ export async function createProblem(
 
     const created = problemRows[0]!;
 
+    // 明確定義塞入測資表的欄位
     if (data.testcases && data.testcases.length > 0) {
       await tx.insert(problemTestcases).values(
-        data.testcases.map((tc) => ({ ...tc, problemId: created.id }))
+        data.testcases.map((tc) => ({
+          problemId: created.id,
+          orderIndex: tc.orderIndex,
+          isPublic: tc.isPublic,
+          inputData: tc.inputData,
+          expectedOutput: tc.expectedOutput,
+        }))
       );
     }
 
+    // 明確定義語言限制的欄位
     if (data.languageLimits && data.languageLimits.length > 0) {
       await tx.insert(problemLanguageLimits).values(
         data.languageLimits.map((ll) => ({
@@ -165,6 +199,7 @@ export async function createProblem(
 
     return created;
   }).catch((err: unknown) => {
+    console.error("❌ === [DATABASE CREATION ERROR DEEP DEBUG] ===", err);
     if (isPgErrorCode(err, "23503")) throw BadRequestError("Unknown language or user");
     if (isPgErrorCode(err, "23505")) throw ConflictError("Duplicate problem data");
     throw err;
@@ -265,13 +300,21 @@ export async function deleteProblem(currentUser: CurrentUser, id: number) {
 
   if (!existing || existing.deletedAt !== null) throw NotFoundError("problem");
 
-  const refs = await db
+
+  const [examRef] = await db
+    .select({ id: examProblems.id })
+    .from(examProblems)
+    .where(eq(examProblems.problemId, id))
+    .limit(1);
+
+  const [sessionRef] = await db
     .select({ id: examSessionProblems.id })
     .from(examSessionProblems)
-    .where(eq(examSessionProblems.problemId, id));
+    .where(eq(examSessionProblems.problemId, id))
+    .limit(1);
 
-  if (refs.length > 0) {
-    throw ConflictError("Cannot delete problem: it is referenced by exam sessions");
+  if (examRef || sessionRef) {
+    throw ConflictError("Cannot delete problem: it is referenced by exams or exam sessions");
   }
 
   await db
@@ -295,6 +338,22 @@ export async function addTestcase(
     .where(eq(problems.id, problemId));
 
   if (!problem || problem.deletedAt !== null) throw NotFoundError("problem");
+
+  // 防範重複的 orderIndex
+  const [duplicate] = await db
+    .select({ id: problemTestcases.id })
+    .from(problemTestcases)
+    .where(
+      and(
+        eq(problemTestcases.problemId, problemId),
+        eq(problemTestcases.orderIndex, data.orderIndex)
+      )
+    )
+    .limit(1);
+
+  if (duplicate) {
+    throw ConflictError("Duplicate testcase orderIndex");
+  }
 
   const [tc] = await db
     .insert(problemTestcases)
@@ -369,6 +428,11 @@ export async function setProblemLanguageLimits(
     .where(eq(problems.id, problemId));
 
   if (!existing || existing.deletedAt !== null) throw NotFoundError("problem");
+
+  if (limits && limits.length > 0) {
+    assertUniqueValues(limits.map((ll) => ll.language), "Duplicate language limit");
+    await validateLanguagesExist(limits.map((ll) => ll.language)); // 只有大於零才執行
+  }
 
   await db.delete(problemLanguageLimits).where(eq(problemLanguageLimits.problemId, problemId));
 
