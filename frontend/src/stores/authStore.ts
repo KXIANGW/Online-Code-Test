@@ -1,0 +1,41 @@
+import { create } from "zustand";
+import { login as apiLogin } from "../api/client";
+import { decodeJwt } from "../utils/jwt";
+
+const TOKEN_KEY = "oct_token";
+const USERNAME_KEY = "oct_username";
+
+const storedToken = sessionStorage.getItem(TOKEN_KEY);
+const decoded = storedToken
+  ? decodeJwt(storedToken)
+  : { isSuperuser: false, permissions: [] as string[] };
+
+interface AuthState {
+  token: string | null;
+  username: string | null;
+  isSuperuser: boolean | null;
+  permissions: string[];
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => void;
+}
+
+export const useAuthStore = create<AuthState>()((set) => ({
+  token: storedToken,
+  username: sessionStorage.getItem(USERNAME_KEY),
+  isSuperuser: decoded.isSuperuser,
+  permissions: decoded.permissions,
+
+  login: async (username, password) => {
+    const { token } = await apiLogin({ username, password });
+    const { isSuperuser, permissions } = decodeJwt(token);
+    sessionStorage.setItem(TOKEN_KEY, token);
+    sessionStorage.setItem(USERNAME_KEY, username);
+    set({ token, username, isSuperuser, permissions });
+  },
+
+  logout: () => {
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(USERNAME_KEY);
+    set({ token: null, username: null, isSuperuser: false, permissions: [] });
+  },
+}));

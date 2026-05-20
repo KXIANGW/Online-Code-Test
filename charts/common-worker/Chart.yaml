@@ -1,0 +1,18 @@
+apiVersion: v2
+name: common-worker
+description: |
+  Online Code Test judge worker. Consumes judge.tasks from RabbitMQ,
+  runs each submission inside a per-testcase Docker / gVisor sandbox
+  container, and publishes judge.results back. Exposes Prometheus
+  metrics for KEDA-based autoscaling.
+type: application
+version: 0.1.0
+appVersion: "0.0.1"
+keywords:
+  - online-code-test
+  - judge
+  - sandbox
+  - keda
+home: https://github.com/KXIANGW/Online-Code-Test
+maintainers:
+  - name: Team 12

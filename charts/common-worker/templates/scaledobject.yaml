@@ -1,0 +1,34 @@
+{{- if .Values.keda.enabled -}}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "common-worker.fullname" . }}
+  labels:
+    {{- include "common-worker.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "common-worker.fullname" . }}
+  minReplicaCount: {{ .Values.keda.minReplicaCount }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
+  pollingInterval: {{ .Values.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.prometheusAddress | quote }}
+        metricName: judge_cpu_avg
+        query: {{ .Values.keda.triggers.cpu.query | quote }}
+        threshold: {{ .Values.keda.triggers.cpu.threshold | quote }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.prometheusAddress | quote }}
+        metricName: judge_in_flight
+        query: {{ .Values.keda.triggers.inFlight.query | quote }}
+        threshold: {{ .Values.keda.triggers.inFlight.threshold | quote }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.prometheusAddress | quote }}
+        metricName: judge_queue_depth
+        query: {{ .Values.keda.triggers.queueDepth.query | quote }}
+        threshold: {{ .Values.keda.triggers.queueDepth.threshold | quote }}
+{{- end }}

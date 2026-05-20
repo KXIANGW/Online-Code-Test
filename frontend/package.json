@@ -2,24 +2,47 @@
   "name": "@oct/frontend",
   "version": "0.0.1",
   "private": true,
-  "description": "Online Code Test frontend (M1 skeleton)",
+  "description": "Online Code Test frontend",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "axios": "^1.7.2",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "@headlessui/react": "2.1.1",
+    "@monaco-editor/react": "4.6.0",
+    "axios": "1.16.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-markdown": "9.0.1",
+    "react-router-dom": "6.30.3",
+    "remark-breaks": "4.0.0",
+    "remark-gfm": "4.0.0",
+    "zustand": "4.5.4"
   },
   "devDependencies": {
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "typescript": "^5.5.3",
-    "vite": "^5.3.4"
+    "@tailwindcss/typography": "0.5.15",
+    "@testing-library/jest-dom": "6.6.2",
+    "@testing-library/react": "16.0.0",
+    "@testing-library/user-event": "14.5.2",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "@vitest/coverage-v8": "^2.1.8",
+    "autoprefixer": "10.4.19",
+    "jsdom": "25.0.1",
+    "msw": "2.3.5",
+    "postcss": "8.5.14",
+    "prettier": "3.5.3",
+    "tailwindcss": "3.4.7",
+    "typescript": "5.9.3",
+    "vite": "5.4.21",
+    "vitest": "2.1.8"
   }
 }

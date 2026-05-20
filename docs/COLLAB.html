@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Online Code Test — Git/GitHub 協作 SOP</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --panel: #ffffff;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --code-bg: #f3f4f6;
+    --code-text: #111827;
+    --green: #16a34a;
+    --green-soft: #dcfce7;
+    --amber: #d97706;
+    --amber-soft: #fef3c7;
+    --red: #dc2626;
+    --red-soft: #fee2e2;
+    --purple: #7c3aed;
+    --purple-soft: #ede9fe;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.04);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
+      "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 48px 32px 96px;
+  }
+  header.hero {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 28px;
+    margin-bottom: 36px;
+  }
+  header.hero h1 {
+    font-size: 28px;
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+  }
+  header.hero .subtitle {
+    color: var(--muted);
+    font-size: 14px;
+    margin: 0;
+  }
+  header.hero .meta {
+    margin-top: 14px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge.green { background: var(--green-soft); color: var(--green); }
+  .badge.amber { background: var(--amber-soft); color: var(--amber); }
+  .badge.red { background: var(--red-soft); color: var(--red); }
+  .badge.purple { background: var(--purple-soft); color: var(--purple); }
+  .badge.gray { background: var(--code-bg); color: var(--muted); }
+
+  nav.toc {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin-bottom: 40px;
+    box-shadow: var(--shadow);
+  }
+  nav.toc h3 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  nav.toc ol {
+    margin: 0;
+    padding-left: 20px;
+    columns: 2;
+    column-gap: 32px;
+  }
+  nav.toc li { margin: 4px 0; }
+  nav.toc a {
+    color: var(--text);
+    text-decoration: none;
+    border-bottom: 1px dashed transparent;
+  }
+  nav.toc a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  section {
+    margin: 48px 0;
+    scroll-margin-top: 24px;
+  }
+  section h2 {
+    font-size: 21px;
+    margin: 0 0 6px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent);
+    display: inline-block;
+  }
+  section h3 {
+    font-size: 16px;
+    margin: 28px 0 8px;
+    color: var(--text);
+  }
+  section p { margin: 8px 0; }
+  section ul, section ol { padding-left: 22px; }
+  section li { margin: 4px 0; }
+
+  code, kbd {
+    font-family: "SF Mono", "JetBrains Mono", Consolas, Menlo, monospace;
+    font-size: 13px;
+  }
+  code.inline {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  pre {
+    background: var(--code-text);
+    color: #e5e7eb;
+    padding: 14px 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 12px 0;
+  }
+  pre .c { color: #9ca3af; font-style: italic; }
+  pre .k { color: #93c5fd; }
+  pre .s { color: #fca5a5; }
+  pre .v { color: #fcd34d; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 14px 0;
+    font-size: 14px;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: var(--code-bg);
+    font-weight: 600;
+    color: var(--text);
+  }
+  tr:nth-child(even) td { background: #fbfbfc; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin: 18px 0;
+    box-shadow: var(--shadow);
+  }
+  .panel.note {
+    border-left: 4px solid var(--accent);
+    background: #f5f9ff;
+  }
+  .panel.warn {
+    border-left: 4px solid var(--amber);
+    background: #fffbeb;
+  }
+  .panel.danger {
+    border-left: 4px solid var(--red);
+    background: #fef5f5;
+  }
+  .panel.tip {
+    border-left: 4px solid var(--green);
+    background: #f3fdf6;
+  }
+  .panel h4 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  @media (max-width: 720px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    nav.toc ol { columns: 1; }
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .card h4 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    color: var(--accent);
+  }
+
+  .branch-svg {
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin: 16px 0;
+  }
+
+  .role-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .role-row:last-child { border-bottom: none; }
+  .role-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .role-avatar.be { background: var(--purple-soft); color: var(--purple); }
+  .role-avatar.fe { background: var(--green-soft); color: var(--green); }
+  .role-name { font-weight: 600; }
+  .role-desc { color: var(--muted); font-size: 13px; }
+
+  .step-list {
+    list-style: none;
+    padding: 0;
+    counter-reset: step;
+  }
+  .step-list > li {
+    position: relative;
+    padding: 12px 0 12px 44px;
+    border-bottom: 1px solid var(--border);
+    counter-increment: step;
+  }
+  .step-list > li:last-child { border-bottom: none; }
+  .step-list > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 14px;
+    width: 28px;
+    height: 28px;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  footer.foot {
+    margin-top: 80px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+  }
+
+  @media print {
+    body { font-size: 12px; }
+    nav.toc, .panel { box-shadow: none; }
+    pre { background: #f3f4f6; color: #111827; }
+    a { color: var(--text); text-decoration: none; }
+    section { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>Online Code Test — Git/GitHub 協作 SOP</h1>
+  <p class="subtitle">NTHU 1142 雲原生 HW2 · Team 12 · 4 人小組（FE × 1 / BE × 3）</p>
+  <div class="meta">
+    <span class="badge">Git Flow 三層</span>
+    <span class="badge green">CI required</span>
+    <span class="badge purple">Self-merge OK</span>
+    <span class="badge gray">Repo: KXIANGW/Online-Code-Test</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h3>目錄</h3>
+  <ol>
+    <li><a href="#overview">總覽與角色分工</a></li>
+    <li><a href="#branches">Branch 模型</a></li>
+    <li><a href="#naming">命名規則</a></li>
+    <li><a href="#workflow">日常開發流程</a></li>
+    <li><a href="#pr">Pull Request 規則</a></li>
+    <li><a href="#be-parallel">BE 三人並行策略</a></li>
+    <li><a href="#commit">Commit message 風格</a></li>
+    <li><a href="#release">Release / Merge to main</a></li>
+    <li><a href="#ci">CI / GitHub Actions</a></li>
+    <li><a href="#issues">Issue / Project 管理</a></li>
+    <li><a href="#conflict">衝突處理 &amp; Hotfix</a></li>
+    <li><a href="#cheatsheet">指令速查</a></li>
+  </ol>
+</nav>
+
+<!-- ========== §1 OVERVIEW ========== -->
+<section id="overview">
+  <h2>1. 總覽與角色分工</h2>
+  <p>
+    本專案採 <strong>Git Flow 三層分支模型</strong>，搭配 GitHub Pull Request 與
+    <strong>必過 CI 閘</strong>。Review 政策為 <strong>self-merge 容許</strong>，
+    但所有 PR 必須通過 GitHub Actions 的 lint / typecheck / build / test 才能合併。
+  </p>
+
+  <div class="panel">
+    <h4>角色與責任</h4>
+    <div class="role-row">
+      <div class="role-avatar fe">FE</div>
+      <div>
+        <div class="role-name">前端負責人 × 1</div>
+        <div class="role-desc">
+          擁有 <code class="inline">oct/frontend/</code>。負責 Vite + React UI、API client、UX。
+          PR 主要審查者。M2 之後加入 Monaco Editor 與題目作答介面。
+        </div>
+      </div>
+    </div>
+    <div class="role-row">
+      <div class="role-avatar be">BE1</div>
+      <div>
+        <div class="role-name">後端 — 認證 / 使用者</div>
+        <div class="role-desc">
+          擁有 <code class="inline">oct/backend/src/routes/auth.*</code>、<code class="inline">users.*</code>、
+          相關 schema 與 migration。
+        </div>
+      </div>
+    </div>
+    <div class="role-row">
+      <div class="role-avatar be">BE2</div>
+      <div>
+        <div class="role-name">後端 — 題目 / 提交</div>
+        <div class="role-desc">
+          擁有 <code class="inline">routes/problems.*</code>、<code class="inline">routes/submissions.*</code>、
+          題目相關 schema。M2 接判題 worker。
+        </div>
+      </div>
+    </div>
+    <div class="role-row">
+      <div class="role-avatar be">BE3</div>
+      <div>
+        <div class="role-name">後端 — Infra / 共用層</div>
+        <div class="role-desc">
+          擁有 <code class="inline">backend/src/db/</code>、<code class="inline">env.ts</code>、
+          docker-compose、<code class="inline">.github/workflows/</code>、CI / 部署。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel tip">
+    <h4>核心約定</h4>
+    <ul>
+      <li><strong>main</strong> 永遠可部署，僅由 <strong>develop</strong> 的 PR 合入（每個 milestone 結束時）。</li>
+      <li><strong>develop</strong> 是整合分支，所有 feature PR 都打到這裡。</li>
+      <li>所有 PR 必須通過 CI；CI 紅燈的 PR 一律 <strong>不准 merge</strong>。</li>
+      <li>每人只動自己 ownership 內的檔案；要動別人區域時開 issue 討論或 ping 對方。</li>
+      <li>使用 <strong>Squash &amp; Merge</strong> 保持 develop / main 線性歷史。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ========== §2 BRANCHES ========== -->
+<section id="branches">
+  <h2>2. Branch 模型</h2>
+
+  <svg class="branch-svg" viewBox="0 0 800 240" xmlns="http://www.w3.org/2000/svg">
+    <!-- main -->
+    <text x="0" y="35" font-size="13" font-weight="700" fill="#dc2626">main</text>
+    <line x1="60" y1="30" x2="780" y2="30" stroke="#dc2626" stroke-width="2.5" />
+    <circle cx="120" cy="30" r="6" fill="#dc2626" />
+    <text x="100" y="18" font-size="11" fill="#6b7280">v0.1.0-M1</text>
+    <circle cx="450" cy="30" r="6" fill="#dc2626" />
+    <text x="430" y="18" font-size="11" fill="#6b7280">v0.2.0-M2</text>
+    <circle cx="720" cy="30" r="6" fill="#dc2626" />
+    <text x="695" y="18" font-size="11" fill="#6b7280">v0.3.0-M3</text>
+
+    <!-- develop -->
+    <text x="0" y="115" font-size="13" font-weight="700" fill="#2563eb">develop</text>
+    <line x1="60" y1="110" x2="780" y2="110" stroke="#2563eb" stroke-width="2.5" />
+    <circle cx="120" cy="110" r="5" fill="#2563eb" />
+    <circle cx="200" cy="110" r="5" fill="#2563eb" />
+    <circle cx="280" cy="110" r="5" fill="#2563eb" />
+    <circle cx="360" cy="110" r="5" fill="#2563eb" />
+    <circle cx="450" cy="110" r="5" fill="#2563eb" />
+    <circle cx="540" cy="110" r="5" fill="#2563eb" />
+    <circle cx="620" cy="110" r="5" fill="#2563eb" />
+    <circle cx="720" cy="110" r="5" fill="#2563eb" />
+
+    <!-- feature -->
+    <text x="0" y="195" font-size="13" font-weight="700" fill="#16a34a">feature/*</text>
+    <path d="M 200 110 Q 200 160 240 195 L 290 195 Q 320 195 320 165 L 320 130 Q 320 110 360 110"
+          stroke="#16a34a" stroke-width="2" fill="none" />
+    <circle cx="265" cy="195" r="5" fill="#16a34a" />
+    <text x="240" y="218" font-size="11" fill="#6b7280">feature/be1-auth</text>
+
+    <path d="M 360 110 Q 360 160 400 195 L 480 195 Q 520 195 520 165 L 520 130 Q 520 110 540 110"
+          stroke="#16a34a" stroke-width="2" fill="none" />
+    <circle cx="440" cy="195" r="5" fill="#16a34a" />
+    <text x="410" y="218" font-size="11" fill="#6b7280">feature/fe-problem-list</text>
+
+    <!-- merge arrows -->
+    <path d="M 120 110 Q 120 70 120 35" stroke="#dc2626" stroke-width="1.5" fill="none" stroke-dasharray="4,3" />
+    <polygon points="116,38 120,30 124,38" fill="#dc2626" />
+    <path d="M 450 110 Q 450 70 450 35" stroke="#dc2626" stroke-width="1.5" fill="none" stroke-dasharray="4,3" />
+    <polygon points="446,38 450,30 454,38" fill="#dc2626" />
+    <path d="M 720 110 Q 720 70 720 35" stroke="#dc2626" stroke-width="1.5" fill="none" stroke-dasharray="4,3" />
+    <polygon points="716,38 720,30 724,38" fill="#dc2626" />
+  </svg>
+
+  <table>
+    <thead>
+      <tr><th>Branch</th><th>用途</th><th>誰可以 push</th><th>受保護</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="inline">main</code></td>
+        <td>永遠可部署的穩定版本，每個 milestone tag 一次</td>
+        <td>僅 PR (from develop) <span class="badge red">protected</span></td>
+        <td>禁止 force-push、刪除；require CI</td>
+      </tr>
+      <tr>
+        <td><code class="inline">develop</code></td>
+        <td>整合分支，所有 feature 都 PR 到這裡</td>
+        <td>僅 PR (from feature/*) <span class="badge amber">protected</span></td>
+        <td>禁止 force-push、刪除；require CI</td>
+      </tr>
+      <tr>
+        <td><code class="inline">feature/&lt;name&gt;-&lt;desc&gt;</code></td>
+        <td>個人開發、新功能</td>
+        <td>個人</td>
+        <td>無限制；merge 後刪除</td>
+      </tr>
+      <tr>
+        <td><code class="inline">fix/&lt;name&gt;-&lt;desc&gt;</code></td>
+        <td>非緊急 bug fix（從 develop 切出）</td>
+        <td>個人</td>
+        <td>無限制；merge 後刪除</td>
+      </tr>
+      <tr>
+        <td><code class="inline">hotfix/&lt;desc&gt;</code></td>
+        <td>main 上的緊急修復（demo 前壞掉等）</td>
+        <td>BE3 / 主 reviewer</td>
+        <td>從 main 切，merge 回 main + develop</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ========== §3 NAMING ========== -->
+<section id="naming">
+  <h2>3. 命名規則</h2>
+  <h3>Branch 命名</h3>
+  <pre><span class="c"># 格式</span>
+&lt;type&gt;/&lt;owner&gt;-&lt;short-kebab-desc&gt;
+
+<span class="c"># 範例（owner 用英文短碼，避免中文與底線）</span>
+feature/be1-auth-login
+feature/be2-problem-crud
+feature/be3-ci-workflow
+feature/fe-problem-list
+fix/be1-jwt-expired-edge-case
+hotfix/healthcheck-ipv6
+</pre>
+  <ul>
+    <li><strong>type</strong>：<code class="inline">feature</code> / <code class="inline">fix</code> / <code class="inline">hotfix</code> / <code class="inline">chore</code> / <code class="inline">docs</code></li>
+    <li><strong>owner</strong>：fe / be1 / be2 / be3 — 一眼看出主責人</li>
+    <li><strong>desc</strong>：英文小寫、kebab-case、3–6 個詞，描述「做什麼」而非「為什麼」</li>
+    <li>分支壽命建議 ≤ 5 天，太久請拆小</li>
+  </ul>
+
+  <h3>Tag 命名（main 上的 release）</h3>
+  <pre>v&lt;major&gt;.&lt;minor&gt;.&lt;patch&gt;-&lt;milestone&gt;
+<span class="c"># 範例</span>
+v0.1.0-M1   <span class="c"># M1 骨架完成</span>
+v0.2.0-M2   <span class="c"># M2 認證 + 判題</span>
+v0.3.0-M3   <span class="c"># M3 K8s 部署</span>
+v1.0.0-M4   <span class="c"># M4 期末驗收版</span>
+</pre>
+</section>
+
+<!-- ========== §4 WORKFLOW ========== -->
+<section id="workflow">
+  <h2>4. 日常開發流程</h2>
+
+  <ol class="step-list">
+    <li>
+      <strong>同步 develop 並開新分支</strong>
+      <pre>git switch develop
+git pull --ff-only
+git switch -c feature/be1-auth-login</pre>
+    </li>
+    <li>
+      <strong>開發 → 經常 commit / push</strong>
+      <p>commit message 用簡短一行（見 §7）。push 一次，遠端就會建立追蹤分支。</p>
+      <pre>git add -A
+git commit -m "add login route"
+git push -u origin feature/be1-auth-login</pre>
+    </li>
+    <li>
+      <strong>發 PR 到 <code class="inline">develop</code></strong>
+      <p>用 GitHub UI 或 <code class="inline">gh</code> CLI。<strong>base 一定選 develop</strong>，不要打到 main。</p>
+      <pre>gh pr create --base develop --title "Add JWT login route" --body-file .github/PULL_REQUEST_TEMPLATE.md</pre>
+    </li>
+    <li>
+      <strong>等 CI 全綠</strong>
+      <p>GitHub Actions 自動跑 lint / typecheck / build / test，紅燈不能 merge。</p>
+    </li>
+    <li>
+      <strong>Self-merge（Squash &amp; Merge）</strong>
+      <p>確認 diff 無誤、CI 綠 → 點 <em>Squash and merge</em>。merge 後 GitHub 會自動刪除 feature branch。</p>
+    </li>
+    <li>
+      <strong>本地清理</strong>
+      <pre>git switch develop
+git pull --ff-only
+git branch -d feature/be1-auth-login</pre>
+    </li>
+  </ol>
+
+  <div class="panel warn">
+    <h4>每天一開機要做的事</h4>
+    <pre>git switch develop &amp;&amp; git pull --ff-only
+<span class="c"># 然後 rebase 到自己的 feature branch 上，避免合併時衝突累積</span>
+git switch feature/be1-auth-login
+git fetch origin
+git rebase origin/develop</pre>
+  </div>
+</section>
+
+<!-- ========== §5 PR ========== -->
+<section id="pr">
+  <h2>5. Pull Request 規則</h2>
+
+  <h3>5.1 PR 標題</h3>
+  <ul>
+    <li>一句話、動詞開頭、英文：<code class="inline">Add JWT login route</code> / <code class="inline">Fix health check IPv6 timeout</code></li>
+    <li>Squash &amp; Merge 後會變成 develop 上的 commit message，所以要寫清楚</li>
+    <li>不強制 conventional commits；想加 prefix 也 OK，但保持團隊一致</li>
+  </ul>
+
+  <h3>5.2 PR 描述模板</h3>
+  <pre><span class="c">## What</span>
+<span class="c"># 一句話說明這個 PR 做了什麼</span>
+
+<span class="c">## Why</span>
+<span class="c"># 為什麼要做（連結 issue：Closes #12）</span>
+
+<span class="c">## How</span>
+<span class="c"># 主要實作策略 / 設計決策</span>
+
+<span class="c">## Test plan</span>
+<span class="c"># - [ ] 跑過 npm run build</span>
+<span class="c"># - [ ] 本地 docker compose up 確認 happy path</span>
+<span class="c"># - [ ] 列出新增 / 修改的 endpoint 與測試方式</span>
+
+<span class="c">## Notes</span>
+<span class="c"># - 是否動到 .env.example？（→ 通知所有人）</span>
+<span class="c"># - 是否新增 migration？（→ 通知所有人 reset DB）</span>
+<span class="c"># - 是否動到別人 ownership 的檔案？</span>
+</pre>
+  <p>建議在 repo 根目錄放 <code class="inline">.github/PULL_REQUEST_TEMPLATE.md</code>，開 PR 時 GitHub 會自動帶入。</p>
+
+  <h3>5.3 PR 大小</h3>
+  <table>
+    <thead><tr><th>大小</th><th>diff 行數</th><th>建議</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge green">小</span></td><td>&lt; 200</td><td>理想，5 分鐘可 review 完</td></tr>
+      <tr><td><span class="badge">中</span></td><td>200 – 400</td><td>OK，但要分章節描述</td></tr>
+      <tr><td><span class="badge amber">大</span></td><td>400 – 800</td><td>盡量拆，無法拆就在描述加 reading order</td></tr>
+      <tr><td><span class="badge red">過大</span></td><td>&gt; 800</td><td>必須拆。可先合一個 stub PR 進 develop，再分階段補</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.4 Self-merge 注意事項</h3>
+  <div class="panel tip">
+    <h4>Self-merge 容許，但請守住三條底線</h4>
+    <ol>
+      <li><strong>CI 必須全綠</strong>：紅燈絕對不能 merge（branch protection 已強制）。</li>
+      <li><strong>動到關鍵檔案要 ping 一個人</strong>：<code class="inline">.env.example</code>、<code class="inline">docker-compose.yml</code>、<code class="inline">migrate.ts</code>、<code class="inline">schema.ts</code> 變動時，在 PR 留言 <code class="inline">@teammate ptal</code>，等對方看過再 merge。</li>
+      <li><strong>自己要再看一次 diff</strong>：開 PR 後切到 <em>Files changed</em> 頁，假設自己是 reviewer 重看一遍。</li>
+    </ol>
+  </div>
+
+  <h3>5.5 Merge 策略</h3>
+  <ul>
+    <li><strong>feature → develop</strong>：<strong>Squash &amp; Merge</strong>（壓成一個 commit，保持線性）</li>
+    <li><strong>develop → main</strong>：<strong>Merge commit</strong>（保留 develop 的歷史軌跡）</li>
+    <li><strong>hotfix → main</strong>：<strong>Squash &amp; Merge</strong>，再 cherry-pick 到 develop</li>
+    <li>關閉 GitHub repo 設定中的 <em>Rebase merge</em>，避免大家點錯</li>
+  </ul>
+</section>
+
+<!-- ========== §6 BE PARALLEL ========== -->
+<section id="be-parallel">
+  <h2>6. BE 三人並行策略</h2>
+  <p>後端 3 人並行最容易踩雷的地方是 <strong>共用層</strong>（DB schema、env、共用 middleware）。
+  下面列出常見衝突點與避雷方式。</p>
+
+  <h3>6.1 模組切割（避免動到別人檔案）</h3>
+  <pre>oct/backend/src/
+├── server.ts            <span class="c">[BE3] 入口、plugin 註冊</span>
+├── env.ts               <span class="c">[BE3] env schema（變動需通知所有人）</span>
+├── db/
+│   ├── client.ts        <span class="c">[BE3] connection pool</span>
+│   ├── schema.ts        <span class="c">[共用] 變動需 PR 開 review</span>
+│   └── migrate.ts       <span class="c">[BE3] migration runner</span>
+├── routes/
+│   ├── auth.ts          <span class="c">[BE1] 登入 / 註冊 / JWT</span>
+│   ├── users.ts         <span class="c">[BE1] user CRUD</span>
+│   ├── problems.ts      <span class="c">[BE2] 題目 CRUD</span>
+│   ├── submissions.ts   <span class="c">[BE2] 提交 / 判題接口</span>
+│   ├── health.ts        <span class="c">[BE3] /api/health</span>
+│   └── ping.ts          <span class="c">[BE3] /api/ping</span>
+└── middleware/
+    └── auth.ts          <span class="c">[BE1] JWT verify middleware</span>
+</pre>
+
+  <h3>6.2 DB Schema 與 Migration 衝突</h3>
+  <div class="panel warn">
+    <h4>三條鐵律</h4>
+    <ol>
+      <li><strong>每個人開獨立的 migration 檔</strong>。檔名用 timestamp 前綴：
+        <code class="inline">20260510_add_users.sql</code>、<code class="inline">20260511_add_problems.sql</code>。
+        永遠不要修改已 merge 的 migration。</li>
+      <li><strong>新增欄位 / 表 → 開 issue 公告</strong>。在 issue tracker 留 <code class="inline">[schema]</code> label，3 位 BE 各 +1 確認後才 merge。</li>
+      <li><strong>合到 develop 後通知群組</strong>：「我加了 problems 表，pull 完請跑 <code class="inline">make rebuild</code> 重建 DB」。</li>
+    </ol>
+  </div>
+
+  <h3>6.3 env 變動</h3>
+  <ul>
+    <li>動到 <code class="inline">.env.example</code> / <code class="inline">env.ts</code> 的 PR 標題加 <code class="inline">[env]</code> 標記</li>
+    <li>新增 env 變數要同時更新 <code class="inline">.env.example</code> 與 README 的環境變數表</li>
+    <li>不可移除既有 env 變數（破壞別人本地環境）；要移除請另開 deprecation PR</li>
+  </ul>
+
+  <h3>6.4 共用 utility / type</h3>
+  <ul>
+    <li>三人共用的 utility 放 <code class="inline">backend/src/lib/</code>，動到要 ping 全員</li>
+    <li>共用 type 放 <code class="inline">backend/src/types/</code>，型別變動視為破壞性，PR 描述要列影響範圍</li>
+  </ul>
+
+  <h3>6.5 大重構先寫 RFC issue</h3>
+  <p>動超過 3 個檔案的重構（換框架、換 ORM、改 plugin 結構）開一個 <code class="inline">[rfc]</code> issue，
+  簡述方案 / 影響 / 替代方案，等 24 小時讓其他 BE 反饋，再開實作 PR。</p>
+</section>
+
+<!-- ========== §7 COMMIT ========== -->
+<section id="commit">
+  <h2>7. Commit message 風格</h2>
+  <p>本專案 commit message <strong>偏好極簡一行</strong>，不強制 Conventional Commits。
+  Squash &amp; Merge 時會用 PR title 取代，所以 commit message 主要是給開發中的自己看。</p>
+
+  <div class="grid-2">
+    <div class="card">
+      <h4>✅ 好的 commit message</h4>
+      <pre>init
+add login route
+fix health timeout
+update README
+wip: schema draft</pre>
+    </div>
+    <div class="card">
+      <h4>❌ 不需要的格式</h4>
+      <pre>chore: scaffold M1 skeleton (FE+BE+DB)
+
+This commit adds the initial Docker
+scaffolding including frontend,
+backend, and Postgres...</pre>
+    </div>
+  </div>
+
+  <ul>
+    <li>commit 標題 ≤ 50 字，現在式祈使句（add / fix / update / remove）</li>
+    <li>不需要 prefix（chore: / feat:）；想加也 OK，保持自己一致</li>
+    <li>WIP commit 用 <code class="inline">wip: </code> 開頭，避免別人誤以為已完成</li>
+    <li>真的需要長說明時，commit body 留給特殊情境（hotfix 後寫事件追溯）</li>
+  </ul>
+
+  <div class="panel note">
+    <h4>PR title vs commit message</h4>
+    <p>
+      <strong>commit message</strong> 是寫給自己看的開發痕跡 → 簡短。<br>
+      <strong>PR title</strong> 會變成 develop 上的 squash commit → 完整、英文、動詞開頭。
+    </p>
+  </div>
+</section>
+
+<!-- ========== §8 RELEASE ========== -->
+<section id="release">
+  <h2>8. Release / Merge to main</h2>
+
+  <h3>8.1 Milestone 完成時</h3>
+  <ol>
+    <li>確認 develop 所有功能皆已 merge、CI 綠、本地 <code class="inline">make rebuild</code> 重建可跑</li>
+    <li>開 PR：<code class="inline">develop → main</code>，title 例：<code class="inline">Release v0.1.0-M1</code></li>
+    <li>PR 描述列出本 milestone 所有 features (用 <code class="inline">git log main..develop --oneline</code> 抓)</li>
+    <li>CI 綠後 <strong>Merge commit</strong>（保留歷史，不 squash）</li>
+    <li>本地切到 main、pull、打 tag、推 tag：
+      <pre>git switch main &amp;&amp; git pull --ff-only
+git tag -a v0.1.0-M1 -m "M1: minimal scaffold"
+git push origin v0.1.0-M1</pre>
+    </li>
+    <li>GitHub Releases 頁手動建立 release，附 changelog 與 demo 截圖（給助教看）</li>
+  </ol>
+
+  <h3>8.2 main 受保護的設定</h3>
+  <table>
+    <thead><tr><th>規則</th><th>main</th><th>develop</th></tr></thead>
+    <tbody>
+      <tr><td>Require pull request before merging</td><td>✅</td><td>✅</td></tr>
+      <tr><td>Require status checks to pass (CI)</td><td>✅</td><td>✅</td></tr>
+      <tr><td>Require approvals</td><td>0（self-merge 可）</td><td>0</td></tr>
+      <tr><td>Require linear history</td><td>❌（保留 merge commit）</td><td>✅</td></tr>
+      <tr><td>Block force pushes</td><td>✅</td><td>✅</td></tr>
+      <tr><td>Allow deletions</td><td>❌</td><td>❌</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ========== §9 CI ========== -->
+<section id="ci">
+  <h2>9. CI / GitHub Actions</h2>
+  <p>所有 PR 觸發 CI，<strong>CI 紅燈不能 merge</strong>。Workflow 放在 <code class="inline">.github/workflows/ci.yml</code>。</p>
+
+  <h3>9.1 CI Jobs（PR 必過閘）</h3>
+  <table>
+    <thead><tr><th>Job</th><th>步驟</th><th>失敗條件</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>frontend</strong></td>
+        <td><code class="inline">npm ci</code> → <code class="inline">npm run lint</code> → <code class="inline">npm run typecheck</code> → <code class="inline">npm run build</code></td>
+        <td>任一步 exit ≠ 0</td>
+      </tr>
+      <tr>
+        <td><strong>backend</strong></td>
+        <td><code class="inline">npm ci</code> → <code class="inline">lint</code> → <code class="inline">typecheck</code> → <code class="inline">build</code> → <code class="inline">test</code>（搭配 PG service container）</td>
+        <td>任一步 exit ≠ 0</td>
+      </tr>
+      <tr>
+        <td><strong>compose-build</strong></td>
+        <td><code class="inline">docker compose build</code> 確認兩個 image 都能 build</td>
+        <td>build 失敗</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>9.2 Workflow 範例（簡化）</h3>
+  <pre><span class="c"># .github/workflows/ci.yml</span>
+name: CI
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: oct/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm', cache-dependency-path: oct/frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: oct/backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: oct
+          POSTGRES_PASSWORD: oct
+          POSTGRES_DB: oct
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 3s --health-retries 5
+    env:
+      DATABASE_URL: postgres://oct:oct@localhost:5432/oct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm', cache-dependency-path: oct/backend/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+</pre>
+
+  <div class="panel note">
+    <h4>本地預跑 CI（避免推上去才發現紅）</h4>
+    <p>每個子專案在 PR 前自己跑一次：</p>
+    <pre>cd oct/backend
+npm run lint &amp;&amp; npm run typecheck &amp;&amp; npm run build &amp;&amp; npm test</pre>
+  </div>
+</section>
+
+<!-- ========== §10 ISSUES ========== -->
+<section id="issues">
+  <h2>10. Issue / Project 管理</h2>
+
+  <h3>10.1 GitHub Projects（看板）</h3>
+  <p>在 repo 開一個 Project（Board view），4 欄：</p>
+  <div class="grid-3">
+    <div class="card"><h4>📋 Todo</h4><p>待辦，未認領</p></div>
+    <div class="card"><h4>🚧 In progress</h4><p>有人正在做</p></div>
+    <div class="card"><h4>👀 In review</h4><p>PR 已開、等 CI / merge</p></div>
+  </div>
+  <div class="grid-3" style="margin-top: 12px;">
+    <div class="card"><h4>✅ Done</h4><p>已 merge 進 develop</p></div>
+    <div class="card"><h4>🚀 Released</h4><p>已 tag 進 main</p></div>
+    <div class="card"><h4>❄️ Backlog</h4><p>之後 milestone 才做</p></div>
+  </div>
+
+  <h3>10.2 Label 規範</h3>
+  <table>
+    <thead><tr><th>類別</th><th>Label</th><th>顏色語意</th></tr></thead>
+    <tbody>
+      <tr><td>區域</td><td><code class="inline">area/fe</code> / <code class="inline">area/be</code> / <code class="inline">area/infra</code> / <code class="inline">area/docs</code></td><td>藍系</td></tr>
+      <tr><td>類型</td><td><code class="inline">type/feat</code> / <code class="inline">type/bug</code> / <code class="inline">type/chore</code> / <code class="inline">type/rfc</code></td><td>綠系</td></tr>
+      <tr><td>優先度</td><td><code class="inline">P0</code>（demo 前必過）/ <code class="inline">P1</code> / <code class="inline">P2</code></td><td>紅 → 黃 → 灰</td></tr>
+      <tr><td>Milestone</td><td><code class="inline">M1</code> / <code class="inline">M2</code> / <code class="inline">M3</code> / <code class="inline">M4</code></td><td>紫系</td></tr>
+      <tr><td>狀態</td><td><code class="inline">blocked</code> / <code class="inline">help wanted</code> / <code class="inline">good first issue</code></td><td>黃 / 綠 / 灰</td></tr>
+    </tbody>
+  </table>
+
+  <h3>10.3 Issue 與 PR 連結</h3>
+  <ul>
+    <li>每個 feature 至少對應一個 issue；issue 描述要包含 acceptance criteria</li>
+    <li>PR 描述用 <code class="inline">Closes #12</code>（merge 後 GitHub 自動關閉 issue）</li>
+    <li>跨 milestone 的長期任務開 <strong>Tracking issue</strong>，列子任務 checkbox</li>
+  </ul>
+</section>
+
+<!-- ========== §11 CONFLICT ========== -->
+<section id="conflict">
+  <h2>11. 衝突處理 &amp; Hotfix</h2>
+
+  <h3>11.1 Merge 衝突解法（rebase 派）</h3>
+  <pre>git switch feature/be1-auth-login
+git fetch origin
+git rebase origin/develop
+
+<span class="c"># 衝突發生 → 修檔 → git add &amp;&amp; git rebase --continue</span>
+<span class="c"># rebase 完才 push（因為歷史改寫了）</span>
+git push --force-with-lease origin feature/be1-auth-login</pre>
+  <div class="panel warn">
+    <h4>為什麼用 rebase 不用 merge</h4>
+    <p>
+      在 feature branch 上 <code class="inline">git rebase develop</code> 比 <code class="inline">git merge develop</code> 乾淨：
+      避免 feature branch 上多出 "Merge develop into feature/x" 這種雜訊 commit，
+      最後 squash 進 develop 時歷史比較線性。<br>
+      <strong>但只在自己的 feature branch 上 rebase</strong>，永遠不要 rebase 已 push 並有人在用的共用分支。
+    </p>
+  </div>
+
+  <h3>11.2 Hotfix 流程（main 上線後壞掉）</h3>
+  <ol>
+    <li>從 <code class="inline">main</code> 切 <code class="inline">hotfix/&lt;desc&gt;</code></li>
+    <li>修復 → commit → push → 開 PR 到 <strong>main</strong></li>
+    <li>CI 綠後 squash &amp; merge 進 main、打新 tag <code class="inline">v0.1.1-M1</code></li>
+    <li>立刻將 hotfix 的 commit cherry-pick 回 develop（不然 develop 會缺修正）：
+      <pre>git switch develop &amp;&amp; git pull --ff-only
+git cherry-pick &lt;hotfix-commit-sha&gt;
+git push origin develop</pre>
+    </li>
+    <li>在 group chat 公告：「main 已修，請大家 rebase develop」</li>
+  </ol>
+
+  <h3>11.3 走錯分支 / 想撤回</h3>
+  <table>
+    <thead><tr><th>情境</th><th>解法</th></tr></thead>
+    <tbody>
+      <tr><td>commit 打到錯的 branch（還沒 push）</td><td><code class="inline">git reset --soft HEAD~1</code> 取回變更，切到對的 branch 再 commit</td></tr>
+      <tr><td>commit 打到錯的 branch（已 push）</td><td>從正確 branch <code class="inline">cherry-pick</code> 過來，再從錯的 branch <code class="inline">revert</code></td></tr>
+      <tr><td>已 merge 的 PR 要撤回</td><td>GitHub UI 上點 <em>Revert</em>，會自動開反向 PR</td></tr>
+      <tr><td>不小心 push 了 .env</td><td>立刻通知群組換密碼，<code class="inline">git filter-repo</code> 或 BFG 清歷史，force-push（這次例外）</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ========== §12 CHEATSHEET ========== -->
+<section id="cheatsheet">
+  <h2>12. 指令速查</h2>
+
+  <h3>12.1 日常 Git</h3>
+  <pre><span class="c"># 開新 feature</span>
+git switch develop &amp;&amp; git pull --ff-only
+git switch -c feature/be1-auth-login
+
+<span class="c"># 同步最新 develop（rebase 派）</span>
+git fetch origin &amp;&amp; git rebase origin/develop
+
+<span class="c"># 推到遠端</span>
+git push -u origin feature/be1-auth-login        <span class="c"># 第一次</span>
+git push                                          <span class="c"># 之後</span>
+git push --force-with-lease                       <span class="c"># rebase 後</span>
+
+<span class="c"># 看誰動了什麼</span>
+git log --oneline --graph --all -20
+git log develop..HEAD --oneline                   <span class="c"># 我這支 branch 比 develop 多了什麼</span>
+
+<span class="c"># 清掉本地已 merge 的舊 branch</span>
+git branch --merged develop | grep -v develop | xargs -n1 git branch -d</pre>
+
+  <h3>12.2 GitHub CLI（gh）</h3>
+  <pre><span class="c"># 開 PR</span>
+gh pr create --base develop --fill
+
+<span class="c"># 看自己的 PR</span>
+gh pr list --author @me
+
+<span class="c"># 在 CLI merge 自己的 PR</span>
+gh pr merge --squash --delete-branch
+
+<span class="c"># 看 CI 狀態</span>
+gh pr checks
+gh run list --branch feature/be1-auth-login --limit 5</pre>
+
+  <h3>12.3 Compose 速查（Makefile 已包好）</h3>
+  <pre>make bootstrap   <span class="c"># 複製 .env.example → .env</span>
+make up          <span class="c"># docker compose up -d --build</span>
+make logs        <span class="c"># 看所有服務 log</span>
+make ps          <span class="c"># 服務狀態</span>
+make psql        <span class="c"># 進 Postgres CLI</span>
+make rebuild     <span class="c"># clean + up（重置 DB volume）</span>
+make down        <span class="c"># 關閉</span>
+make clean       <span class="c"># down + 刪 volume</span></pre>
+</section>
+
+<footer class="foot">
+  <p>
+    Online Code Test · NTHU 1142 雲原生 HW2 · Team 12 ·
+    <a href="https://github.com/KXIANGW/Online-Code-Test" style="color: var(--accent);">github.com/KXIANGW/Online-Code-Test</a>
+  </p>
+  <p>本文件版本：v1 · 規範若有調整請走 PR 修這個檔</p>
+</footer>
+
+</div>
+</body>
+</html>

@@ -1,112 +1,219 @@
-import { useEffect, useState } from "react";
-import { getHealth, getPing, type HealthResponse, type PingResponse } from "./api/client";
+import type { ReactNode } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import LoginPage from "./pages/LoginPage";
+import DashboardPage from "./pages/DashboardPage"; // 考生: exam:take
+import InterviewerDashboardPage from "./pages/InterviewerDashboardPage"; // 面試官: exam:manage
+import AdminDashboardPage from "./pages/AdminDashboardPage"; // Root: is_superuser
+import ExamResultPage from "./pages/ExamResultPage";
+import ProblemSetterDashboardPage from "./pages/ProblemSetterDashboardPage";
+import ProblemFormPage from "./pages/ProblemFormPage";
+import ExamCreatePage from "./pages/ExamCreatePage";
+import ExamPage from "./pages/ExamPage";
+import CandidateResultPage from "./pages/CandidateResultPage";
+import { useAuthStore } from "./stores/authStore";
+import { PERMISSIONS, type Permission } from "./config/permissions";
 
-type Status = "loading" | "ok" | "error";
+/**
+ * 嚴格權限路由守衛
+ */
+function RoleBasedRoute({
+  children,
+  requiredPermission,
+  onlyAdmin = false,
+}: {
+  children: ReactNode;
+  requiredPermission?: Permission;
+  onlyAdmin?: boolean;
+}) {
+  const { token, isSuperuser, permissions } = useAuthStore((s) => ({
+    token: s.token,
+    isSuperuser: s.isSuperuser,
+    permissions: s.permissions ?? [],
+  }));
 
-interface State<T> {
-  status: Status;
-  data?: T;
-  error?: string;
-}
+  // 1. 基礎驗證：未登入跳轉至登入頁
+  if (!token) return <Navigate to="/login" replace />;
 
-const initial = <T,>(): State<T> => ({ status: "loading" });
+  // 2. 狀態同步檢查：避免 API 資料尚未回傳時誤判
+  if (isSuperuser === null)
+    return <div className="p-8 text-center text-slate-500">身分驗證中...</div>;
 
-export default function App() {
-  const [health, setHealth] = useState<State<HealthResponse>>(initial);
-  const [ping, setPing] = useState<State<PingResponse>>(initial);
+  let hasAccess = false;
 
-  async function refresh() {
-    setHealth(initial());
-    setPing(initial());
-    try {
-      setHealth({ status: "ok", data: await getHealth() });
-    } catch (err) {
-      setHealth({ status: "error", error: (err as Error).message });
-    }
-    try {
-      setPing({ status: "ok", data: await getPing() });
-    } catch (err) {
-      setPing({ status: "error", error: (err as Error).message });
-    }
+  if (onlyAdmin) {
+    // 嚴格模式 A：僅限 Root (is_superuser=true)
+    hasAccess = !!isSuperuser;
+  } else if (requiredPermission) {
+    // 嚴格模式 B：僅限具備該權限的使用者
+    // 根據需求，Root 在此不具備一般功能權限，會被攔截
+    hasAccess = permissions.includes(requiredPermission);
   }
 
-  useEffect(() => {
-    refresh();
-  }, []);
+  // 3. 權限拒絕 UI
+  if (!hasAccess) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+        <h1 className="text-2xl font-bold text-red-500">🚫 存取拒絕</h1>
+        <p className="text-slate-500 mt-2 text-center">
+          {isSuperuser
+            ? "管理員帳號 (Root) 禁止進入一般使用者區域。"
+            : "您的帳號權限不足，無法存取此路徑。"}
+        </p>
+        <button
+          onClick={() => window.history.back()}
+          className="mt-6 px-4 py-2 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
+        >
+          返回上一頁
+        </button>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
+/**
+ * 登入後的自動導航邏輯 (Role Redirector)
+ */
+function RoleRedirect() {
+  const { isSuperuser, permissions, token } = useAuthStore((s) => ({
+    isSuperuser: s.isSuperuser,
+    permissions: s.permissions ?? [],
+    token: s.token,
+  }));
+
+  if (!token) return <Navigate to="/login" replace />;
+  if (isSuperuser === null) return null;
+
+  // 優先級 1: 超級管理員 -> /admin
+  if (isSuperuser) return <Navigate to="/admin" replace />;
+
+  // 優先級 2: 面試主管 (Interviewer) -> /interviewer
+  if (permissions.includes(PERMISSIONS.EXAM_MANAGE)) return <Navigate to="/interviewer" replace />;
+
+  // 優先級 3: 出題主管 (Problem Setter) -> /problem-setter
+  if (permissions.includes(PERMISSIONS.PROBLEM_MANAGE))
+    return <Navigate to="/problem-setter" replace />;
+
+  // 優先級 4: 考生 -> /candidate
+  if (permissions.includes(PERMISSIONS.EXAM_TAKE)) return <Navigate to="/candidate" replace />;
+
+  return <Navigate to="/" replace />;
+}
+
+export default function App() {
+  const token = useAuthStore((s) => s.token);
 
   return (
-    <main style={styles.page}>
-      <h1 style={styles.h1}>Online Code Test — M1 skeleton</h1>
-      <p style={styles.sub}>NTHU 1142 雲原生 HW2 / Team 12</p>
+    <BrowserRouter>
+      <Routes>
+        {/* 公共路徑 */}
+        <Route path="/login" element={token ? <RoleRedirect /> : <LoginPage />} />
 
-      <section style={styles.card}>
-        <h2 style={styles.h2}>Backend health</h2>
-        {health.status === "loading" && <p>Checking…</p>}
-        {health.status === "ok" && health.data && (
-          <ul style={styles.list}>
-            <li>
-              status: <strong style={statusColor(health.data.status)}>{health.data.status}</strong>
-            </li>
-            <li>db latency: {health.data.dbLatencyMs ?? "n/a"} ms</li>
-            <li>uptime: {health.data.uptimeSec ?? "n/a"} s</li>
-          </ul>
-        )}
-        {health.status === "error" && (
-          <p style={styles.err}>backend unreachable: {health.error}</p>
-        )}
-      </section>
+        {/* 管理員路徑：onlyAdmin 為簡寫，意同 onlyAdmin={true} */}
+        <Route
+          path="/admin"
+          element={
+            <RoleBasedRoute onlyAdmin>
+              <AdminDashboardPage />
+            </RoleBasedRoute>
+          }
+        />
 
-      <section style={styles.card}>
-        <h2 style={styles.h2}>Ping</h2>
-        {ping.status === "loading" && <p>Checking…</p>}
-        {ping.status === "ok" && ping.data && (
-          <ul style={styles.list}>
-            <li>pong: {String(ping.data.pong)}</li>
-            <li>server time: {ping.data.ts}</li>
-          </ul>
-        )}
-        {ping.status === "error" && <p style={styles.err}>{ping.error}</p>}
-      </section>
+        {/* 面試官路徑：要求 exam:manage */}
+        <Route
+          path="/interviewer"
+          element={
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
+              <InterviewerDashboardPage />
+            </RoleBasedRoute>
+          }
+        />
 
-      <button type="button" onClick={refresh} style={styles.btn}>
-        Refresh
-      </button>
-    </main>
+        {/* 考生路徑：要求 exam:take */}
+        <Route
+          path="/candidate"
+          element={
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_TAKE}>
+              <DashboardPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 出題主管：題目列表 */}
+        <Route
+          path="/problem-setter"
+          element={
+            <RoleBasedRoute requiredPermission={PERMISSIONS.PROBLEM_MANAGE}>
+              <ProblemSetterDashboardPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 出題主管：新增題目 */}
+        <Route
+          path="/problem-setter/new"
+          element={
+            <RoleBasedRoute requiredPermission={PERMISSIONS.PROBLEM_MANAGE}>
+              <ProblemFormPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 出題主管：編輯題目 */}
+        <Route
+          path="/problem-setter/:id/edit"
+          element={
+            <RoleBasedRoute requiredPermission={PERMISSIONS.PROBLEM_MANAGE}>
+              <ProblemFormPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 面試官：建立考試 */}
+        <Route
+          path="/interviewer/new"
+          element={
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
+              <ExamCreatePage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 考生：考試頁 */}
+        <Route
+          path="/exam/:id"
+          element={
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_TAKE}>
+              <ExamPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 考生：交卷後結果頁 */}
+        <Route
+          path="/exam/:id/result"
+          element={
+            <RoleBasedRoute requiredPermission="exam:take">
+              <CandidateResultPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 面試官：考試結果頁 */}
+        <Route
+          path="/result/:id"
+          element={
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
+              <ExamResultPage />
+            </RoleBasedRoute>
+          }
+        />
+
+        {/* 根路徑導向 */}
+        <Route path="/" element={token ? <RoleRedirect /> : <Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
-
-function statusColor(s: HealthResponse["status"]): React.CSSProperties {
-  return { color: s === "ok" ? "#16a34a" : "#dc2626" };
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-    maxWidth: 640,
-    margin: "40px auto",
-    padding: "0 16px",
-    color: "#0f172a",
-  },
-  h1: { fontSize: 28, marginBottom: 4 },
-  sub: { color: "#64748b", marginTop: 0 },
-  card: {
-    border: "1px solid #e2e8f0",
-    borderRadius: 8,
-    padding: "16px 20px",
-    marginTop: 20,
-    background: "#f8fafc",
-  },
-  h2: { fontSize: 18, marginTop: 0 },
-  list: { margin: 0, paddingLeft: 20, lineHeight: 1.7 },
-  err: { color: "#dc2626", fontFamily: "monospace" },
-  btn: {
-    marginTop: 24,
-    padding: "8px 18px",
-    fontSize: 14,
-    border: "1px solid #0f172a",
-    borderRadius: 6,
-    background: "white",
-    cursor: "pointer",
-  },
-};

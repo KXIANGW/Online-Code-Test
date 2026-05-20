@@ -1,43 +1,39 @@
 import { Pool } from "pg";
 import { env } from "../env";
 
-// M1 keeps migrations as one idempotent bootstrap so a fresh Postgres volume
-// boots cleanly with `docker compose up`. M2 will switch to drizzle-kit
-// generated SQL files under ./drizzle once the schema starts changing.
-const BOOTSTRAP_SQL = `
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-DO $$ BEGIN
-  CREATE TYPE user_role AS ENUM ('root','interview_manager','problem_setter','interviewee');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE TYPE difficulty AS ENUM ('easy','medium','hard');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-CREATE TABLE IF NOT EXISTS users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  username VARCHAR(50) UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
-  display_name VARCHAR(100),
-  role user_role NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS problems (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  title VARCHAR(200) NOT NULL,
-  statement_md TEXT NOT NULL,
-  difficulty difficulty NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-`;
-
+// Schema is managed by /infra/postgres/*.sql init scripts (mounted at
+// /docker-entrypoint-initdb.d/). This file only ensures pgcrypto is present
+// as a safety net for environments where init scripts may not have run.
 async function main() {
   const pool = new Pool({ connectionString: env.DATABASE_URL });
   try {
-    console.log("[migrate] applying bootstrap schema...");
-    await pool.query(BOOTSTRAP_SQL);
+    console.log("[migrate] ensuring pgcrypto extension...");
+    await pool.query("CREATE EXTENSION IF NOT EXISTS pgcrypto;");
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'submission_type') THEN
+          CREATE TYPE submission_type AS ENUM ('simple', 'formal');
+        END IF;
+      END $$;
+    `);
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF to_regclass('public.submissions') IS NOT NULL THEN
+          ALTER TABLE submissions
+            ADD COLUMN IF NOT EXISTS submission_type submission_type NOT NULL DEFAULT 'formal';
+        END IF;
+      END $$;
+    `);
+    await pool.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES users(id);
+    `);
+    await pool.query(`
+      ALTER TABLE exam_sessions
+        ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ;
+    `);
     console.log("[migrate] done.");
   } finally {
     await pool.end();
