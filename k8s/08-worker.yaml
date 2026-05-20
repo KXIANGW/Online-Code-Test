@@ -20,6 +20,56 @@ spec:
       imagePullSecrets:
         - name: ghcr-secret
       initContainers:
+        - name: prepare-sandbox-images
+          image: docker:27-cli
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              docker pull ghcr.io/kxiangw/oct-sandbox-cpp:latest
+              docker pull ghcr.io/kxiangw/oct-sandbox-python:latest
+              docker tag ghcr.io/kxiangw/oct-sandbox-cpp:latest oct-sandbox-cpp:12
+              docker tag ghcr.io/kxiangw/oct-sandbox-python:latest oct-sandbox-python:3.11
+              docker image inspect oct-sandbox-cpp:12 oct-sandbox-python:3.11 >/dev/null
+              echo "sandbox images are ready"
+
+              keep_ids="$(docker ps --format '{{.Image}}' \
+                | xargs -r docker image inspect --format '{{.Id}}' 2>/dev/null || true)"
+              keep_ids="$keep_ids
+              $(docker image inspect --format '{{.Id}}' \
+                ghcr.io/kxiangw/oct-sandbox-cpp:latest \
+                ghcr.io/kxiangw/oct-sandbox-python:latest \
+                oct-sandbox-cpp:12 \
+                oct-sandbox-python:3.11 2>/dev/null || true)"
+
+              docker ps -a --filter status=exited --format '{{.ID}} {{.Image}}' \
+                | while read -r container_id image_ref; do
+                    [ -n "$container_id" ] || continue
+                    image_id="$(docker image inspect --format '{{.Id}}' "$image_ref" 2>/dev/null || true)"
+                    [ -n "$image_id" ] || continue
+                    echo "$keep_ids" | grep -q "$image_id" && continue
+                    case "$image_ref" in
+                      ghcr.io/kxiangw/oct-*|oct-sandbox-cpp:12|oct-sandbox-python:3.11)
+                        docker rm "$container_id" >/dev/null 2>&1 || true
+                        ;;
+                    esac
+                  done
+
+              docker images --format '{{.Repository}} {{.ID}}' \
+                | awk '$1 ~ /^ghcr.io\/kxiangw\/oct-/ {print $2}' \
+                | sort -u \
+                | while read -r image_id; do
+                    [ -n "$image_id" ] || continue
+                    echo "$keep_ids" | grep -q "$image_id" && continue
+                    docker image rm "$image_id" >/dev/null 2>&1 || true
+                  done
+              echo "unused OCT images are pruned"
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+            - name: ghcr-docker-config
+              mountPath: /root/.docker
+              readOnly: true
         - name: wait-postgres
           image: busybox:1.36
           command: ["sh", "-c", "until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done"]
@@ -42,7 +92,7 @@ spec:
                   name: oct-secrets
                   key: DATABASE_URL
             - name: HOST_WORK_DIR
-              value: "/tmp/judge"
+              value: "/tmp/oct-k8s-judge"
             - name: SANDBOX_RUNTIME
               value: "runc"
             - name: NODE_ENV
@@ -69,15 +119,21 @@ spec:
             - name: docker-sock
               mountPath: /var/run/docker.sock
             - name: judge-work
-              mountPath: /tmp/judge
+              mountPath: /tmp/oct-k8s-judge
       volumes:
+        - name: ghcr-docker-config
+          secret:
+            secretName: ghcr-secret
+            items:
+              - key: .dockerconfigjson
+                path: config.json
         - name: docker-sock
           hostPath:
             path: /var/run/docker.sock
             type: Socket
         - name: judge-work
           hostPath:
-            path: /tmp/judge
+            path: /tmp/oct-k8s-judge
             type: DirectoryOrCreate
       securityContext:
         runAsNonRoot: false

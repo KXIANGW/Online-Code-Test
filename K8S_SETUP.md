@@ -14,8 +14,7 @@
    - [三、安裝 Argo CD Image Updater](#三安裝-argo-cd-image-updater)
    - [四、設定 GHCR 存取憑證](#四設定-ghcr-存取憑證)
    - [五、部署至 k3s](#五部署至-k3s)
-   - [六、準備 Sandbox 映像](#六準備-sandbox-映像)
-   - [七（選用）— KEDA 自動擴縮 Worker](#七選用keda-自動擴縮-worker)
+   - [六（選用）— KEDA 自動擴縮 Worker](#六選用keda-自動擴縮-worker)
 4. [觀測性儀表板](#觀測性儀表板)
 5. [常見問題排除](#常見問題排除)
 
@@ -61,7 +60,7 @@
 | redis | redis:7-alpine | 6379 | Session & 快取 |
 | prometheus | prom/prometheus | 9090 | 指標收集 |
 | grafana | grafana/grafana | 3001 | 視覺化儀表板 |
-| cadvisor | gcr.io/cadvisor | 8081 | 容器資源指標 |
+| cadvisor | gcr.io/cadvisor | internal (8080) | 容器資源指標 |
 
 ---
 
@@ -421,30 +420,40 @@ kubectl patch application oct-app -n argocd \
 
 ---
 
-### 六、準備 Sandbox 映像
+#### Worker image 與 sandbox 自動維護
 
-Sandbox images 雖然也在 GHCR，但 worker 透過 `/var/run/docker.sock` 以短名稱（`oct-sandbox-cpp:12`）啟動 container，Docker daemon 不會自動去 GHCR 找，因此仍需在 VM 內手動 pull + tag（只需做一次）：
+Sandbox images 雖然也在 GHCR，但 worker 透過 `/var/run/docker.sock` 以短名稱（`oct-sandbox-cpp:12` / `oct-sandbox-python:3.11`）啟動 container。這些 sandbox container 是由 **k3s node 的 host Docker daemon** 啟動，不是 Kubernetes Pod。
+
+`k8s/08-worker.yaml` 已內建 `prepare-sandbox-images` initContainer。Worker Pod 啟動前，它會掛載同一個 host Docker socket，並把 `ghcr-secret` 掛到 `/root/.docker/config.json`，自動執行 pull/tag：
 
 ```bash
-ssh k3s-master@orb
-
-# 登入 GHCR（read:packages 的 PAT 即可）
-echo "<github-pat-read-packages>" | docker login ghcr.io -u "ChiaPin-Yi" --password-stdin
-
-docker pull ghcr.io/kxiangw/oct-sandbox-cpp:12
-docker pull ghcr.io/kxiangw/oct-sandbox-python:3.11
-docker tag ghcr.io/kxiangw/oct-sandbox-cpp:12 oct-sandbox-cpp:12
-docker tag ghcr.io/kxiangw/oct-sandbox-python:3.11 oct-sandbox-python:3.11
-
-# 確認
-docker images | grep oct-sandbox
-
-exit
+docker pull ghcr.io/kxiangw/oct-sandbox-cpp:latest
+docker pull ghcr.io/kxiangw/oct-sandbox-python:latest
+docker tag ghcr.io/kxiangw/oct-sandbox-cpp:latest oct-sandbox-cpp:12
+docker tag ghcr.io/kxiangw/oct-sandbox-python:latest oct-sandbox-python:3.11
 ```
+
+因此正常部署後不需要再手動 SSH 到 node 執行 pull/tag。若 GHCR 憑證、網路或 image 名稱有問題，Worker Pod 會停在 Init 階段，避免等到使用者提交程式後才變成 `system_error`。
+
+initContainer 也會清理舊版 OCT images。backend、frontend、worker、sandbox 都不需要在 node 上保留多個舊 tag；它會保留目前 running container 正在使用的 image，以及最新的 `ghcr.io/kxiangw/oct-sandbox-*` / `oct-sandbox-*` tag。其餘未使用的 `ghcr.io/kxiangw/oct-*` image 會被移除，避免每次自動更新後累積多個版本。若舊 Pod 已結束但 Docker 仍保留 exited container，initContainer 會先移除這些舊 OCT container，再移除它們引用的舊 image。仍在 running 的舊 Pod image 會先保留，等舊 Pod 結束後，下次 worker Pod 重啟時再清掉。
+
+驗證：
+
+```bash
+# initContainer log
+kubectl logs -n oct deploy/worker -c prepare-sandbox-images
+
+# worker 實際看到的 host Docker daemon images
+kubectl exec -n oct deploy/worker -- docker images | grep oct-sandbox
+```
+
+K8s worker 使用 host workdir `/tmp/oct-k8s-judge`，Docker Compose worker 預設使用 `/tmp/judge`，兩套環境可同時存在而不會互刪 sandbox 工作目錄。
+
+多 node cluster 中，每個 worker Pod 啟動時都會在它所在的 node 準備 sandbox images。若要完全離線部署，才需要事先把 sandbox images preload 到每個 node。
 
 ---
 
-### 七（選用）— KEDA 自動擴縮 Worker
+### 六（選用）— KEDA 自動擴縮 Worker
 
 KEDA 根據 RabbitMQ 佇列深度、CPU 使用率、in-flight task 數量自動調整 worker 副本數（1–5 個）。Worker 有現成的 Helm Chart（`charts/common-worker`），包含 KEDA ScaledObject。
 
@@ -637,20 +646,41 @@ kubectl apply -n argocd \
 
 ### Sandbox 映像不存在（Judge 失敗）
 
-Worker 透過 host Docker socket 執行沙盒，映像必須存在於 **host Docker daemon**：
+Worker 透過 host Docker socket 執行沙盒，映像必須存在於 **host Docker daemon**。正常情況下 `prepare-sandbox-images` initContainer 會自動 pull/tag；若判題仍出現 `No such image: oct-sandbox-cpp:12` 或 Pod 卡在 Init，先看 initContainer log：
+
+```bash
+kubectl logs -n oct deploy/worker -c prepare-sandbox-images
+kubectl describe pod -n oct -l app=worker
+```
+
+若是離線環境或需要手動救援，可 SSH 到 worker 所在 node 補 image/tag：
 
 ```bash
 ssh k3s-master@orb
 docker images | grep oct-sandbox
 
-# 若不存在，從 GHCR pull 並 tag
-echo "<github-pat>" | docker login ghcr.io -u "ChiaPin-Yi" --password-stdin
-docker pull ghcr.io/kxiangw/oct-sandbox-cpp:12
-docker pull ghcr.io/kxiangw/oct-sandbox-python:3.11
-docker tag ghcr.io/kxiangw/oct-sandbox-cpp:12 oct-sandbox-cpp:12
-docker tag ghcr.io/kxiangw/oct-sandbox-python:3.11 oct-sandbox-python:3.11
+echo "<github-pat-read-packages>" | docker login ghcr.io -u "ChiaPin-Yi" --password-stdin
+docker pull ghcr.io/kxiangw/oct-sandbox-cpp:latest
+docker pull ghcr.io/kxiangw/oct-sandbox-python:latest
+docker tag ghcr.io/kxiangw/oct-sandbox-cpp:latest oct-sandbox-cpp:12
+docker tag ghcr.io/kxiangw/oct-sandbox-python:latest oct-sandbox-python:3.11
 exit
 ```
+
+### OCT 舊版 image 佔用空間
+
+`prepare-sandbox-images` initContainer 會自動清理未使用的 `ghcr.io/kxiangw/oct-*` image，包括 backend、frontend、worker 與 sandbox 的舊 tag。若 `docker images` 仍看到多個 OCT tag，通常代表其中某些 image 仍被 running container 使用，或清理邏輯尚未重新跑過。
+
+```bash
+kubectl rollout restart deployment/worker -n oct
+kubectl logs -n oct deploy/worker -c prepare-sandbox-images
+
+# 確認清理後的 OCT images
+ssh k3s-master@orb
+docker images | grep 'ghcr.io/kxiangw/oct-'
+```
+
+若某個舊 tag 旁邊仍顯示 `U`，代表目前還有 container 在使用它；等 rollout 完成、舊 container 結束後，再重啟一次 worker 讓 initContainer 清掉即可。
 
 ### RabbitMQ Prometheus Plugin 未啟用
 

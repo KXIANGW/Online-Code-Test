@@ -24,7 +24,6 @@ spec:
             - "--store_container_labels=false"
           ports:
             - containerPort: 8080
-              hostPort: 8081
           securityContext:
             privileged: true
           volumeMounts:
