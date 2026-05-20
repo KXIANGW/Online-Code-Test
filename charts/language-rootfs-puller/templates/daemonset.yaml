@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "puller.fullname" . }}
+  labels:
+    {{- include "puller.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "puller.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "puller.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Roll Pods whenever the ConfigMap content changes so the new
+        # languages list is picked up without manual `kubectl rollout`.
+        checksum/languages: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: puller
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+          env:
+            - name: LANGUAGES_FILE
+              value: /config/languages.yaml
+            - name: ROOTFS_BASE_DIR
+              value: {{ .Values.rootfsHostPath | quote }}
+            - name: PORT
+              value: "8081"
+            - name: POLL_INTERVAL_MS
+              value: {{ .Values.pollIntervalMs | quote }}
+            {{- if .Values.reloadToken }}
+            - name: RELOAD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "puller.fullname" . }}-token
+                  key: token
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          volumeMounts:
+            - name: rootfs-cache
+              mountPath: {{ .Values.rootfsHostPath | quote }}
+            - name: languages
+              mountPath: /config
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            # umoci --rootless needs CAP_SYS_ADMIN for user-namespace mount tricks.
+            # privileged: false — we explicitly stay non-privileged.
+            privileged: false
+            capabilities:
+              add: ["SYS_ADMIN"]
+              drop: ["ALL"]
+            allowPrivilegeEscalation: true
+            runAsUser: 0
+      volumes:
+        - name: rootfs-cache
+          hostPath:
+            path: {{ .Values.rootfsHostPath | quote }}
+            type: DirectoryOrCreate
+        - name: languages
+          configMap:
+            name: {{ include "puller.fullname" . }}
