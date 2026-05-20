@@ -3,15 +3,8 @@ import { useParams } from "react-router-dom";
 import { getSessionResult, listSessionSubmissions } from "../api/client";
 import { NavBar } from "../components/NavBar";
 import { useJudgeSocket } from "../hooks/useJudgeSocket";
-import type { ExamStatus, JudgeSocketMessage, SessionResult, SubmissionSummary } from "../types";
-
-const STATUS_LABEL: Record<ExamStatus, string> = {
-  not_started: "待考",
-  in_progress: "進行中",
-  submitted: "已交卷",
-  expired: "已逾時",
-  cancelled: "已取消",
-};
+import type { JudgeSocketMessage, SessionResult, SubmissionSummary } from "../types";
+import { STATUS_LABEL, STATUS_COLOR } from "../config/examStatus";
 
 export default function CandidateResultPage() {
   const { id } = useParams<{ id: string }>();
@@ -94,7 +87,9 @@ export default function CandidateResultPage() {
             <section className="rounded-xl border border-slate-200 bg-white p-5">
               <div className="mb-3 flex items-center gap-3">
                 <h1 className="text-lg font-semibold text-slate-900">考試結果</h1>
-                <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-600">
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[result.status]}`}
+                >
                   {STATUS_LABEL[result.status]}
                 </span>
               </div>
