@@ -1,7 +1,11 @@
 import Redis from "ioredis";
 import { env } from "../env";
 
-export const redis = new Redis(env.REDIS_URL, { lazyConnect: true });
+export const redis = new Redis(env.REDIS_URL, {
+  lazyConnect: true,
+  enableOfflineQueue: false,
+  retryStrategy: (times) => (times > 3 ? null : Math.min(times * 200, 600)),
+});
 
 export async function cacheGet<T>(key: string): Promise<T | null> {
   const raw = await redis.get(key);

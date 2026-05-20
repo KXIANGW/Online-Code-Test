@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { buildApp } from "./helpers/app";
 import { truncateTestTables, seedUser, loginAs } from "./helpers/db";
 import { db } from "../db/client";
 import { examSessions, problems } from "../db/schema";
 import { eq } from "drizzle-orm";
+import { redis } from "../db/redis";
 import type { FastifyInstance } from "fastify";
 
 let app: FastifyInstance;
@@ -77,35 +78,48 @@ async function getProblemIds(): Promise<{ easy: number; medium: number }> {
   };
 }
 
+async function createTemplate(token: string, problemId: number): Promise<number> {
+  const res = await app.inject({
+    method: "POST",
+    url: "/api/exam-sessions/templates/manual",
+    headers: { authorization: `Bearer ${token}` },
+    payload: {
+      title: "Test Exam",
+      durationMinutes: 60,
+      problems: [{ problemId, scoreWeight: 100, orderIndex: 1 }],
+    },
+  });
+  expect(res.statusCode).toBe(201);
+  return res.json<{ id: number }>().id;
+}
+
 async function createSession(
   token: string,
   candidateId: number,
   problemId: number
 ): Promise<number> {
+  const templateId = await createTemplate(token, problemId);
   const res = await app.inject({
     method: "POST",
-    url: "/api/exam-sessions",
+    url: `/api/exam-sessions/templates/${templateId}/assign`,
     headers: { authorization: `Bearer ${token}` },
-    payload: {
-      candidateId,
-      durationMinutes: 60,
-      problems: [{ problemId, scoreWeight: 100, orderIndex: 1 }],
-    },
+    payload: { candidateIds: [candidateId] },
   });
-  return res.json<{ id: number }>().id;
+  expect(res.statusCode).toBe(201);
+  return res.json<Array<{ id: number }>>()[0]!.id;
 }
 
-// ── POST /api/exam-sessions (manual) ──────────────────────────────────────────
+// ── POST /api/exam-sessions/templates/manual ─────────────────────────────────
 
-describe("POST /api/exam-sessions (manual)", () => {
-  it("interviewer creates session with manual problem assignment", async () => {
+describe("POST /api/exam-sessions/templates/manual", () => {
+  it("interviewer creates manual template", async () => {
     const { easy, medium } = await getProblemIds();
     const res = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
+      url: "/api/exam-sessions/templates/manual",
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: {
-        candidateId: davidId,
+        title: "Backend Screening",
         durationMinutes: 90,
         problems: [
           { problemId: easy, scoreWeight: 30, orderIndex: 1 },
@@ -114,89 +128,51 @@ describe("POST /api/exam-sessions (manual)", () => {
       },
     });
     expect(res.statusCode).toBe(201);
-    const body = res.json<{ id: number; status: string; maxScore: number }>();
-    expect(body.status).toBe("not_started");
-    expect(body.maxScore).toBe(100);
-  });
-
-  it("superuser creates session with manual problem assignment", async () => {
-    const { easy } = await getProblemIds();
-    const res = await app.inject({
-      method: "POST",
-      url: "/api/exam-sessions",
-      headers: { authorization: `Bearer ${rootToken}` },
-      payload: {
-        candidateId: davidId,
-        durationMinutes: 60,
-        problems: [{ problemId: easy, scoreWeight: 100, orderIndex: 1 }],
-      },
-    });
-    expect(res.statusCode).toBe(201);
-    const body = res.json<{ id: number; status: string }>();
-    expect(body.status).toBe("not_started");
+    const body = res.json<{ id: number; title: string; durationMinutes: number }>();
+    expect(body.title).toBe("Backend Screening");
+    expect(body.durationMinutes).toBe(90);
     expect(body.id).toBeDefined();
   });
 
-  it("candidate → 403 on create", async () => {
+  it("superuser creates manual template", async () => {
     const { easy } = await getProblemIds();
     const res = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
-      headers: { authorization: `Bearer ${candToken}` },
-      payload: {
-        candidateId: davidId,
-        durationMinutes: 90,
-        problems: [{ problemId: easy, scoreWeight: 100, orderIndex: 1 }],
-      },
-    });
-    expect(res.statusCode).toBe(403);
-  });
-
-  it("interviewer cannot create session for another interviewer's candidate → 403", async () => {
-    // Given: eveId is owned by bob, aliceToken is alice
-    const { easy } = await getProblemIds();
-    const res = await app.inject({
-      method: "POST",
-      url: "/api/exam-sessions",
-      headers: { authorization: `Bearer ${aliceToken}` },
-      payload: {
-        candidateId: eveId,
-        durationMinutes: 60,
-        problems: [{ problemId: easy, scoreWeight: 100, orderIndex: 1 }],
-      },
-    });
-    // When: alice tries to assign bob's candidate
-    // Expect: 403
-    expect(res.statusCode).toBe(403);
-  });
-
-  it("superuser can create session for any candidate regardless of ownership", async () => {
-    // Given: eveId is owned by bob, rootToken is superuser
-    const { easy } = await getProblemIds();
-    const res = await app.inject({
-      method: "POST",
-      url: "/api/exam-sessions",
+      url: "/api/exam-sessions/templates/manual",
       headers: { authorization: `Bearer ${rootToken}` },
       payload: {
-        candidateId: eveId,
+        title: "Root Exam",
         durationMinutes: 60,
         problems: [{ problemId: easy, scoreWeight: 100, orderIndex: 1 }],
       },
     });
-    // When: superuser creates session for bob's candidate
-    // Expect: 201
     expect(res.statusCode).toBe(201);
   });
 
-  it("rejects duplicate problem/order assignments and missing problems", async () => {
+  it("candidate → 403 on create template", async () => {
+    const { easy } = await getProblemIds();
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions/templates/manual",
+      headers: { authorization: `Bearer ${candToken}` },
+      payload: {
+        title: "Forbidden",
+        durationMinutes: 60,
+        problems: [{ problemId: easy, scoreWeight: 100, orderIndex: 1 }],
+      },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("rejects duplicate problems and duplicate orderIndex", async () => {
     const { easy } = await getProblemIds();
 
     const duplicateProblem = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
+      url: "/api/exam-sessions/templates/manual",
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: {
-        candidateId: davidId,
+        title: "Dup",
         durationMinutes: 60,
         problems: [
           { problemId: easy, scoreWeight: 50, orderIndex: 1 },
@@ -208,10 +184,10 @@ describe("POST /api/exam-sessions (manual)", () => {
 
     const duplicateOrder = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
+      url: "/api/exam-sessions/templates/manual",
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: {
-        candidateId: davidId,
+        title: "Dup",
         durationMinutes: 60,
         problems: [
           { problemId: easy, scoreWeight: 50, orderIndex: 1 },
@@ -220,115 +196,200 @@ describe("POST /api/exam-sessions (manual)", () => {
       },
     });
     expect(duplicateOrder.statusCode).toBe(409);
+  });
 
-    const missing = await app.inject({
+  it("rejects non-existent problem → 404", async () => {
+    const res = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
+      url: "/api/exam-sessions/templates/manual",
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: {
-        candidateId: davidId,
+        title: "Missing",
         durationMinutes: 60,
         problems: [{ problemId: 999999, scoreWeight: 100, orderIndex: 1 }],
       },
     });
-    expect(missing.statusCode).toBe(404);
+    expect(res.statusCode).toBe(404);
   });
 });
 
-// ── POST /api/exam-sessions (random) ──────────────────────────────────────────
+// ── POST /api/exam-sessions/templates/random ──────────────────────────────────
 
-describe("POST /api/exam-sessions (random)", () => {
-  it("interviewer creates session with random assignment", async () => {
+describe("POST /api/exam-sessions/templates/random", () => {
+  it("interviewer creates random template with valid distribution", async () => {
     const res = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
+      url: "/api/exam-sessions/templates/random",
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: {
-        candidateId: davidId,
+        title: "Random Exam",
         durationMinutes: 60,
         distribution: { easy: 1, medium: 1 },
         scoreWeight: 50,
       },
     });
     expect(res.statusCode).toBe(201);
-    const body = res.json<{ id: number; maxScore: number }>();
-    expect(body.maxScore).toBe(100); // 2 problems × 50
+    const body = res.json<{ id: number; title: string }>();
+    expect(body.id).toBeDefined();
+    expect(body.title).toBe("Random Exam");
   });
 
-  it("random excludes previously used problems for the same candidate", async () => {
-    const { easy } = await getProblemIds();
-
-    // first session uses the easy problem
-    await app.inject({
-      method: "POST",
-      url: "/api/exam-sessions",
-      headers: { authorization: `Bearer ${aliceToken}` },
-      payload: {
-        candidateId: davidId,
-        durationMinutes: 60,
-        problems: [{ problemId: easy, scoreWeight: 100, orderIndex: 1 }],
-      },
-    });
-
-    // second session tries to pick a new easy problem — pool exhausted
+  it("candidate → 403 on create random template", async () => {
     const res = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
-      headers: { authorization: `Bearer ${aliceToken}` },
+      url: "/api/exam-sessions/templates/random",
+      headers: { authorization: `Bearer ${candToken}` },
       payload: {
-        candidateId: davidId,
+        title: "Forbidden",
         durationMinutes: 60,
         distribution: { easy: 1 },
         scoreWeight: 100,
       },
     });
-    expect(res.statusCode).toBe(409);
-  });
-
-  it("interviewer cannot create random session for another interviewer's candidate → 403", async () => {
-    // Given: eveId is owned by bob, aliceToken is alice
-    const res = await app.inject({
-      method: "POST",
-      url: "/api/exam-sessions",
-      headers: { authorization: `Bearer ${aliceToken}` },
-      payload: {
-        candidateId: eveId,
-        durationMinutes: 60,
-        distribution: { easy: 1 },
-        scoreWeight: 100,
-      },
-    });
-    // When: alice tries to assign bob's candidate via random
-    // Expect: 403
     expect(res.statusCode).toBe(403);
   });
 
-  it("rejects empty distribution and insufficient hard pool", async () => {
-    const empty = await app.inject({
+  it("rejects empty distribution → 400", async () => {
+    const res = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
+      url: "/api/exam-sessions/templates/random",
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: {
-        candidateId: davidId,
+        title: "Empty",
         durationMinutes: 60,
         distribution: {},
         scoreWeight: 100,
       },
     });
-    expect(empty.statusCode).toBe(400);
+    expect(res.statusCode).toBe(400);
+  });
 
+  it("rejects when pool is exhausted for requested difficulty → 409", async () => {
     const hard = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
+      url: "/api/exam-sessions/templates/random",
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: {
-        candidateId: davidId,
+        title: "Hard Pool",
         durationMinutes: 60,
         distribution: { hard: 1 },
         scoreWeight: 100,
       },
     });
     expect(hard.statusCode).toBe(409);
+
+    const tooMany = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions/templates/random",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        title: "Too Many Easy",
+        durationMinutes: 60,
+        distribution: { easy: 2 },
+        scoreWeight: 100,
+      },
+    });
+    expect(tooMany.statusCode).toBe(409);
+  });
+});
+
+// ── GET /api/exam-sessions/templates ─────────────────────────────────────────
+
+describe("GET /api/exam-sessions/templates", () => {
+  it("interviewer sees only their own templates", async () => {
+    const { easy } = await getProblemIds();
+    await createTemplate(aliceToken, easy);
+    await createTemplate(aliceToken, easy);
+    await createTemplate(bobToken, easy);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/exam-sessions/templates",
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<unknown[]>()).toHaveLength(2);
+  });
+
+  it("superuser sees all templates", async () => {
+    const { easy } = await getProblemIds();
+    await createTemplate(aliceToken, easy);
+    await createTemplate(bobToken, easy);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/exam-sessions/templates",
+      headers: { authorization: `Bearer ${rootToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<unknown[]>()).toHaveLength(2);
+  });
+
+  it("candidate → 403", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/exam-sessions/templates",
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});
+
+// ── POST /api/exam-sessions/templates/:id/assign ──────────────────────────────
+
+describe("POST /api/exam-sessions/templates/:id/assign", () => {
+  it("interviewer assigns their template to their own candidate → 201 with session array", async () => {
+    const { easy } = await getProblemIds();
+    const templateId = await createTemplate(aliceToken, easy);
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${templateId}/assign`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [davidId] },
+    });
+    expect(res.statusCode).toBe(201);
+    const sessions = res.json<Array<{ id: number; status: string; maxScore: number }>>();
+    expect(sessions).toHaveLength(1);
+    const first = sessions[0]!;
+    expect(first.status).toBe("not_started");
+    expect(first.maxScore).toBe(100);
+  });
+
+  it("superuser assigns any template to any candidate", async () => {
+    const { easy } = await getProblemIds();
+    const templateId = await createTemplate(aliceToken, easy);
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${templateId}/assign`,
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: { candidateIds: [eveId] },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it("interviewer cannot assign to another interviewer's candidate → 403", async () => {
+    const { easy } = await getProblemIds();
+    const templateId = await createTemplate(aliceToken, easy);
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${templateId}/assign`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [eveId] },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("non-existent template → 404", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions/templates/999999/assign",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [davidId] },
+    });
+    expect(res.statusCode).toBe(404);
   });
 });
 
@@ -635,12 +696,12 @@ describe("POST /api/exam-sessions/:id/cancel", () => {
 describe("GET /api/exam-sessions/:id/problems", () => {
   it("candidate can view their session's problems", async () => {
     const { easy, medium } = await getProblemIds();
-    const res = await app.inject({
+    const tplRes = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
+      url: "/api/exam-sessions/templates/manual",
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: {
-        candidateId: davidId,
+        title: "Problems Test Exam",
         durationMinutes: 90,
         problems: [
           { problemId: easy, scoreWeight: 30, orderIndex: 1 },
@@ -648,7 +709,14 @@ describe("GET /api/exam-sessions/:id/problems", () => {
         ],
       },
     });
-    const sessionId = res.json<{ id: number }>().id;
+    const templateId = tplRes.json<{ id: number }>().id;
+    const assignRes = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${templateId}/assign`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [davidId] },
+    });
+    const sessionId = assignRes.json<Array<{ id: number }>>()[0].id;
 
     const listRes = await app.inject({
       method: "GET",
@@ -714,12 +782,12 @@ describe("PUT /api/exam-sessions/:id/drafts/:problemId and GET /:id/drafts", () 
     easyProblemId = easy;
     mediumProblemId = medium;
 
-    const createRes = await app.inject({
+    const tplRes = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
+      url: "/api/exam-sessions/templates/manual",
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: {
-        candidateId: davidId,
+        title: "Draft Test Exam",
         durationMinutes: 60,
         problems: [
           { problemId: easy, scoreWeight: 50, orderIndex: 1 },
@@ -727,7 +795,15 @@ describe("PUT /api/exam-sessions/:id/drafts/:problemId and GET /:id/drafts", () 
         ],
       },
     });
-    sessionId = createRes.json<{ id: number }>().id;
+    const templateId = tplRes.json<{ id: number }>().id;
+
+    const assignRes = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${templateId}/assign`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [davidId] },
+    });
+    sessionId = assignRes.json<Array<{ id: number }>>()[0].id;
 
     await app.inject({
       method: "POST",
@@ -768,21 +844,37 @@ describe("PUT /api/exam-sessions/:id/drafts/:problemId and GET /:id/drafts", () 
   });
 
   it("candidate can read back a previously saved draft", async () => {
-    await app.inject({
-      method: "PUT",
-      url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}`,
-      headers: { authorization: `Bearer ${candToken}` },
-      payload: { code: "saved = True", language: "python3" },
+    // Mock Redis in-memory so this test works without a running Redis instance
+    const store = new Map<string, string>();
+    const setexSpy = vi.spyOn(redis, "setex").mockImplementation(async (key, _ttl, value) => {
+      store.set(String(key), String(value));
+      return "OK";
     });
-    const res = await app.inject({
-      method: "GET",
-      url: `/api/exam-sessions/${sessionId}/drafts`,
-      headers: { authorization: `Bearer ${candToken}` },
-    });
-    expect(res.statusCode).toBe(200);
-    const body = res.json<Record<string, { code: string; language: string }>>();
-    expect(body[String(easyProblemId)]).toEqual({ code: "saved = True", language: "python3" });
-    expect(body[String(mediumProblemId)]).toBeUndefined();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mgetSpy = vi.spyOn(redis, "mget").mockImplementation(async (...keys: any[]) =>
+      (keys as string[]).map((k) => store.get(k) ?? null),
+    );
+
+    try {
+      await app.inject({
+        method: "PUT",
+        url: `/api/exam-sessions/${sessionId}/drafts/${easyProblemId}`,
+        headers: { authorization: `Bearer ${candToken}` },
+        payload: { code: "saved = True", language: "python3" },
+      });
+      const res = await app.inject({
+        method: "GET",
+        url: `/api/exam-sessions/${sessionId}/drafts`,
+        headers: { authorization: `Bearer ${candToken}` },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json<Record<string, { code: string; language: string }>>();
+      expect(body[String(easyProblemId)]).toEqual({ code: "saved = True", language: "python3" });
+      expect(body[String(mediumProblemId)]).toBeUndefined();
+    } finally {
+      setexSpy.mockRestore();
+      mgetSpy.mockRestore();
+    }
   });
 
   it("get drafts for a session belonging to another candidate → 404", async () => {
