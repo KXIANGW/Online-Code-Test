@@ -5,6 +5,7 @@ import { NavBar } from "../components/NavBar";
 import { useJudgeSocket } from "../hooks/useJudgeSocket";
 import type { JudgeSocketMessage, SessionResult, SubmissionSummary } from "../types";
 import { STATUS_LABEL, STATUS_COLOR } from "../config/examStatus";
+import { ROUTES } from "../config/routes";
 
 export default function CandidateResultPage() {
   const { id } = useParams<{ id: string }>();
@@ -77,7 +78,7 @@ export default function CandidateResultPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <NavBar homeHref="/candidate" />
+      <NavBar homeHref={ROUTES.CANDIDATE} />
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-8">
         {loading && <p className="py-12 text-center text-sm text-slate-400">載入中...</p>}
         {error && <p className="py-12 text-center text-sm text-red-500">無法載入考試結果</p>}

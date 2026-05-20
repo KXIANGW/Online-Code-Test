@@ -4,6 +4,7 @@ import { getSessionResult, getSubmissionDetail, listSessionSubmissions } from ".
 import { NavBar } from "../components/NavBar";
 import type { SessionResult, SubmissionSummary, TestcaseResult } from "../types";
 import { STATUS_LABEL, STATUS_COLOR } from "../config/examStatus";
+import { ROUTES } from "../config/routes";
 
 const TC_VERDICT_COLOR: Record<string, string> = {
   AC: "text-green-600",
@@ -99,10 +100,10 @@ export default function ExamResultPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <NavBar homeHref="/interviewer" />
+      <NavBar homeHref={ROUTES.INTERVIEWER} />
       <main className="max-w-3xl mx-auto px-4 py-8">
         <button
-          onClick={() => navigate("/interviewer")}
+          onClick={() => navigate(ROUTES.INTERVIEWER)}
           className="text-sm text-slate-500 hover:text-slate-700 mb-6 flex items-center gap-1 transition-colors"
         >
           ← 返回考試管理

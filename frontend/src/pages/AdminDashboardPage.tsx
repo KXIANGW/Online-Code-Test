@@ -9,6 +9,7 @@ import {
   CREATABLE_ROLES,
   type RoleKey,
 } from "../config/roles";
+import { ROUTES } from "../config/routes";
 
 type UserRole = RoleKey;
 
@@ -170,7 +171,7 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <NavBar homeHref="/admin" />
+      <NavBar homeHref={ROUTES.ADMIN} />
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>

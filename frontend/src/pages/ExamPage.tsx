@@ -28,6 +28,7 @@ import {
 import { formatTimeLeft, useExamTimer } from "../hooks/useExamTimer";
 import { useJudgeSocket } from "../hooks/useJudgeSocket";
 import { STORAGE_KEYS } from "../config/storage";
+import { ROUTES } from "../config/routes";
 
 const MONACO_LANG: Record<string, string> = {
   python3: "python",
@@ -397,7 +398,7 @@ export default function ExamPage() {
   if (Number.isNaN(sessionId)) {
     return (
       <div className="h-screen flex flex-col overflow-hidden bg-slate-50">
-        <NavBar homeHref="/candidate" />
+        <NavBar homeHref={ROUTES.CANDIDATE} />
         <div className="flex-1 flex items-center justify-center">
           <span className="text-sm text-red-500">無效的考試連結。</span>
         </div>
@@ -408,7 +409,7 @@ export default function ExamPage() {
   if (loading) {
     return (
       <div className="h-screen flex flex-col overflow-hidden bg-slate-50">
-        <NavBar homeHref="/candidate" />
+        <NavBar homeHref={ROUTES.CANDIDATE} />
         <div className="flex-1 flex items-center justify-center">
           <span className="text-sm text-slate-400">載入中...</span>
         </div>
@@ -419,7 +420,7 @@ export default function ExamPage() {
   if (loadError) {
     return (
       <div className="h-screen flex flex-col overflow-hidden bg-slate-50">
-        <NavBar homeHref="/candidate" />
+        <NavBar homeHref={ROUTES.CANDIDATE} />
         <div className="flex-1 flex items-center justify-center">
           <span className="text-sm text-red-500">{loadError}</span>
         </div>
@@ -429,7 +430,7 @@ export default function ExamPage() {
 
   return (
     <div className="relative h-screen flex flex-col overflow-hidden bg-slate-50">
-      <NavBar homeHref="/candidate" />
+      <NavBar homeHref={ROUTES.CANDIDATE} />
 
       {/* Problem tabs + Timer */}
       <div

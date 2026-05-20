@@ -13,6 +13,7 @@ import {
   deleteTestcase,
 } from "../api/client";
 import type { Difficulty, Testcase } from "../types";
+import { ROUTES } from "../config/routes";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -283,7 +284,7 @@ export default function ProblemFormPage() {
       }
 
       alert("儲存成功！");
-      navigate("/problem-setter");
+      navigate(ROUTES.PROBLEM_SETTER);
     } catch (err) {
       const detail = axios.isAxiosError(err)
         ? ((err.response?.data as { message?: string })?.message ?? err.message)
@@ -297,7 +298,7 @@ export default function ProblemFormPage() {
   if (loadError) {
     return (
       <div className="min-h-screen bg-slate-50">
-        <NavBar homeHref="/problem-setter" />
+        <NavBar homeHref={ROUTES.PROBLEM_SETTER} />
         <main className="max-w-3xl mx-auto px-4 py-8">
           <p className="text-sm text-red-500 text-center py-12">無法載入題目，請稍後再試。</p>
         </main>
@@ -307,11 +308,11 @@ export default function ProblemFormPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <NavBar homeHref="/problem-setter" />
+      <NavBar homeHref={ROUTES.PROBLEM_SETTER} />
       <main className="max-w-3xl mx-auto px-4 py-8">
         <button
           type="button"
-          onClick={() => navigate("/problem-setter")}
+          onClick={() => navigate(ROUTES.PROBLEM_SETTER)}
           className="text-sm text-slate-500 hover:text-slate-700 mb-6 flex items-center gap-1 transition-colors"
         >
           ← 返回題目列表
@@ -473,7 +474,7 @@ export default function ProblemFormPage() {
           <div className="flex justify-end gap-3 pb-8">
             <button
               type="button"
-              onClick={() => navigate("/problem-setter")}
+              onClick={() => navigate(ROUTES.PROBLEM_SETTER)}
               className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
             >
               取消

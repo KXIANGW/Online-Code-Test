@@ -5,6 +5,7 @@ import { useInterviewerStore } from "../stores/interviewerStore";
 import { getExamSessions, getSessionResult } from "../api/client";
 import type { ExamStatus, SessionResult } from "../types";
 import { STATUS_LABEL, STATUS_COLOR } from "../config/examStatus";
+import { ROUTES } from "../config/routes";
 
 type Tab = "all" | "in_progress" | "not_started" | "ended";
 
@@ -46,7 +47,7 @@ function SessionCard({ result }: { result: SessionResult }) {
         )}
       </div>
       <button
-        onClick={() => navigate(`/result/${result.id}`)}
+        onClick={() => navigate(ROUTES.resultPage(result.id))}
         className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
       >
         查看結果
@@ -81,12 +82,12 @@ export default function InterviewerDashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <NavBar homeHref="/interviewer" />
+      <NavBar homeHref={ROUTES.INTERVIEWER} />
       <main className="max-w-4xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-semibold text-slate-800">考試管理</h1>
           <button
-            onClick={() => navigate("/interviewer/new")}
+            onClick={() => navigate(ROUTES.INTERVIEWER_NEW)}
             className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
           >
             建立考試
