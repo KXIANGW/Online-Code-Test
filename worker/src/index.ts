@@ -3,6 +3,7 @@ import { config } from "./config";
 import { pool } from "./db/client";
 import { startJudgeConsumer } from "./consumers/judge.consumer";
 import { loadLanguages } from "./engine/languages";
+import { createSandboxEngine } from "./engine/sandbox-engine";
 import { createHealthServer, type HealthState } from "./healthcheck";
 
 const JUDGE_TASKS_QUEUE = "judge.tasks";
@@ -58,10 +59,15 @@ async function connectOnce(): Promise<void> {
   });
 
   const languages = loadLanguages();
+  const engine = await createSandboxEngine({
+    kind: config.sandboxEngine,
+    sandboxRuntime: config.sandboxRuntime,
+  });
+  console.log(`[worker] sandbox engine = ${engine.name}`);
   const nextChannel = await nextConnection.createChannel();
   channel = nextChannel;
   await assertTopology(nextChannel);
-  await startJudgeConsumer(nextChannel, languages);
+  await startJudgeConsumer(nextChannel, languages, engine);
   healthState.rabbitConnected = true;
 }
 

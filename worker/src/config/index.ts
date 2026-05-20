@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { parseEngineKind } from "../engine/sandbox-engine";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -11,4 +12,5 @@ export const config = {
   databaseUrl: requireEnv("DATABASE_URL"),
   hostWorkDir: process.env["HOST_WORK_DIR"] ?? "/tmp/judge",
   sandboxRuntime: process.env["SANDBOX_RUNTIME"] ?? "runsc",
+  sandboxEngine: parseEngineKind(process.env["SANDBOX_ENGINE"]),
 };
