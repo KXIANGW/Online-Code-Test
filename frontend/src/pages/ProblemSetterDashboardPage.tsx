@@ -3,25 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { getProblems, deleteProblem } from "../api/client";
 import { NavBar } from "../components/NavBar";
 import type { Difficulty, ProblemSummary } from "../types";
-
-const DIFFICULTY_LABEL: Record<Difficulty, string> = {
-  easy: "easy",
-  medium: "medium",
-  hard: "hard",
-};
-
-const DIFFICULTY_COLOR: Record<Difficulty, string> = {
-  easy: "bg-green-50 text-green-700",
-  medium: "bg-amber-50 text-amber-700",
-  hard: "bg-red-50 text-red-700",
-};
+import { DIFFICULTY_LABEL, DIFFICULTY_BADGE_COLOR } from "../config/difficulty";
 
 type DifficultyFilter = Difficulty | "all";
 
 function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
   return (
     <span
-      className={`text-xs font-medium px-2 py-0.5 rounded-full ${DIFFICULTY_COLOR[difficulty]}`}
+      className={`text-xs font-medium px-2 py-0.5 rounded-full ${DIFFICULTY_BADGE_COLOR[difficulty]}`}
     >
       {DIFFICULTY_LABEL[difficulty]}
     </span>
@@ -102,9 +91,9 @@ export default function ProblemSetterDashboardPage() {
                 {(
                   [
                     { key: "all", label: "全部" },
-                    { key: "easy", label: "easy" },
-                    { key: "medium", label: "medium" },
-                    { key: "hard", label: "hard" },
+                    { key: "easy", label: DIFFICULTY_LABEL.easy },
+                    { key: "medium", label: DIFFICULTY_LABEL.medium },
+                    { key: "hard", label: DIFFICULTY_LABEL.hard },
                   ] as { key: DifficultyFilter; label: string }[]
                 ).map((f) => (
                   <button
