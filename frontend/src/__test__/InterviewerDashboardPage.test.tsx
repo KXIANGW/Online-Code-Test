@@ -42,6 +42,22 @@ const mockTemplate: ExamTemplate = {
   createdAt: "2026-05-20T00:00:00.000Z",
   updatedAt: "2026-05-20T00:00:00.000Z",
   deletedAt: null,
+  problems: [
+    {
+      problemId: 1,
+      title: "Two Sum",
+      difficulty: "easy",
+      orderIndex: 1,
+      scoreWeight: 30,
+    },
+    {
+      problemId: 2,
+      title: "Binary Search",
+      difficulty: "medium",
+      orderIndex: 2,
+      scoreWeight: 70,
+    },
+  ],
 };
 
 const mockNotStartedResult: SessionResult = {
@@ -156,7 +172,7 @@ describe("InterviewerDashboardPage()", () => {
 
   // ── Templates tab ─────────────────────────────────────────────────────────
 
-  it("templates tab: shows template card with title and 分配考試 button", async () => {
+  it("templates tab: shows template details and problem list without assignment button", async () => {
     setupAuthStore();
     setupInterviewerStore([], [mockTemplate], []);
     renderPage();
@@ -164,18 +180,10 @@ describe("InterviewerDashboardPage()", () => {
       expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
     );
     expect(screen.getByText("Backend Engineer Test")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "分配考試" })).toBeEnabled();
-  });
-
-  it("templates tab: 分配考試 navigates to /interviewer/templates/:id/assign", async () => {
-    setupAuthStore();
-    setupInterviewerStore([], [mockTemplate], []);
-    renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "分配考試" }));
-    expect(mockNavigate).toHaveBeenCalledWith("/interviewer/templates/42/assign");
+    expect(screen.getByText(/90 分鐘/)).toBeInTheDocument();
+    expect(screen.getByText(/Two Sum/)).toBeInTheDocument();
+    expect(screen.getByText(/Binary Search/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "分配考試" })).not.toBeInTheDocument();
   });
 
   it("templates tab: ＋ 建立模板 navigates to /interviewer/templates/new", async () => {

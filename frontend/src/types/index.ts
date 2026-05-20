@@ -257,6 +257,13 @@ export interface ExamTemplate {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  problems?: {
+    problemId: number;
+    title: string;
+    difficulty: Difficulty;
+    orderIndex: number;
+    scoreWeight: number;
+  }[];
 }
 
 export interface CreateExamTemplateManualRequest {

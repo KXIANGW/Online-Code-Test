@@ -330,6 +330,52 @@ describe("GET /api/exam-sessions/templates", () => {
     expect(res.json<unknown[]>()).toHaveLength(2);
   });
 
+  it("includes ordered problem summaries for each template", async () => {
+    const { easy, medium } = await getProblemIds();
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/exam-sessions/templates/manual",
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        title: "Backend Screening",
+        durationMinutes: 90,
+        problems: [
+          { problemId: medium, scoreWeight: 70, orderIndex: 2 },
+          { problemId: easy, scoreWeight: 30, orderIndex: 1 },
+        ],
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/exam-sessions/templates",
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const [template] = res.json<Array<{
+      title: string;
+      durationMinutes: number;
+      problems: Array<{
+        problemId: number;
+        title: string;
+        difficulty: string;
+        orderIndex: number;
+        scoreWeight: number;
+      }>;
+    }>>();
+
+    expect(template).toMatchObject({
+      title: "Backend Screening",
+      durationMinutes: 90,
+      problems: [
+        { problemId: easy, title: "Two Sum", difficulty: "easy", orderIndex: 1, scoreWeight: 30 },
+        { problemId: medium, title: "Binary Search", difficulty: "medium", orderIndex: 2, scoreWeight: 70 },
+      ],
+    });
+  });
+
   it("superuser sees all templates", async () => {
     const { easy } = await getProblemIds();
     await createTemplate(aliceToken, easy);

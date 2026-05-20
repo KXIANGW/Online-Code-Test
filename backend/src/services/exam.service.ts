@@ -238,11 +238,42 @@ export async function createExamTemplateRandom(
  */
 export async function listExamTemplates(currentUser: CurrentUser) {
   if (!canManageExam(currentUser)) throw ForbiddenError();
-  
-  if (currentUser.isSuperuser) {
-    return db.select().from(exams).where(isNull(exams.deletedAt));
+
+  const templateRows = currentUser.isSuperuser
+    ? await db.select().from(exams).where(isNull(exams.deletedAt))
+    : await db.select().from(exams).where(and(eq(exams.createdBy, currentUser.id), isNull(exams.deletedAt)));
+
+  if (templateRows.length === 0) {
+    return [];
   }
-  return db.select().from(exams).where(and(eq(exams.createdBy, currentUser.id), isNull(exams.deletedAt)));
+
+  const templateIds = templateRows.map((template) => template.id);
+  const templateProblemRows = await db
+    .select({
+      examId: examProblems.examId,
+      problemId: examProblems.problemId,
+      title: problems.title,
+      difficulty: problems.difficulty,
+      orderIndex: examProblems.orderIndex,
+      scoreWeight: examProblems.scoreWeight,
+    })
+    .from(examProblems)
+    .innerJoin(problems, eq(examProblems.problemId, problems.id))
+    .where(inArray(examProblems.examId, templateIds));
+
+  const problemsByExamId = new Map<number, typeof templateProblemRows>();
+  for (const row of templateProblemRows) {
+    const rows = problemsByExamId.get(row.examId) ?? [];
+    rows.push(row);
+    problemsByExamId.set(row.examId, rows);
+  }
+
+  return templateRows.map((template) => ({
+    ...template,
+    problems: (problemsByExamId.get(template.id) ?? [])
+      .sort((a, b) => a.orderIndex - b.orderIndex)
+      .map(({ examId: _examId, ...problem }) => problem),
+  }));
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

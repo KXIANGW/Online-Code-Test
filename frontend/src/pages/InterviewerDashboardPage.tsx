@@ -44,6 +44,12 @@ const RECORD_TABS: { value: RecordTab; label: string }[] = [
   { value: "ended", label: "已結束" },
 ];
 
+const DIFFICULTY_LABEL = {
+  easy: "簡單",
+  medium: "中等",
+  hard: "困難",
+} as const;
+
 function StatusBadge({ status }: { status: ExamStatus }) {
   return (
     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLOR[status]}`}>
@@ -249,26 +255,43 @@ export default function InterviewerDashboardPage() {
                   <p className="text-sm text-slate-400 text-center py-12">目前沒有考試模板</p>
                 ) : (
                   <div className="space-y-3">
-                    {templates.map((t: ExamTemplate) => (
-                      <div
-                        key={t.id}
-                        className="bg-white rounded-xl border border-slate-200 p-5 flex items-center justify-between"
-                      >
-                        <div className="space-y-1">
-                          <p className="font-medium text-slate-800">{t.title}</p>
-                          <p className="text-xs text-slate-400">
-                            {t.durationMinutes} 分鐘 ·{" "}
-                            {new Date(t.createdAt).toLocaleDateString("zh-TW")}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => navigate(`/interviewer/templates/${t.id}/assign`)}
-                          className="px-3 py-1.5 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors font-medium"
+                    {templates.map((t: ExamTemplate) => {
+                      const templateProblems = t.problems ?? [];
+                      return (
+                        <div
+                          key={t.id}
+                          className="bg-white rounded-xl border border-slate-200 p-5"
                         >
-                          分配考試
-                        </button>
-                      </div>
-                    ))}
+                          <div className="space-y-1">
+                            <p className="font-medium text-slate-800">{t.title}</p>
+                            <p className="text-xs text-slate-400">
+                              {t.durationMinutes} 分鐘 ·{" "}
+                              {new Date(t.createdAt).toLocaleDateString("zh-TW")}
+                            </p>
+                          </div>
+                          {templateProblems.length > 0 && (
+                            <div className="mt-4 border-t border-slate-100 pt-3">
+                              <p className="text-xs font-semibold text-slate-500 mb-2">題目</p>
+                              <div className="space-y-2">
+                                {templateProblems.map((problem) => (
+                                  <div
+                                    key={`${t.id}-${problem.problemId}`}
+                                    className="flex items-center justify-between gap-3 text-sm"
+                                  >
+                                    <p className="font-medium text-slate-700">
+                                      {problem.orderIndex}. {problem.title}
+                                    </p>
+                                    <p className="text-xs text-slate-400 whitespace-nowrap">
+                                      {DIFFICULTY_LABEL[problem.difficulty]} · {problem.scoreWeight} 分
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
