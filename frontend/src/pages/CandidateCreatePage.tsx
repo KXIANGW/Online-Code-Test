@@ -15,8 +15,7 @@ interface CreatedAccount {
 }
 
 function generatePassword(length = 12) {
-  const charset =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+";
+  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+";
   const values = new Uint32Array(length);
   window.crypto.getRandomValues(values);
   let result = "";
@@ -181,7 +180,12 @@ export default function CandidateCreatePage() {
             <button
               onClick={() => {
                 setResults(null);
-                setSingleForm({ username: "", displayName: "", password: generatePassword(), roleNames: ["candidate"] });
+                setSingleForm({
+                  username: "",
+                  displayName: "",
+                  password: generatePassword(),
+                  roleNames: ["candidate"],
+                });
                 setBatchCount(10);
                 setBatchError(null);
               }}
@@ -252,9 +256,7 @@ export default function CandidateCreatePage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">
-                密碼 *
-              </label>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">密碼 *</label>
               <div className="flex gap-2">
                 <input
                   type="text"

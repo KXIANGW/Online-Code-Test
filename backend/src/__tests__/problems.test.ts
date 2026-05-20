@@ -432,9 +432,7 @@ describe("DELETE /api/problems/:id", () => {
       payload: {
         title: "Test Exam Template Containing This Problem",
         durationMinutes: 60,
-        problems: [
-          { problemId, scoreWeight: 100, orderIndex: 1 }
-        ],
+        problems: [{ problemId, scoreWeight: 100, orderIndex: 1 }],
       },
     });
 

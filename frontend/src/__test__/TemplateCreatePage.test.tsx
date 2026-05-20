@@ -80,18 +80,14 @@ describe("TemplateCreatePage()", () => {
 
   it("renders title input and duration input after load", async () => {
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     expect(screen.getByRole("textbox", { name: "考試標題" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "測驗時長" })).toBeInTheDocument();
   });
 
   it("shows error when submitting with no title", async () => {
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "建立模板" }));
     expect(screen.getByText("請填寫考試標題")).toBeInTheDocument();
@@ -100,9 +96,7 @@ describe("TemplateCreatePage()", () => {
 
   it("shows error when no problems selected in manual mode", async () => {
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     const user = userEvent.setup();
     await user.type(screen.getByRole("textbox", { name: "考試標題" }), "My Exam");
     await user.click(screen.getByRole("button", { name: "建立模板" }));
@@ -112,9 +106,7 @@ describe("TemplateCreatePage()", () => {
   it("calls createExamTemplateManual with correct payload and navigates to /interviewer", async () => {
     mockCreateExamTemplateManual.mockResolvedValue(mockCreatedTemplate);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     const user = userEvent.setup();
 
     // Fill title
@@ -140,9 +132,7 @@ describe("TemplateCreatePage()", () => {
   it("calls createExamTemplateRandom with correct payload and navigates to /interviewer", async () => {
     mockCreateExamTemplateRandom.mockResolvedValue(mockCreatedTemplate);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     const user = userEvent.setup();
 
     await user.type(screen.getByRole("textbox", { name: "考試標題" }), "Random Exam");
@@ -168,18 +158,14 @@ describe("TemplateCreatePage()", () => {
   it("shows error message when createExamTemplateManual rejects", async () => {
     mockCreateExamTemplateManual.mockRejectedValue(new Error("Server error"));
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     const user = userEvent.setup();
 
     await user.type(screen.getByRole("textbox", { name: "考試標題" }), "Fail Exam");
     await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
     await user.click(screen.getByRole("button", { name: "建立模板" }));
 
-    await waitFor(() =>
-      expect(screen.getByText("Server error")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("Server error")).toBeInTheDocument());
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

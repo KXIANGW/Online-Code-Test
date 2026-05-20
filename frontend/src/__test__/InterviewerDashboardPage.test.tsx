@@ -155,9 +155,7 @@ describe("InterviewerDashboardPage()", () => {
     setupAuthStore();
     setupInterviewerStore([], [], []);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     // Template tab content shown by default
     expect(screen.getByRole("button", { name: "＋ 建立模板" })).toBeInTheDocument();
   });
@@ -176,9 +174,7 @@ describe("InterviewerDashboardPage()", () => {
     setupAuthStore();
     setupInterviewerStore([], [mockTemplate], []);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     expect(screen.getByText("Backend Engineer Test")).toBeInTheDocument();
     expect(screen.getByText(/90 分鐘/)).toBeInTheDocument();
     expect(screen.getByText(/Two Sum/)).toBeInTheDocument();
@@ -190,9 +186,7 @@ describe("InterviewerDashboardPage()", () => {
     setupAuthStore();
     setupInterviewerStore();
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "＋ 建立模板" }));
     expect(mockNavigate).toHaveBeenCalledWith("/interviewer/templates/new");
   });
@@ -201,9 +195,7 @@ describe("InterviewerDashboardPage()", () => {
     setupAuthStore();
     setupInterviewerStore([], [], []);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     expect(screen.getByText("目前沒有考試模板")).toBeInTheDocument();
   });
 
@@ -213,9 +205,7 @@ describe("InterviewerDashboardPage()", () => {
     setupAuthStore();
     setupInterviewerStore([], [], mockCandidates);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "考生帳號" }));
     // Use toHaveTextContent because the count "1" is inside a child <span>
     const countEl = screen.getByText(/位考生/, { selector: "p" });
@@ -228,9 +218,7 @@ describe("InterviewerDashboardPage()", () => {
     setupAuthStore();
     setupInterviewerStore([], [], mockCandidates);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "考生帳號" }));
     await userEvent.click(screen.getByRole("button", { name: "＋ 建立帳號" }));
     expect(mockNavigate).toHaveBeenCalledWith("/interviewer/candidates/new");
@@ -240,9 +228,7 @@ describe("InterviewerDashboardPage()", () => {
     setupAuthStore();
     setupInterviewerStore([], [], []);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "考生帳號" }));
     expect(screen.getByText("目前沒有考生帳號")).toBeInTheDocument();
   });
@@ -253,9 +239,7 @@ describe("InterviewerDashboardPage()", () => {
     setupAuthStore();
     setupInterviewerStore([mockSessionResult], [], []);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "考試紀錄" }));
     expect(await screen.findByText("Alice Chen")).toBeInTheDocument();
   });
@@ -264,9 +248,7 @@ describe("InterviewerDashboardPage()", () => {
     setupAuthStore();
     setupInterviewerStore([mockNotStartedResult, mockSessionResult], [], []);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "考試紀錄" }));
     await userEvent.click(screen.getByRole("button", { name: "進行中" }));
     expect(screen.getByText("Alice Chen")).toBeInTheDocument();
@@ -278,9 +260,7 @@ describe("InterviewerDashboardPage()", () => {
     setupAuthStore();
     setupInterviewerStore([mockSubmittedResult, expiredResult, mockSessionResult], [], []);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "考試紀錄" }));
     await userEvent.click(screen.getByRole("button", { name: "已結束" }));
     expect(screen.getByText("Emma Lin")).toBeInTheDocument();
@@ -291,9 +271,7 @@ describe("InterviewerDashboardPage()", () => {
     setupAuthStore();
     setupInterviewerStore([mockSessionResult], [], []);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "考試紀錄" }));
     await userEvent.click(await screen.findByRole("button", { name: "查看結果" }));
     expect(mockNavigate).toHaveBeenCalledWith("/result/2");
@@ -306,18 +284,14 @@ describe("InterviewerDashboardPage()", () => {
     setupInterviewerStore([], [mockTemplate], mockCandidates);
     renderPage();
 
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
 
     await userEvent.click(screen.getByRole("button", { name: "考試分發" }));
     await userEvent.selectOptions(screen.getByLabelText("考試模板"), "42");
     await userEvent.click(screen.getByRole("checkbox", { name: /Alice Chen/ }));
     await userEvent.click(screen.getByRole("button", { name: /確認分發/ }));
 
-    await waitFor(() =>
-      expect(mockAssignExamToCandidates).toHaveBeenCalledWith(42, [1]),
-    );
+    await waitFor(() => expect(mockAssignExamToCandidates).toHaveBeenCalledWith(42, [1]));
     expect(screen.getByText("分發成功")).toBeInTheDocument();
   });
 

@@ -20,10 +20,7 @@ export default function TemplateAssignPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [templates, users] = await Promise.all([
-          listExamTemplates(),
-          getUsers(),
-        ]);
+        const [templates, users] = await Promise.all([listExamTemplates(), getUsers()]);
 
         const found = templates.find((t) => t.id === templateId) ?? null;
         setTemplate(found);

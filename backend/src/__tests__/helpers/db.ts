@@ -98,9 +98,7 @@ export async function truncateTestTables(): Promise<void> {
     ON CONFLICT (language) DO NOTHING;
   `);
 
-
-
-// 3. 清空 Redis 快取
+  // 3. 清空 Redis 快取
   if (redis.status === "ready") {
     await redis.flushdb().catch(() => {});
   }

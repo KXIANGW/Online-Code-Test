@@ -122,9 +122,7 @@ describe("CandidateCreatePage()", () => {
     await user.type(screen.getByRole("textbox", { name: "帳號" }), "taken");
     await user.click(screen.getByRole("button", { name: "建立帳號" }));
 
-    await waitFor(() =>
-      expect(screen.getByText("Username already taken")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("Username already taken")).toBeInTheDocument());
   });
 
   it("switches to batch mode and shows count input", async () => {

@@ -28,13 +28,15 @@ const saveDraftBody = z.object({
 const createManualTemplateBody = z.object({
   title: z.string().min(1).max(255),
   durationMinutes: z.number().int().min(1),
-  problems: z.array(
-    z.object({
-      problemId: z.number().int(),
-      scoreWeight: z.number().int().min(1),
-      orderIndex: z.number().int().min(1),
-    })
-  ).min(1),
+  problems: z
+    .array(
+      z.object({
+        problemId: z.number().int(),
+        scoreWeight: z.number().int().min(1),
+        orderIndex: z.number().int().min(1),
+      }),
+    )
+    .min(1),
 });
 
 // 調整：隨機建立考卷模板的驗證（移除了 candidateId，增加了 title）

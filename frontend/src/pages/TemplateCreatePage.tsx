@@ -65,9 +65,7 @@ export default function TemplateCreatePage() {
 
   function updateScoreWeight(id: number, weight: number) {
     setSelectedProblems(
-      selectedProblems.map((sp) =>
-        sp.problemId === id ? { ...sp, scoreWeight: weight } : sp,
-      ),
+      selectedProblems.map((sp) => (sp.problemId === id ? { ...sp, scoreWeight: weight } : sp)),
     );
   }
 
@@ -124,8 +122,7 @@ export default function TemplateCreatePage() {
       setTemplates([]);
       navigate(ROUTES.INTERVIEWER);
     } catch (err: any) {
-      const msg =
-        err.response?.data?.message || err.message || "建立失敗，請檢查資料正確性";
+      const msg = err.response?.data?.message || err.message || "建立失敗，請檢查資料正確性";
       setSubmitError(msg);
     } finally {
       setSubmitting(false);
@@ -162,9 +159,7 @@ export default function TemplateCreatePage() {
             <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
               <h2 className="font-medium text-slate-800">基本設定</h2>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  考試標題
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">考試標題</label>
                 <input
                   type="text"
                   aria-label="考試標題"
@@ -199,9 +194,7 @@ export default function TemplateCreatePage() {
                       key={m}
                       onClick={() => setMode(m)}
                       className={`px-3 py-1.5 transition-colors ${
-                        mode === m
-                          ? "bg-blue-600 text-white"
-                          : "text-slate-600 hover:bg-slate-50"
+                        mode === m ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"
                       }`}
                     >
                       {m === "manual" ? "手動選題" : "隨機派題"}

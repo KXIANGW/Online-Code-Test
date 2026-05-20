@@ -84,9 +84,7 @@ export default function InterviewerDashboardPage() {
   const [recordTab, setRecordTab] = useState<RecordTab>("all");
   const [loading, setLoading] = useState(true);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<number>>(
-    () => new Set(),
-  );
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<number>>(() => new Set());
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignSuccess, setAssignSuccess] = useState<string | null>(null);
@@ -149,8 +147,8 @@ export default function InterviewerDashboardPage() {
     recordTab === "all"
       ? results
       : recordTab === "ended"
-      ? results.filter((r) => r.status === "submitted" || r.status === "expired")
-      : results.filter((r) => r.status === recordTab);
+        ? results.filter((r) => r.status === "submitted" || r.status === "expired")
+        : results.filter((r) => r.status === recordTab);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -184,7 +182,8 @@ export default function InterviewerDashboardPage() {
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-sm text-slate-600">
-                    共管理 <span className="font-semibold text-slate-800">{candidates.length}</span> 位考生
+                    共管理 <span className="font-semibold text-slate-800">{candidates.length}</span>{" "}
+                    位考生
                   </p>
                   <button
                     onClick={() => navigate(ROUTES.INTERVIEWER_CANDIDATES_NEW)}
@@ -223,7 +222,8 @@ export default function InterviewerDashboardPage() {
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-sm text-slate-600">
-                    共 <span className="font-semibold text-slate-800">{templates.length}</span> 個模板
+                    共 <span className="font-semibold text-slate-800">{templates.length}</span>{" "}
+                    個模板
                   </p>
                   <button
                     onClick={() => navigate(ROUTES.INTERVIEWER_TEMPLATES_NEW)}
@@ -239,10 +239,7 @@ export default function InterviewerDashboardPage() {
                     {templates.map((t: ExamTemplate) => {
                       const templateProblems = t.problems ?? [];
                       return (
-                        <div
-                          key={t.id}
-                          className="bg-white rounded-xl border border-slate-200 p-5"
-                        >
+                        <div key={t.id} className="bg-white rounded-xl border border-slate-200 p-5">
                           <div className="space-y-1">
                             <p className="font-medium text-slate-800">{t.title}</p>
                             <p className="text-xs text-slate-400">
@@ -263,7 +260,8 @@ export default function InterviewerDashboardPage() {
                                       {problem.orderIndex}. {problem.title}
                                     </p>
                                     <p className="text-xs text-slate-400 whitespace-nowrap">
-                                      {DIFFICULTY_LABEL[problem.difficulty]} · {problem.scoreWeight} 分
+                                      {DIFFICULTY_LABEL[problem.difficulty]} · {problem.scoreWeight}{" "}
+                                      分
                                     </p>
                                   </div>
                                 ))}
@@ -310,9 +308,7 @@ export default function InterviewerDashboardPage() {
                   </div>
 
                   <div>
-                    <p className="block text-xs font-semibold text-slate-500 mb-2">
-                      選擇考生
-                    </p>
+                    <p className="block text-xs font-semibold text-slate-500 mb-2">選擇考生</p>
                     {candidates.length === 0 ? (
                       <p className="text-sm text-slate-400 py-4">目前沒有考生可分發</p>
                     ) : (

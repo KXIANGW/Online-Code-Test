@@ -48,10 +48,7 @@ function renderPage(templateId = "42") {
   return render(
     <MemoryRouter initialEntries={[`/interviewer/templates/${templateId}/assign`]}>
       <Routes>
-        <Route
-          path="/interviewer/templates/:id/assign"
-          element={<TemplateAssignPage />}
-        />
+        <Route path="/interviewer/templates/:id/assign" element={<TemplateAssignPage />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -82,9 +79,7 @@ describe("TemplateAssignPage()", () => {
 
   it("lists only candidates (filtered by role)", async () => {
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     // candidate01 (role: candidate) should appear
     expect(screen.getByText(/Alice Chen/)).toBeInTheDocument();
     // interviewer01 should NOT appear
@@ -99,49 +94,38 @@ describe("TemplateAssignPage()", () => {
 
   it("assign button is disabled when no candidate selected", async () => {
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     expect(screen.getByRole("button", { name: /確認分配/ })).toBeDisabled();
   });
 
   it("calls assignExamToCandidates with selected ids and navigates on success", async () => {
     mockAssignExamToCandidates.mockResolvedValue([]);
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: /Alice Chen/ }));
     await user.click(screen.getByRole("button", { name: /確認分配/ }));
 
-    await waitFor(() =>
-      expect(mockAssignExamToCandidates).toHaveBeenCalledWith(42, [1]),
-    );
+    await waitFor(() => expect(mockAssignExamToCandidates).toHaveBeenCalledWith(42, [1]));
     expect(await screen.findByText(/分配成功/)).toBeInTheDocument();
 
     // Eventually navigates
-    await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith("/interviewer"),
-      { timeout: 3000 },
-    );
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/interviewer"), {
+      timeout: 3000,
+    });
   });
 
   it("shows error when assignExamToCandidates rejects", async () => {
     mockAssignExamToCandidates.mockRejectedValue(new Error("Assignment failed"));
     renderPage();
-    await waitFor(() =>
-      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: /Alice Chen/ }));
     await user.click(screen.getByRole("button", { name: /確認分配/ }));
 
-    await waitFor(() =>
-      expect(screen.getByText("Assignment failed")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("Assignment failed")).toBeInTheDocument());
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

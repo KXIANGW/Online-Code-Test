@@ -23,7 +23,6 @@ type CurrentUser = FastifyJWT["user"];
 type Difficulty = "easy" | "medium" | "hard";
 type ExamStatus = "not_started" | "in_progress" | "submitted" | "expired" | "cancelled";
 
-
 function canManageExam(user: CurrentUser): boolean {
   return user.isSuperuser || user.permissions.includes("exam:manage");
 }
@@ -101,7 +100,9 @@ async function getSessionDtosByIds(sessionIds: number[]) {
     .where(inArray(examSessions.id, sessionIds));
 
   const byId = new Map(rows.map((row) => [row.id, mapSessionDto(row)]));
-  return sessionIds.map((id) => byId.get(id)).filter((row): row is NonNullable<typeof row> => !!row);
+  return sessionIds
+    .map((id) => byId.get(id))
+    .filter((row): row is NonNullable<typeof row> => !!row);
 }
 
 async function getSessionDtoById(sessionId: number) {
@@ -123,11 +124,17 @@ export async function createExamTemplate(
     title: string;
     durationMinutes: number;
     problems: { problemId: number; scoreWeight: number; orderIndex: number }[];
-  }
+  },
 ) {
   if (!canManageExam(currentUser)) throw ForbiddenError();
-  assertNoDuplicates(data.problems.map((p) => p.problemId), "Duplicate problem assignment");
-  assertNoDuplicates(data.problems.map((p) => p.orderIndex), "Duplicate problem orderIndex");
+  assertNoDuplicates(
+    data.problems.map((p) => p.problemId),
+    "Duplicate problem assignment",
+  );
+  assertNoDuplicates(
+    data.problems.map((p) => p.orderIndex),
+    "Duplicate problem orderIndex",
+  );
   await assertProblemsAreActive(data.problems.map((p) => p.problemId));
 
   return db.transaction(async (tx) => {
@@ -148,7 +155,7 @@ export async function createExamTemplate(
         problemId: p.problemId,
         orderIndex: p.orderIndex,
         scoreWeight: p.scoreWeight,
-      }))
+      })),
     );
 
     return newExam;
@@ -166,7 +173,7 @@ export async function createExamTemplateRandom(
     durationMinutes: number;
     distribution: { easy?: number; medium?: number; hard?: number };
     scoreWeight: number; // 隨機抽出的題目，每題的固定配分
-  }
+  },
 ) {
   if (!canManageExam(currentUser)) throw ForbiddenError();
 
@@ -191,14 +198,21 @@ export async function createExamTemplateRandom(
         SELECT p.id FROM problems p
         WHERE p.difficulty = ${level}::difficulty_level
           AND p.deleted_at IS NULL
-          ${pickedIds.length > 0 ? sql`AND p.id NOT IN (${sql.join(pickedIds.map((id) => sql`${id}`), sql`, `)})` : sql``}
+          ${
+            pickedIds.length > 0
+              ? sql`AND p.id NOT IN (${sql.join(
+                  pickedIds.map((id) => sql`${id}`),
+                  sql`, `,
+                )})`
+              : sql``
+          }
         ORDER BY RANDOM()
         LIMIT 1
       `);
 
       if (rows.rows.length === 0) {
         throw ConflictError(
-          `Not enough ${level} problems available in full pool. Please add more problems to database.`
+          `Not enough ${level} problems available in full pool. Please add more problems to database.`,
         );
       }
       pickedIds.push(rows.rows[0]!.id);
@@ -217,7 +231,7 @@ export async function createExamTemplateRandom(
       })
       .returning();
 
-    const newExam = examRows[0]!
+    const newExam = examRows[0]!;
 
     // 2. 批次將隨機抽到的題目寫入模板關聯
     await tx.insert(examProblems).values(
@@ -226,7 +240,7 @@ export async function createExamTemplateRandom(
         problemId,
         orderIndex: idx + 1,
         scoreWeight: data.scoreWeight,
-      }))
+      })),
     );
 
     return newExam;
@@ -241,7 +255,10 @@ export async function listExamTemplates(currentUser: CurrentUser) {
 
   const templateRows = currentUser.isSuperuser
     ? await db.select().from(exams).where(isNull(exams.deletedAt))
-    : await db.select().from(exams).where(and(eq(exams.createdBy, currentUser.id), isNull(exams.deletedAt)));
+    : await db
+        .select()
+        .from(exams)
+        .where(and(eq(exams.createdBy, currentUser.id), isNull(exams.deletedAt)));
 
   if (templateRows.length === 0) {
     return [];
@@ -286,7 +303,7 @@ export async function listExamTemplates(currentUser: CurrentUser) {
 export async function assignExamToCandidates(
   currentUser: CurrentUser,
   examId: number,
-  data: { candidateIds: number[] }
+  data: { candidateIds: number[] },
 ) {
   if (!canManageExam(currentUser)) throw ForbiddenError();
   if (!data.candidateIds || data.candidateIds.length === 0) {
@@ -300,7 +317,10 @@ export async function assignExamToCandidates(
   if (!currentUser.isSuperuser && examTemplate.createdBy !== currentUser.id) throw ForbiddenError();
 
   // 2. 撈取該考卷的所有題目配分快照
-  const templateProblems = await db.select().from(examProblems).where(eq(examProblems.examId, examId));
+  const templateProblems = await db
+    .select()
+    .from(examProblems)
+    .where(eq(examProblems.examId, examId));
   const maxScore = templateProblems.reduce((sum, p) => sum + p.scoreWeight, 0);
 
   // 3. 校驗所有面試者帳號狀態
@@ -312,11 +332,13 @@ export async function assignExamToCandidates(
   const activeDuplicates = await db
     .select({ candidateId: examSessions.candidateId })
     .from(examSessions)
-    .where(and(
-      eq(examSessions.examId, examId),
-      inArray(examSessions.candidateId, data.candidateIds),
-      inArray(examSessions.status, ["not_started", "in_progress"]),
-    ));
+    .where(
+      and(
+        eq(examSessions.examId, examId),
+        inArray(examSessions.candidateId, data.candidateIds),
+        inArray(examSessions.status, ["not_started", "in_progress"]),
+      ),
+    );
 
   if (activeDuplicates.length > 0) {
     throw ConflictError("Active exam session already exists for this template and candidate");
@@ -339,7 +361,7 @@ export async function assignExamToCandidates(
         })
         .returning();
 
-      const session = sessionRows[0]!
+      const session = sessionRows[0]!;
 
       // 將考卷題目快照實體化到該面試者的 session problems 中
       await tx.insert(examSessionProblems).values(
@@ -349,7 +371,7 @@ export async function assignExamToCandidates(
           orderIndex: p.orderIndex,
           scoreWeight: p.scoreWeight,
           score: 0,
-        }))
+        })),
       );
 
       createdSessions.push(session);
@@ -385,7 +407,6 @@ export async function assignExamToCandidates(
 
 //   return Promise.all(sessions.map(expireIfNeeded));
 // }
-
 
 export async function listExamSessions(currentUser: CurrentUser) {
   const isManager = canManageExam(currentUser);
@@ -512,7 +533,11 @@ export async function cancelExamSession(currentUser: CurrentUser, id: number) {
 
 export async function getExamSessionProblems(currentUser: CurrentUser, sessionId: number) {
   const sessionRows = await db
-    .select({ id: examSessions.id, candidateId: examSessions.candidateId, createdBy: examSessions.createdBy })
+    .select({
+      id: examSessions.id,
+      candidateId: examSessions.candidateId,
+      createdBy: examSessions.createdBy,
+    })
     .from(examSessions)
     .where(eq(examSessions.id, sessionId));
 
@@ -562,13 +587,25 @@ export async function getExamSessionProblems(currentUser: CurrentUser, sessionId
     ...p,
     languageLimits: allLangLimits
       .filter((l) => l.problemId === p.problemId)
-    .map(({ language, timeMultiplier, memoryMultiplier }) => ({ language, timeMultiplier, memoryMultiplier })),
+      .map(({ language, timeMultiplier, memoryMultiplier }) => ({
+        language,
+        timeMultiplier,
+        memoryMultiplier,
+      })),
   }));
 }
 
-export async function getPublicTestcases(currentUser: CurrentUser, sessionId: number, espId: number) {
+export async function getPublicTestcases(
+  currentUser: CurrentUser,
+  sessionId: number,
+  espId: number,
+) {
   const sessionRows = await db
-    .select({ id: examSessions.id, candidateId: examSessions.candidateId, createdBy: examSessions.createdBy })
+    .select({
+      id: examSessions.id,
+      candidateId: examSessions.candidateId,
+      createdBy: examSessions.createdBy,
+    })
     .from(examSessions)
     .where(eq(examSessions.id, sessionId));
 
@@ -586,10 +623,9 @@ export async function getPublicTestcases(currentUser: CurrentUser, sessionId: nu
   const espRows = await db
     .select({ problemId: examSessionProblems.problemId })
     .from(examSessionProblems)
-    .where(and(
-      eq(examSessionProblems.id, espId),
-      eq(examSessionProblems.examSessionId, sessionId),
-    ));
+    .where(
+      and(eq(examSessionProblems.id, espId), eq(examSessionProblems.examSessionId, sessionId)),
+    );
 
   const esp = espRows[0];
   if (!esp) throw NotFoundError("exam session problem");
@@ -602,10 +638,7 @@ export async function getPublicTestcases(currentUser: CurrentUser, sessionId: nu
       expectedOutput: problemTestcases.expectedOutput,
     })
     .from(problemTestcases)
-    .where(and(
-      eq(problemTestcases.problemId, esp.problemId),
-      eq(problemTestcases.isPublic, true),
-    ));
+    .where(and(eq(problemTestcases.problemId, esp.problemId), eq(problemTestcases.isPublic, true)));
 }
 
 function assertNoDuplicates<T>(values: T[], message: string): void {
