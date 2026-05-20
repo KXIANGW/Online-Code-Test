@@ -13,7 +13,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 import { publishJudgeTask } from "../mq/publisher";
-import { publishToSession } from "../ws/hub";
+import { publishSessionEvent } from "../ws/session-events";
 import { mqPublishErrorsTotal, submissionCreatedTotal } from "../metrics";
 import {
   expireIfNeeded,
@@ -173,7 +173,7 @@ export async function createSubmission(
   }
   submissionCreatedTotal.labels(data.type, data.language).inc();
 
-  publishToSession(sessionId, {
+  await publishSessionEvent(sessionId, {
     type: "submission_status",
     submissionId: submission!.id,
     sessionId,

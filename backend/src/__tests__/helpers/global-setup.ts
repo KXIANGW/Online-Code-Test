@@ -1,6 +1,8 @@
 import { Pool } from "pg";
 
 export async function setup() {
+  if (process.env["SKIP_DB_GLOBAL_SETUP"] === "1") return;
+
   // vitest.config.ts already normalises DATABASE_URL to a localhost URL before this runs,
   // so reading DATABASE_URL here is safe even when the original .env used the Docker hostname.
   const url =

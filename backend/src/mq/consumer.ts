@@ -8,7 +8,7 @@ import {
   submissionTestcaseResults,
 } from "../db/schema";
 import { JUDGE_RESULTS_BACKEND_QUEUE, getChannel } from "./client";
-import { publishToSession } from "../ws/hub";
+import { publishSessionEvent } from "../ws/session-events";
 import { judgeResultPublishTotal, submissionCompletedTotal } from "../metrics";
 
 type ResultMessage = {
@@ -134,7 +134,7 @@ export async function handleJudgeResultMessage(
       ? await buildSubmissionStatusPayload(parsed.submissionId)
       : await buildJudgeResultPayload(parsed.submissionId);
   if (payload) {
-    publishToSession(payload.sessionId, payload);
+    await publishSessionEvent(payload.sessionId, payload);
     if (parsed.eventType !== "status") {
       const verdict = parsed.verdict ?? "unknown";
       judgeResultPublishTotal.labels(verdict).inc();

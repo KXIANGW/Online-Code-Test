@@ -14,3 +14,4 @@ resources:
   - 10-prometheus.yaml
   - 11-grafana.yaml
   - 12-cadvisor.yaml
+  - 13-autoscaling.yaml

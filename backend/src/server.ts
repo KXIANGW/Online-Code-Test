@@ -19,6 +19,7 @@ import { startJudgeResultConsumer } from "./mq/consumer";
 import { redis } from "./db/redis";
 import { assertSessionResultAccess } from "./services/submission.service";
 import { subscribeToSession, unsubscribeClient } from "./ws/hub";
+import { closeSessionEventBus, startSessionEventBus } from "./ws/session-events";
 
 export async function buildApp() {
   const app = Fastify({
@@ -117,9 +118,13 @@ export async function buildApp() {
 
   app.addHook("onReady", async () => {
     redis.connect().catch((err) => app.log.warn({ err }, "Redis connect failed"));
+    startSessionEventBus(app.log).catch((err) =>
+      app.log.warn({ err }, "Redis session event bus failed to start"),
+    );
   });
 
   app.addHook("onClose", async () => {
+    await closeSessionEventBus();
     await closeMq();
     await redis.quit().catch((err) => app.log.warn({ err }, "Redis quit failed"));
   });

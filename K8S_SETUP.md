@@ -453,9 +453,16 @@ K8s worker 使用 host workdir `/tmp/oct-k8s-judge`，Docker Compose worker 預�
 
 ---
 
-### 六（選用）— KEDA 自動擴縮 Worker
+### 六 — Pod 自動擴縮（KEDA + HPA）
 
-KEDA 根據 RabbitMQ 佇列深度、CPU 使用率、in-flight task 數量自動調整 worker 副本數（1–5 個）。Worker 有現成的 Helm Chart（`charts/common-worker`），包含 KEDA ScaledObject。
+`k8s/13-autoscaling.yaml` 會建立三個 autoscaling resources：
+
+- `worker`：KEDA 根據 RabbitMQ `judge.tasks` queue 長度自動調整副本數（1–5 個）。
+- `backend`：HPA 根據 CPU 70% / memory 80% 自動調整副本數（1–3 個）。
+- `frontend`：HPA 根據 CPU 70% 自動調整副本數（1–3 個）。
+
+k3s 預設會安裝 metrics-server；若安裝 k3s 時曾停用 metrics-server，請先補裝，否則 HPA 取不到 CPU / memory metrics。
+KEDA operator 可能不在 `oct` namespace，因此 `RABBITMQ_URL` 使用 `rabbitmq.oct.svc` 這種 namespace-qualified service DNS。
 
 #### 安裝 KEDA
 
@@ -470,27 +477,25 @@ helm install keda kedacore/keda \
 kubectl wait --for=condition=ready pod -l app=keda-operator -n keda --timeout=60s
 ```
 
-#### 部署 Worker via Helm Chart
+#### 套用 autoscaling manifests
+
+若 Argo CD `oct-app` 仍指向 GitHub `main` 且 `selfHeal=true`，手動 `kubectl apply -k k8s` 會被 Argo CD 還原成 `main` 上的 manifests。測試本機 feature branch 時，請先暫停 self-heal，或把分支 push 後調整 Argo CD `targetRevision`。
 
 ```bash
-# 先移除 Argo CD 管理的 worker（若已存在）
-kubectl delete deployment worker -n oct --ignore-not-found
+kubectl apply -k k8s
 
-helm upgrade --install oct-worker ./charts/common-worker \
-  --namespace oct \
-  --set image.repository=ghcr.io/kxiangw/oct-worker \
-  --set image.pullPolicy=Always \
-  --set env.RABBITMQ_URL="amqp://oct:oct_dev_password@rabbitmq:5672" \
-  --set env.DATABASE_URL="postgres://oct:oct_dev_password_change_me@postgres:5432/oct" \
-  --set keda.prometheusAddress="http://prometheus.oct.svc:9090"
+# 若使用 Argo CD，sync oct-app 即可：
+kubectl patch application oct-app -n argocd \
+  --type merge -p '{"operation":{"sync":{}}}'
 ```
 
-#### 驗證 KEDA 狀態
+#### 驗證 autoscaling 狀態
 
 ```bash
 kubectl get scaledobject -n oct
 kubectl get hpa -n oct
-# READY=True 表示 KEDA 已接管 worker 副本數控制
+kubectl describe scaledobject worker -n oct
+# READY=True 表示 KEDA 已接管 worker 副本數控制。
 ```
 
 ---
