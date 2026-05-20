@@ -7,6 +7,7 @@ import {
   getSessionResult,
   listExamTemplates,
   getUsers,
+  assignExamToCandidates,
 } from "../api/client";
 import type { ExamStatus, SessionResult, ExamTemplate, UserSummary } from "../types";
 
@@ -26,12 +27,13 @@ const STATUS_COLOR: Record<ExamStatus, string> = {
   cancelled: "bg-slate-100 text-slate-400",
 };
 
-type MainTab = "candidates" | "templates" | "records";
+type MainTab = "candidates" | "templates" | "assignments" | "records";
 type RecordTab = "all" | "in_progress" | "not_started" | "ended";
 
 const MAIN_TABS: { value: MainTab; label: string }[] = [
   { value: "candidates", label: "考生帳號" },
   { value: "templates", label: "考試模板" },
+  { value: "assignments", label: "考試分發" },
   { value: "records", label: "考試紀錄" },
 ];
 
@@ -94,25 +96,67 @@ export default function InterviewerDashboardPage() {
   const [mainTab, setMainTab] = useState<MainTab>("templates");
   const [recordTab, setRecordTab] = useState<RecordTab>("all");
   const [loading, setLoading] = useState(true);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<number>>(
+    () => new Set(),
+  );
+  const [assigning, setAssigning] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [assignSuccess, setAssignSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const [sessions, templateList, userList] = await Promise.all([
-          getExamSessions(),
-          listExamTemplates(),
-          getUsers(),
-        ]);
-        const resultList = await Promise.all(sessions.map((s) => getSessionResult(s.id)));
-        setResults(resultList);
-        setTemplates(templateList);
-        setCandidates(userList.filter((u) => u.roles.includes("candidate")));
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
+    loadDashboardData().finally(() => setLoading(false));
   }, [setResults, setTemplates, setCandidates]);
+
+  async function loadDashboardData() {
+    const [sessions, templateList, userList] = await Promise.all([
+      getExamSessions(),
+      listExamTemplates(),
+      getUsers(),
+    ]);
+    const resultList = await Promise.all(sessions.map((s) => getSessionResult(s.id)));
+    setResults(resultList);
+    setTemplates(templateList);
+    setCandidates(userList.filter((u) => u.roles.includes("candidate")));
+  }
+
+  function toggleCandidate(candidateId: number) {
+    setAssignError(null);
+    setAssignSuccess(null);
+    setSelectedCandidateIds((current) => {
+      const next = new Set(current);
+      if (next.has(candidateId)) {
+        next.delete(candidateId);
+      } else {
+        next.add(candidateId);
+      }
+      return next;
+    });
+  }
+
+  async function handleAssign() {
+    const templateId = Number(selectedTemplateId);
+    const candidateIds = Array.from(selectedCandidateIds);
+    if (!templateId || candidateIds.length === 0) {
+      setAssignError("請選擇模板與至少一位考生");
+      return;
+    }
+
+    setAssigning(true);
+    setAssignError(null);
+    setAssignSuccess(null);
+    try {
+      await assignExamToCandidates(templateId, candidateIds);
+      setAssignSuccess("分發成功");
+      setSelectedCandidateIds(new Set());
+      await loadDashboardData();
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || "分發失敗";
+      setAssignError(msg);
+    } finally {
+      setAssigning(false);
+    }
+  }
 
   const filteredRecords =
     recordTab === "all"
@@ -227,6 +271,87 @@ export default function InterviewerDashboardPage() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Tab: 考試分發 */}
+            {mainTab === "assignments" && (
+              <div className="space-y-5">
+                <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+                  <div>
+                    <label
+                      htmlFor="assignment-template"
+                      className="block text-xs font-semibold text-slate-500 mb-1"
+                    >
+                      考試模板
+                    </label>
+                    <select
+                      id="assignment-template"
+                      aria-label="考試模板"
+                      value={selectedTemplateId}
+                      onChange={(e) => {
+                        setSelectedTemplateId(e.target.value);
+                        setAssignError(null);
+                        setAssignSuccess(null);
+                      }}
+                      className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                    >
+                      <option value="">請選擇考試模板</option>
+                      {templates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.title}（{template.durationMinutes} 分鐘）
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <p className="block text-xs font-semibold text-slate-500 mb-2">
+                      選擇考生
+                    </p>
+                    {candidates.length === 0 ? (
+                      <p className="text-sm text-slate-400 py-4">目前沒有考生可分發</p>
+                    ) : (
+                      <div className="space-y-2 max-h-72 overflow-auto pr-1">
+                        {candidates.map((candidate) => {
+                          const name = candidate.displayName ?? candidate.username;
+                          return (
+                            <label
+                              key={candidate.id}
+                              className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+                            >
+                              <span>
+                                <span className="block text-sm font-medium text-slate-800">
+                                  {name}
+                                </span>
+                                <span className="block text-xs text-slate-400">
+                                  @{candidate.username}
+                                </span>
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={selectedCandidateIds.has(candidate.id)}
+                                onChange={() => toggleCandidate(candidate.id)}
+                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {assignError && <p className="text-xs text-red-500">{assignError}</p>}
+                  {assignSuccess && <p className="text-xs text-green-600">{assignSuccess}</p>}
+                  <button
+                    type="button"
+                    onClick={handleAssign}
+                    disabled={assigning || !selectedTemplateId || selectedCandidateIds.size === 0}
+                    className="w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {assigning ? "分發中..." : `確認分發（${selectedCandidateIds.size} 人）`}
+                  </button>
+                </div>
               </div>
             )}
 

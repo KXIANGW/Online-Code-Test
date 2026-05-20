@@ -124,7 +124,10 @@ export type ExamStatus =
 
 export interface ExamSession {
   id: number;
+  examId: number;
+  examTitle: string;
   candidateId: number;
+  candidate: { id: number; username: string; displayName: string | null };
   createdBy: number;
   status: ExamStatus;
   durationMinutes: number;

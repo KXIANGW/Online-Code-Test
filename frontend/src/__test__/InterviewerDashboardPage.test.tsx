@@ -15,6 +15,7 @@ const mockGetExamSessions = vi.hoisted(() => vi.fn());
 const mockGetSessionResult = vi.hoisted(() => vi.fn());
 const mockListExamTemplates = vi.hoisted(() => vi.fn());
 const mockGetUsers = vi.hoisted(() => vi.fn());
+const mockAssignExamToCandidates = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
@@ -29,6 +30,7 @@ vi.mock("../api/client", () => ({
   getSessionResult: mockGetSessionResult,
   listExamTemplates: mockListExamTemplates,
   getUsers: mockGetUsers,
+  assignExamToCandidates: mockAssignExamToCandidates,
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -114,19 +116,22 @@ describe("InterviewerDashboardPage()", () => {
     mockGetSessionResult.mockReset();
     mockListExamTemplates.mockReset();
     mockGetUsers.mockReset();
+    mockAssignExamToCandidates.mockReset();
     // Default: API returns empty
     mockGetExamSessions.mockResolvedValue([]);
     mockListExamTemplates.mockResolvedValue([]);
     mockGetUsers.mockResolvedValue([]);
+    mockAssignExamToCandidates.mockResolvedValue([]);
   });
 
-  it("renders 考試管理 heading and 3 main tabs", () => {
+  it("renders 考試管理 heading and 4 main tabs", () => {
     setupAuthStore();
     setupInterviewerStore();
     renderPage();
     expect(screen.getByText("考試管理")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "考生帳號" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "考試模板" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "考試分發" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "考試紀錄" })).toBeInTheDocument();
   });
 
@@ -284,6 +289,28 @@ describe("InterviewerDashboardPage()", () => {
     await userEvent.click(screen.getByRole("button", { name: "考試紀錄" }));
     await userEvent.click(await screen.findByRole("button", { name: "查看結果" }));
     expect(mockNavigate).toHaveBeenCalledWith("/result/2");
+  });
+
+  // ── Assignments tab ───────────────────────────────────────────────────────
+
+  it("assignments tab: assigns selected template to selected candidates", async () => {
+    setupAuthStore();
+    setupInterviewerStore([], [mockTemplate], mockCandidates);
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.queryByText("載入中...")).not.toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "考試分發" }));
+    await userEvent.selectOptions(screen.getByLabelText("考試模板"), "42");
+    await userEvent.click(screen.getByRole("checkbox", { name: /Alice Chen/ }));
+    await userEvent.click(screen.getByRole("button", { name: /確認分發/ }));
+
+    await waitFor(() =>
+      expect(mockAssignExamToCandidates).toHaveBeenCalledWith(42, [1]),
+    );
+    expect(screen.getByText("分發成功")).toBeInTheDocument();
   });
 
   // ── Data fetching ─────────────────────────────────────────────────────────

@@ -101,6 +101,16 @@ export async function createUser(
   return data;
 }
 
+export async function createUsersBatch(
+  count: number,
+): Promise<{ username: string; password: string }[]> {
+  const { data } = await api.post<{ username: string; password: string }[]>(
+    "/users/batch",
+    { count },
+  );
+  return data;
+}
+
 export async function deleteUser(id: number): Promise<void> {
   await api.delete(`/users/${id}`);
 }

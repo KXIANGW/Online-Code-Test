@@ -1,16 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { NavBar } from "../components/NavBar";
-import { createUser } from "../api/client";
+import { createUser, createUsersBatch } from "../api/client";
 import { useInterviewerStore } from "../stores/interviewerStore";
 import type { CreateUserRequest, CreateUserResponse } from "../types";
 
 type Mode = "single" | "batch";
-
-interface BatchRow {
-  username: string;
-  password: string;
-}
 
 interface CreatedAccount {
   username: string;
@@ -46,8 +41,9 @@ export default function CandidateCreatePage() {
   const [singleError, setSingleError] = useState<string | null>(null);
 
   // Batch mode state
-  const [rows, setRows] = useState<BatchRow[]>([{ username: "", password: generatePassword() }]);
+  const [batchCount, setBatchCount] = useState(10);
   const [batchSubmitting, setBatchSubmitting] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
 
   // Results state (shown after submission)
   const [results, setResults] = useState<CreatedAccount[] | null>(null);
@@ -90,56 +86,30 @@ export default function CandidateCreatePage() {
 
   // ── Batch mode handlers ───────────────────────────────────────────────────
 
-  function addRow() {
-    setRows([...rows, { username: "", password: generatePassword() }]);
-  }
-
-  function removeRow(idx: number) {
-    setRows(rows.filter((_, i) => i !== idx));
-  }
-
-  function updateRow(idx: number, field: keyof BatchRow, value: string) {
-    setRows(rows.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
-  }
-
-  function fillAllPasswords() {
-    setRows(rows.map((r) => ({ ...r, password: r.password || generatePassword() })));
-  }
-
   async function handleBatchSubmit() {
-    const validRows = rows.filter((r) => r.username.trim());
-    if (validRows.length === 0) {
+    if (!Number.isInteger(batchCount) || batchCount < 1) {
+      setBatchError("建立數量至少為 1");
       return;
     }
+
     setBatchSubmitting(true);
-    const created: CreatedAccount[] = [];
-
-    for (const row of validRows) {
-      try {
-        const res: CreateUserResponse = await createUser({
-          username: row.username.trim(),
-          password: row.password || generatePassword(),
-          roleNames: ["candidate"],
-        });
-        created.push({
-          username: res.username,
-          displayName: res.displayName,
-          password: row.password,
-        });
-      } catch (err: any) {
-        const msg = err.response?.data?.message || err.message || "建立失敗";
-        created.push({
-          username: row.username.trim(),
+    setBatchError(null);
+    try {
+      const created = await createUsersBatch(batchCount);
+      setCandidates([]); // Invalidate store
+      setResults(
+        created.map((acc) => ({
+          username: acc.username,
           displayName: null,
-          password: row.password,
-          error: msg,
-        });
-      }
+          password: acc.password,
+        })),
+      );
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || "建立失敗";
+      setBatchError(msg);
+    } finally {
+      setBatchSubmitting(false);
     }
-
-    setBatchSubmitting(false);
-    setCandidates([]); // Invalidate store
-    setResults(created);
   }
 
   // ── Result panel ──────────────────────────────────────────────────────────
@@ -212,7 +182,8 @@ export default function CandidateCreatePage() {
               onClick={() => {
                 setResults(null);
                 setSingleForm({ username: "", displayName: "", password: generatePassword(), roleNames: ["candidate"] });
-                setRows([{ username: "", password: generatePassword() }]);
+                setBatchCount(10);
+                setBatchError(null);
               }}
               className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700"
             >
@@ -313,57 +284,30 @@ export default function CandidateCreatePage() {
             </button>
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              {rows.map((row, idx) => (
-                <div key={idx} className="flex gap-2 items-center">
-                  <input
-                    type="text"
-                    aria-label={`帳號 ${idx + 1}`}
-                    placeholder="帳號"
-                    value={row.username}
-                    onChange={(e) => updateRow(idx, "username", e.target.value)}
-                    className="flex-1 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                  <input
-                    type="text"
-                    aria-label={`密碼 ${idx + 1}`}
-                    placeholder="密碼"
-                    value={row.password}
-                    onChange={(e) => updateRow(idx, "password", e.target.value)}
-                    className="flex-1 border rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                  <button
-                    type="button"
-                    aria-label={`刪除第 ${idx + 1} 行`}
-                    onClick={() => removeRow(idx)}
-                    className="text-slate-400 hover:text-red-500 p-1"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={addRow}
-                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+            <div>
+              <label
+                htmlFor="batch-count"
+                className="block text-xs font-semibold text-slate-500 mb-1"
               >
-                ＋ 新增一行
-              </button>
-              <button
-                type="button"
-                onClick={fillAllPasswords}
-                className="text-sm text-slate-500 hover:text-slate-700"
-              >
-                全部自動產生密碼
-              </button>
+                建立數量
+              </label>
+              <input
+                id="batch-count"
+                type="number"
+                aria-label="建立數量"
+                min={1}
+                max={100}
+                value={batchCount}
+                onChange={(e) => setBatchCount(Number(e.target.value))}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
             </div>
+            {batchError && <p className="text-xs text-red-500">{batchError}</p>}
             <button
               type="button"
               onClick={handleBatchSubmit}
-              disabled={batchSubmitting || rows.every((r) => !r.username.trim())}
+              disabled={batchSubmitting || batchCount < 1}
               className="w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
               {batchSubmitting ? "建立中..." : "批次建立帳號"}

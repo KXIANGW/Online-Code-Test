@@ -9,6 +9,7 @@ const mockNavigate = vi.hoisted(() => vi.fn());
 const mockLogout = vi.hoisted(() => vi.fn());
 const mockUseAuthStore = vi.hoisted(() => vi.fn());
 const mockCreateUser = vi.hoisted(() => vi.fn());
+const mockCreateUsersBatch = vi.hoisted(() => vi.fn());
 const mockSetCandidates = vi.hoisted(() => vi.fn());
 const mockUseInterviewerStore = vi.hoisted(() => vi.fn());
 
@@ -22,6 +23,7 @@ vi.mock("../stores/interviewerStore", () => ({
 }));
 vi.mock("../api/client", () => ({
   createUser: mockCreateUser,
+  createUsersBatch: mockCreateUsersBatch,
 }));
 
 function setupAuthStore(username = "interviewer01") {
@@ -46,6 +48,7 @@ describe("CandidateCreatePage()", () => {
     mockNavigate.mockReset();
     mockLogout.mockReset();
     mockCreateUser.mockReset();
+    mockCreateUsersBatch.mockReset();
     mockSetCandidates.mockReset();
     setupAuthStore();
     mockUseInterviewerStore.mockImplementation((sel: any) =>
@@ -124,61 +127,45 @@ describe("CandidateCreatePage()", () => {
     );
   });
 
-  it("switches to batch mode and shows row inputs", async () => {
+  it("switches to batch mode and shows count input", async () => {
     renderPage();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "批次建立" }));
-    expect(screen.getByRole("textbox", { name: "帳號 1" })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "建立數量" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "批次建立帳號" })).toBeInTheDocument();
   });
 
-  it("batch mode: creates all valid rows and shows result panel", async () => {
-    mockCreateUser
-      .mockResolvedValueOnce({ id: 1, username: "a1", displayName: null })
-      .mockResolvedValueOnce({ id: 2, username: "a2", displayName: null });
+  it("batch mode: calls createUsersBatch once and shows generated credentials", async () => {
+    mockCreateUsersBatch.mockResolvedValue([
+      { username: "candidate_20260520_001", password: "pass1" },
+      { username: "candidate_20260520_002", password: "pass2" },
+    ]);
 
     renderPage();
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "批次建立" }));
-
-    // Fill first row
-    await user.type(screen.getByRole("textbox", { name: "帳號 1" }), "a1");
-    const pw1 = screen.getByRole("textbox", { name: "密碼 1" });
-    await user.clear(pw1);
-    await user.type(pw1, "pass1");
-
-    // Add second row
-    await user.click(screen.getByText("＋ 新增一行"));
-    await user.type(screen.getByRole("textbox", { name: "帳號 2" }), "a2");
-    const pw2 = screen.getByRole("textbox", { name: "密碼 2" });
-    await user.clear(pw2);
-    await user.type(pw2, "pass2");
-
+    const countInput = screen.getByRole("spinbutton", { name: "建立數量" });
+    await user.clear(countInput);
+    await user.type(countInput, "2");
     await user.click(screen.getByRole("button", { name: "批次建立帳號" }));
 
-    await waitFor(() => expect(mockCreateUser).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockCreateUsersBatch).toHaveBeenCalledWith(2));
+    expect(mockCreateUser).not.toHaveBeenCalled();
     expect(await screen.findByText(/成功建立 2/)).toBeInTheDocument();
+    expect(screen.getByText("candidate_20260520_001")).toBeInTheDocument();
+    expect(screen.getByText("pass1")).toBeInTheDocument();
   });
 
-  it("batch mode: shows partial failure correctly", async () => {
-    mockCreateUser
-      .mockResolvedValueOnce({ id: 1, username: "ok_user", displayName: null })
-      .mockRejectedValueOnce(new Error("Duplicate"));
+  it("batch mode: shows error when createUsersBatch rejects", async () => {
+    mockCreateUsersBatch.mockRejectedValue(new Error("Batch failed"));
 
     renderPage();
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "批次建立" }));
-
-    await user.type(screen.getByRole("textbox", { name: "帳號 1" }), "ok_user");
-    await user.click(screen.getByText("＋ 新增一行"));
-    await user.type(screen.getByRole("textbox", { name: "帳號 2" }), "dup_user");
-
     await user.click(screen.getByRole("button", { name: "批次建立帳號" }));
 
-    await waitFor(() => expect(screen.getByText(/成功建立 1/)).toBeInTheDocument());
-    expect(screen.getByText(/建立失敗 1/)).toBeInTheDocument();
-    expect(screen.getByText("Duplicate")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Batch failed")).toBeInTheDocument());
   });
 });
