@@ -394,6 +394,7 @@ describe("DELETE /api/problems/:id", () => {
     const carolToken = await loginAs(app, "carol", "Test@1234");
     const aliceToken = await loginAs(app, "alice", "Test@1234");
 
+    // 1. Carol 建立基礎題目
     const createRes = await app.inject({
       method: "POST",
       url: "/api/problems",
@@ -402,23 +403,39 @@ describe("DELETE /api/problems/:id", () => {
     });
     const { id: problemId } = createRes.json<{ id: number }>();
 
-    // alice creates an exam session referencing the problem
-    await app.inject({
+    // 2. Alice 建立考卷模板，並綁定該題目
+    const examRes = await app.inject({
       method: "POST",
-      url: "/api/exam-sessions",
+      url: "/api/exam-sessions/templates/manual", // 💡 對應 app.post("/templates/manual")
       headers: { authorization: `Bearer ${aliceToken}` },
       payload: {
-        candidateId: candidate1Id,
+        title: "Test Exam Template Containing This Problem",
         durationMinutes: 60,
-        problems: [{ problemId, scoreWeight: 100, orderIndex: 1 }],
+        problems: [
+          { problemId, scoreWeight: 100, orderIndex: 1 }
+        ],
       },
     });
 
+    const { id: examId } = examRes.json<{ id: number }>();
+
+    // 3. Alice 批次指派考卷給考生（產生 Exam Session 實體）
+    const assignRes = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${examId}/assign`, // 💡 對應 app.post("/templates/:id/assign")
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        candidateIds: [candidate1Id],
+      },
+    });
+
+    // 4. Carol 嘗試刪除題目
     const delRes = await app.inject({
       method: "DELETE",
       url: `/api/problems/${problemId}`,
       headers: { authorization: `Bearer ${carolToken}` },
     });
+
     expect(delRes.statusCode).toBe(409);
   });
 
@@ -529,6 +546,8 @@ describe("GET /api/languages", () => {
 describe("POST /api/problems with languageLimits", () => {
   it("problem_setter can create a problem with language limits", async () => {
     const token = await loginAs(app, "carol", "Test@1234");
+    
+    // 1. 嘗試發送建立題目的請求（帶有 cpp17 與 python3）
     const res = await app.inject({
       method: "POST",
       url: "/api/problems",
@@ -541,16 +560,35 @@ describe("POST /api/problems with languageLimits", () => {
         ],
       },
     });
+
+    // 📡 偵錯點 A：確認建立題目時，後端回傳的狀態碼與完整的 Problem Body 結構
+    console.log("=== 🔍 [DEBUG A] POST /api/problems (With LanguageLimits) ===");
+    console.log("Status:", res.statusCode);
+    console.log("Body:", JSON.stringify(res.json(), null, 2));
+
     expect(res.statusCode).toBe(201);
     const { id } = res.json<{ id: number }>();
 
+    // 2. 獲取該題目的詳細資訊
     const detailRes = await app.inject({
       method: "GET",
       url: `/api/problems/${id}`,
       headers: { authorization: `Bearer ${token}` },
     });
+
+    // 📡 偵錯點 B：確認 GET 詳細資訊時，整個 JSON 回應，特別是 languageLimits 的陣列內容
+    console.log("=== 🔍 [DEBUG B] GET /api/problems/:id (Detail Payload) ===");
+    console.log("Status:", detailRes.statusCode);
+    console.log("Full Body:", JSON.stringify(detailRes.json(), null, 2));
+    if (detailRes.json<{ languageLimits?: any }>().languageLimits) {
+      console.log("LanguageLimits Type & Value:", typeof detailRes.json<{ languageLimits: any }>().languageLimits, detailRes.json<{ languageLimits: any }>().languageLimits);
+    }
+    console.log("==========================================================");
+
     expect(detailRes.statusCode).toBe(200);
     const body = detailRes.json<{ languageLimits: { language: string }[] }>();
+    
+    // 這裡會發生斷言錯誤，但在看 log 之前可以先留著
     expect(body.languageLimits).toHaveLength(2);
     expect(body.languageLimits.map((l) => l.language).sort()).toEqual(["cpp17", "python3"]);
   });
