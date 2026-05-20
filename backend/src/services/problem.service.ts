@@ -144,10 +144,6 @@ export async function createProblem(
   }
 ) {
   requireProblemManage(currentUser);
-  // 看進來 Service 的 data 到底長成什麼妖魔鬼怪？
-  console.log("=== 🎯 [SERVICE ENTRY DEBUG] createProblem data ===");
-  console.log("data.languageLimits:", JSON.stringify(data.languageLimits, null, 2));
-  console.log("==================================================");
 
   assertUniqueValues(data.testcases?.map((tc) => tc.orderIndex) ?? [], "Duplicate testcase orderIndex");
   assertUniqueValues(data.languageLimits?.map((ll) => ll.language) ?? [], "Duplicate language limit");
@@ -199,7 +195,6 @@ export async function createProblem(
 
     return created;
   }).catch((err: unknown) => {
-    console.error("❌ === [DATABASE CREATION ERROR DEEP DEBUG] ===", err);
     if (isPgErrorCode(err, "23503")) throw BadRequestError("Unknown language or user");
     if (isPgErrorCode(err, "23505")) throw ConflictError("Duplicate problem data");
     throw err;

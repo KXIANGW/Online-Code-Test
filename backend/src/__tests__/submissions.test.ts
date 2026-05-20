@@ -272,8 +272,7 @@ describe("Submission API async judge", () => {
     // 1. 建立並開始考試場次
     const { sessionId, espIds } = await createSession(aliceToken, davidId);
 
-    const startRes = await startSession(sessionId);
-    console.log("startSession Response Status/Body:", startRes);
+    await startSession(sessionId);
 
     // 2. 進行第一次提交（正式提交 - formal）
     const formal = await submitCode(sessionId, espIds[0]!);
@@ -358,17 +357,11 @@ describe("Submission API async judge", () => {
     const { id } = await submitCode(sessionId, espIds[0]!, "formal");
     await writeWorkerResult(id, "AC", "formal");
 
-    // 1. 查詢單一提交的詳細報告（包含測資結果）
     const detail = await app.inject({
       method: "GET",
       url: `/api/exam-sessions/${sessionId}/submissions/${id}`,
       headers: { authorization: `Bearer ${candToken}` },
     });
-
-    // 📡 偵錯點 A：確認提交詳細報告的格式，觀察分數、isFinalSubmission 欄位以及 testcaseResults 陣列
-    console.log("=== 🔍 [DEBUG A] GET /submissions/:id (Submission Report) ===");
-    console.log("Status:", detail.statusCode);
-    console.log("Body:", JSON.stringify(detail.json(), null, 2));
 
     const body = detail.json<{
       score: number;
@@ -383,18 +376,11 @@ describe("Submission API async judge", () => {
     expect(body.testcaseResults.find((tc) => tc.isPublic)).toHaveProperty("actualOutput", "3");
     expect(body.testcaseResults.find((tc) => !tc.isPublic)).not.toHaveProperty("actualOutput");
 
-    // 2. 查詢該場考試的最終分數/結果
     const result = await app.inject({
       method: "GET",
       url: `/api/exam-sessions/${sessionId}/result`,
       headers: { authorization: `Bearer ${candToken}` },
     });
-
-    // 📡 偵錯點 B：確認獲取考試總分 API 的回應，檢查 totalScore 是否正確加總
-    console.log("=== 🔍 [DEBUG B] GET /exam-sessions/:id/result ===");
-    console.log("Status:", result.statusCode);
-    console.log("Body:", JSON.stringify(result.json(), null, 2));
-    console.log("====================================================");
 
     expect(result.statusCode).toBe(200);
     expect(result.json<{ totalScore: number }>().totalScore).toBe(30);

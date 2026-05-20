@@ -547,7 +547,6 @@ describe("POST /api/problems with languageLimits", () => {
   it("problem_setter can create a problem with language limits", async () => {
     const token = await loginAs(app, "carol", "Test@1234");
     
-    // 1. 嘗試發送建立題目的請求（帶有 cpp17 與 python3）
     const res = await app.inject({
       method: "POST",
       url: "/api/problems",
@@ -561,34 +560,18 @@ describe("POST /api/problems with languageLimits", () => {
       },
     });
 
-    // 📡 偵錯點 A：確認建立題目時，後端回傳的狀態碼與完整的 Problem Body 結構
-    console.log("=== 🔍 [DEBUG A] POST /api/problems (With LanguageLimits) ===");
-    console.log("Status:", res.statusCode);
-    console.log("Body:", JSON.stringify(res.json(), null, 2));
-
     expect(res.statusCode).toBe(201);
     const { id } = res.json<{ id: number }>();
 
-    // 2. 獲取該題目的詳細資訊
     const detailRes = await app.inject({
       method: "GET",
       url: `/api/problems/${id}`,
       headers: { authorization: `Bearer ${token}` },
     });
 
-    // 📡 偵錯點 B：確認 GET 詳細資訊時，整個 JSON 回應，特別是 languageLimits 的陣列內容
-    console.log("=== 🔍 [DEBUG B] GET /api/problems/:id (Detail Payload) ===");
-    console.log("Status:", detailRes.statusCode);
-    console.log("Full Body:", JSON.stringify(detailRes.json(), null, 2));
-    if (detailRes.json<{ languageLimits?: any }>().languageLimits) {
-      console.log("LanguageLimits Type & Value:", typeof detailRes.json<{ languageLimits: any }>().languageLimits, detailRes.json<{ languageLimits: any }>().languageLimits);
-    }
-    console.log("==========================================================");
-
     expect(detailRes.statusCode).toBe(200);
     const body = detailRes.json<{ languageLimits: { language: string }[] }>();
     
-    // 這裡會發生斷言錯誤，但在看 log 之前可以先留著
     expect(body.languageLimits).toHaveLength(2);
     expect(body.languageLimits.map((l) => l.language).sort()).toEqual(["cpp17", "python3"]);
   });
