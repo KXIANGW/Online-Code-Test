@@ -13,4 +13,10 @@ export const config = {
   hostWorkDir: process.env["HOST_WORK_DIR"] ?? "/tmp/judge",
   sandboxRuntime: process.env["SANDBOX_RUNTIME"] ?? "runsc",
   sandboxEngine: parseEngineKind(process.env["SANDBOX_ENGINE"]),
+  // Isolate-engine config (only consulted when sandboxEngine="isolate")
+  rootfsBaseDir: process.env["ROOTFS_BASE_DIR"],
+  isolateBoxId: process.env["ISOLATE_BOX_ID"]
+    ? Number(process.env["ISOLATE_BOX_ID"])
+    : undefined,
+  seccompPolicyPath: process.env["SECCOMP_POLICY_PATH"],
 };

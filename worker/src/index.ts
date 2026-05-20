@@ -62,6 +62,9 @@ async function connectOnce(): Promise<void> {
   const engine = await createSandboxEngine({
     kind: config.sandboxEngine,
     sandboxRuntime: config.sandboxRuntime,
+    rootfsBaseDir: config.rootfsBaseDir,
+    isolateBoxId: config.isolateBoxId,
+    seccompPolicyPath: config.seccompPolicyPath,
   });
   console.log(`[worker] sandbox engine = ${engine.name}`);
   const nextChannel = await nextConnection.createChannel();

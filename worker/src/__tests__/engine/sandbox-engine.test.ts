@@ -24,9 +24,10 @@ describe("createSandboxEngine", () => {
     expect(typeof engine.runOne).toBe("function");
   });
 
-  it("throws for isolate kind until Phase 2 implements it", async () => {
-    await expect(
-      createSandboxEngine({ kind: "isolate", sandboxRuntime: "runc" })
-    ).rejects.toThrow(/Isolate engine not yet implemented/);
+  it("returns an IsolateEngine when kind=isolate", async () => {
+    const engine = await createSandboxEngine({ kind: "isolate", sandboxRuntime: "runc" });
+    expect(engine.name).toBe("isolate");
+    expect(typeof engine.compile).toBe("function");
+    expect(typeof engine.runOne).toBe("function");
   });
 });
