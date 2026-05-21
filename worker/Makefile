@@ -91,7 +91,11 @@ verify-language: build-isolate-rootfs
 test:
 	npm test
 
-test-integration: build-language-images
+# DB-layer integration tests (Postgres queries). No sandbox/Docker images
+# needed. The legacy sandbox.integration.test.ts (Docker engine path) was
+# removed in Step B; sandbox behaviour is now covered end-to-end by
+# `test-integration-isolate`.
+test-integration:
 	npm run test:integration
 
 # Runs the 12-case Isolate engine e2e (4 verdict + 7 security + 1 seccomp)
@@ -105,8 +109,7 @@ test-integration-isolate: build-isolate-rootfs
 	  oct-worker:test \
 	  sh -c "mkdir -p /tmp/judge && node /e2e.mjs"
 
-test-all: build-language-images
-	npm run test:all
+test-all: test test-integration test-integration-isolate
 
 clean:
 	@$(LIST_LANGUAGES_CMD) | awk -F'\t' '{print $$2}' | xargs -r docker rmi 2>/dev/null || true

@@ -1,13 +1,40 @@
-import type { CompileOptions, CompileResult } from "./compiler";
-import type { RunOneOptions, RunOneResult } from "./runner";
-import { DockerSandboxEngine } from "./engines/docker-engine";
+import type { LanguageSpec } from "./languages";
 import { IsolateEngine } from "./engines/isolate-engine";
 import { RootfsResolver } from "./rootfs-resolver";
 
-// Task = engine-agnostic input (Docker/Isolate specifics are encapsulated in the engine itself).
-export type CompileTask = Omit<CompileOptions, "dockerClient">;
-export type RunTask = Omit<RunOneOptions, "dockerClient" | "sandboxRuntime">;
-export type { CompileResult, RunOneResult };
+// ── Engine-agnostic task / result types ─────────────────────────────────────
+// These were originally co-located with the legacy DockerEngine in
+// compiler.ts / runner.ts. After the DockerEngine drop they live here as the
+// single source of truth that every SandboxEngine implementation honours.
+
+export interface CompileTask {
+  spec: LanguageSpec;
+  hostWorkDir: string;
+}
+
+export interface CompileResult {
+  success: boolean;
+  errorLog?: string;
+}
+
+export interface RunTask {
+  spec: LanguageSpec;
+  hostWorkDir: string;
+  inputData: string;
+  timeLimitMs: number;
+  memoryLimitMb: number;
+  outputLimitKb: number;
+}
+
+export type Verdict = "AC" | "TLE" | "MLE" | "RE";
+
+export interface RunOneResult {
+  verdict: Verdict;
+  stdout: string;
+  stderr: string;
+  runtimeMs: number;
+  memoryKb: number | null;
+}
 
 export interface SandboxEngine {
   readonly name: string;
@@ -15,38 +42,31 @@ export interface SandboxEngine {
   runOne(task: RunTask): Promise<RunOneResult>;
 }
 
-export type SandboxEngineKind = "docker" | "isolate";
+// ── Factory ─────────────────────────────────────────────────────────────────
+// Phase 4 standardised on sio2project/isolate + oct-seccomp-wrapper as the
+// only engine. The Strategy interface above is intentionally preserved so a
+// future GVisorEngine / KataEngine can drop in without touching consumers.
 
 export interface SandboxEngineConfig {
-  kind: SandboxEngineKind;
-  // Docker-engine specific
-  sandboxRuntime: string;
-  // Isolate-engine specific (all optional with sensible defaults)
+  // Host directory holding per-language rootfs subtrees that the
+  // language-rootfs-puller DaemonSet (K8s) or `make build-isolate-rootfs`
+  // (local) prepares. Default: /var/lib/oct/rootfs.
   rootfsBaseDir?: string;
+  // Default box id. With consumer prefetch=1 each worker only ever runs one
+  // task at a time, so a single fixed id is fine. The box-id pool becomes
+  // relevant when (if) we enable Pod-internal concurrency.
   isolateBoxId?: number;
-  // Host directory containing seccomp-wrapper + seccomp.policy. When set,
-  // IsolateEngine binds it into the sandbox and runs the candidate through
-  // the wrapper for a Docker-equivalent seccomp-bpf syscall blacklist.
+  // Host directory containing seccomp-wrapper + seccomp.policy. IsolateEngine
+  // binds it into every sandbox and runs the candidate through the wrapper
+  // to install a Docker-equivalent syscall blacklist before execve(). Unset
+  // = no seccomp wrapper (not recommended outside trusted dev).
   seccompBundleDir?: string;
 }
 
-export function parseEngineKind(raw: string | undefined): SandboxEngineKind {
-  const value = (raw ?? "docker").toLowerCase();
-  if (value !== "docker" && value !== "isolate") {
-    throw new Error(`Unknown SANDBOX_ENGINE="${value}" (expected "docker" or "isolate")`);
-  }
-  return value;
-}
-
-export async function createSandboxEngine(config: SandboxEngineConfig): Promise<SandboxEngine> {
-  switch (config.kind) {
-    case "docker":
-      return new DockerSandboxEngine({ sandboxRuntime: config.sandboxRuntime });
-    case "isolate":
-      return new IsolateEngine({
-        rootfsResolver: new RootfsResolver({ baseDir: config.rootfsBaseDir }),
-        boxId: config.isolateBoxId,
-        seccomp: config.seccompBundleDir ? { bundleDir: config.seccompBundleDir } : undefined,
-      });
-  }
+export function createSandboxEngine(config: SandboxEngineConfig = {}): SandboxEngine {
+  return new IsolateEngine({
+    rootfsResolver: new RootfsResolver({ baseDir: config.rootfsBaseDir }),
+    boxId: config.isolateBoxId,
+    seccomp: config.seccompBundleDir ? { bundleDir: config.seccompBundleDir } : undefined,
+  });
 }

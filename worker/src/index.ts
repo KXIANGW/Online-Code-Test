@@ -59,9 +59,7 @@ async function connectOnce(): Promise<void> {
   });
 
   const languages = loadLanguages();
-  const engine = await createSandboxEngine({
-    kind: config.sandboxEngine,
-    sandboxRuntime: config.sandboxRuntime,
+  const engine = createSandboxEngine({
     rootfsBaseDir: config.rootfsBaseDir,
     isolateBoxId: config.isolateBoxId,
     seccompBundleDir: config.seccompBundleDir || undefined,

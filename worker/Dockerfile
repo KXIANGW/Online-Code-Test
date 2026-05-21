@@ -44,13 +44,12 @@ FROM node:20-bookworm-slim
 # Runtime deps:
 #   - libcap2, libsystemd0 : needed by isolate
 #   - libseccomp2          : needed by oct-seccomp-wrapper
-#   - docker.io (cli only) : still required when SANDBOX_ENGINE=docker
 #   - curl                 : healthcheck convenience
+# (docker.io was needed by the legacy DockerEngine; removed in Step B.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libcap2 \
       libsystemd0 \
       libseccomp2 \
-      docker.io \
       curl \
  && rm -rf /var/lib/apt/lists/*
 

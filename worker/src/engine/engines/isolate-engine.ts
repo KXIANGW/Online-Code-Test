@@ -4,9 +4,13 @@ import path from "path";
 import { prepareSandboxWorkDir, truncateUtf8 } from "../sandbox";
 import { classifyVerdict, parseIsolateMeta, type Verdict } from "../meta-parser";
 import { RootfsResolver, RootfsNotReadyError } from "../rootfs-resolver";
-import type { CompileResult } from "../compiler";
-import type { RunOneResult } from "../runner";
-import type { CompileTask, RunTask, SandboxEngine } from "../sandbox-engine";
+import type {
+  CompileResult,
+  CompileTask,
+  RunOneResult,
+  RunTask,
+  SandboxEngine,
+} from "../sandbox-engine";
 import type { LanguageSpec } from "../languages";
 
 const INSIDE_CODE_DIR = "/code";

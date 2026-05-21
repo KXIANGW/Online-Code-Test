@@ -1,33 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { createSandboxEngine, parseEngineKind } from "../../engine/sandbox-engine";
-
-describe("parseEngineKind", () => {
-  it("defaults to docker when env is undefined", () => {
-    expect(parseEngineKind(undefined)).toBe("docker");
-  });
-
-  it("normalises case", () => {
-    expect(parseEngineKind("DOCKER")).toBe("docker");
-    expect(parseEngineKind("Isolate")).toBe("isolate");
-  });
-
-  it("throws on unknown values", () => {
-    expect(() => parseEngineKind("nsjail")).toThrow(/Unknown SANDBOX_ENGINE/);
-  });
-});
+import { createSandboxEngine } from "../../engine/sandbox-engine";
 
 describe("createSandboxEngine", () => {
-  it("returns a DockerSandboxEngine when kind=docker", async () => {
-    const engine = await createSandboxEngine({ kind: "docker", sandboxRuntime: "runc" });
-    expect(engine.name).toBe("docker");
-    expect(typeof engine.compile).toBe("function");
-    expect(typeof engine.runOne).toBe("function");
-  });
-
-  it("returns an IsolateEngine when kind=isolate", async () => {
-    const engine = await createSandboxEngine({ kind: "isolate", sandboxRuntime: "runc" });
+  it("returns an IsolateEngine (the only engine after Phase 4)", () => {
+    const engine = createSandboxEngine();
     expect(engine.name).toBe("isolate");
     expect(typeof engine.compile).toBe("function");
     expect(typeof engine.runOne).toBe("function");
+  });
+
+  it("threads rootfsBaseDir, isolateBoxId, and seccompBundleDir through", () => {
+    const engine = createSandboxEngine({
+      rootfsBaseDir: "/tmp/custom-rootfs",
+      isolateBoxId: 7,
+      seccompBundleDir: "/etc/custom-seccomp",
+    });
+    expect(engine.name).toBe("isolate");
+    // Constructor invariants are exercised by isolate-engine.test.ts; here we
+    // just guard the wiring contract by ensuring no throws and a real engine
+    // back out.
+    expect(typeof engine.compile).toBe("function");
   });
 });
