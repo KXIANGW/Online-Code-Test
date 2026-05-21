@@ -192,6 +192,16 @@ export default function App() {
           }
         />
 
+        {/* 面試官：編輯考試模板 */}
+        <Route
+          path="/interviewer/templates/:id/edit"
+          element={
+            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
+              <TemplateCreatePage />
+            </RoleBasedRoute>
+          }
+        />
+
         {/* 面試官：分配考試 */}
         <Route
           path="/interviewer/templates/:id/assign"

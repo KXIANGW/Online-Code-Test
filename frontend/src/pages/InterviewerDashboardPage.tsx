@@ -10,6 +10,7 @@ import {
   getUsers,
   assignExamToCandidates,
   getUserPassword,
+  deleteExamTemplate,
 } from "../api/client";
 import type { ExamStatus, SessionResult, ExamTemplate, UserSummary } from "../types";
 import { STATUS_COLOR, STATUS_LABEL } from "../config/examStatus";
@@ -166,6 +167,15 @@ export default function InterviewerDashboardPage() {
     }
   }
 
+  async function handleDeleteTemplate(templateId: number) {
+    if (!window.confirm("確定要刪除此考試模板嗎？已分發的考試與歷史紀錄不會受影響。")) {
+      return;
+    }
+
+    await deleteExamTemplate(templateId);
+    await loadDashboardData();
+  }
+
   const filteredRecords =
     recordTab === "all"
       ? results
@@ -300,11 +310,31 @@ export default function InterviewerDashboardPage() {
                       return (
                         <div key={t.id} className="bg-white rounded-xl border border-slate-200 p-5">
                           <div className="space-y-1">
-                            <p className="font-medium text-slate-800">{t.title}</p>
-                            <p className="text-xs text-slate-400">
-                              {t.durationMinutes} 分鐘 ·{" "}
-                              {new Date(t.createdAt).toLocaleDateString("zh-TW")}
-                            </p>
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium text-slate-800">{t.title}</p>
+                                <p className="text-xs text-slate-400">
+                                  {t.durationMinutes} 分鐘 ·{" "}
+                                  {new Date(t.createdAt).toLocaleDateString("zh-TW")}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(ROUTES.templateEdit(t.id))}
+                                  className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                                >
+                                  編輯
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDeleteTemplate(t.id)}
+                                  className="text-xs font-medium text-red-500 hover:text-red-700"
+                                >
+                                  刪除
+                                </button>
+                              </div>
+                            </div>
                           </div>
                           {templateProblems.length > 0 && (
                             <div className="mt-4 border-t border-slate-100 pt-3">

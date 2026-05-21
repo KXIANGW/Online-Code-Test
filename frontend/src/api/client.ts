@@ -22,6 +22,7 @@ import type {
   CreateTestcaseRequest,
   CreateExamTemplateManualRequest,
   CreateExamTemplateRandomRequest,
+  UpdateExamTemplateRequest,
   CreateSubmissionRequest,
   CandidatePasswordResponse,
 } from "../types";
@@ -174,6 +175,18 @@ export async function createExamTemplateRandom(
 ): Promise<ExamTemplate> {
   const { data } = await api.post<ExamTemplate>("/exam-sessions/templates/random", req);
   return data;
+}
+
+export async function updateExamTemplate(
+  id: number,
+  req: UpdateExamTemplateRequest,
+): Promise<ExamTemplate> {
+  const { data } = await api.put<ExamTemplate>(`/exam-sessions/templates/${id}`, req);
+  return data;
+}
+
+export async function deleteExamTemplate(id: number): Promise<void> {
+  await api.delete(`/exam-sessions/templates/${id}`);
 }
 
 export async function listExamTemplates(): Promise<ExamTemplate[]> {

@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { NavBar } from "../components/NavBar";
-import { getProblems, createExamTemplateManual, createExamTemplateRandom } from "../api/client";
+import {
+  getProblems,
+  createExamTemplateManual,
+  createExamTemplateRandom,
+  listExamTemplates,
+  updateExamTemplate,
+} from "../api/client";
 import { useInterviewerStore } from "../stores/interviewerStore";
 import { DIFFICULTY_LABEL, DIFFICULTY_TEXT_COLOR } from "../config/difficulty";
 import { ROUTES } from "../config/routes";
@@ -10,6 +16,7 @@ import type {
   Difficulty,
   CreateExamTemplateManualRequest,
   CreateExamTemplateRandomRequest,
+  ExamTemplate,
   RandomDistribution,
 } from "../types";
 
@@ -26,6 +33,9 @@ const DIFF_COLOR: Record<Difficulty, string> = DIFFICULTY_TEXT_COLOR;
 
 export default function TemplateCreatePage() {
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const templateId = id ? Number(id) : null;
+  const isEditMode = Number.isInteger(templateId);
   const setTemplates = useInterviewerStore((s) => s.setTemplates);
 
   const [title, setTitle] = useState("");
@@ -50,10 +60,36 @@ export default function TemplateCreatePage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
-    getProblems()
-      .then(setProblems)
-      .finally(() => setProblemsLoading(false));
-  }, []);
+    async function load() {
+      setProblemsLoading(true);
+      try {
+        const problemList = await getProblems();
+        setProblems(problemList);
+
+        if (isEditMode && templateId !== null) {
+          const templates = await listExamTemplates();
+          const template = templates.find((t: ExamTemplate) => t.id === templateId);
+          if (!template) {
+            setSubmitError("找不到此考試模板");
+            return;
+          }
+
+          setTitle(template.title);
+          setDurationMinutes(template.durationMinutes);
+          setMode("manual");
+          setSelectedProblems(
+            (template.problems ?? [])
+              .slice()
+              .sort((a, b) => a.orderIndex - b.orderIndex)
+              .map((p) => ({ problemId: p.problemId, scoreWeight: p.scoreWeight })),
+          );
+        }
+      } finally {
+        setProblemsLoading(false);
+      }
+    }
+    void load();
+  }, [isEditMode, templateId]);
 
   function toggleProblem(pId: number) {
     if (selectedProblems.some((sp) => sp.problemId === pId)) {
@@ -92,7 +128,7 @@ export default function TemplateCreatePage() {
     setSubmitError(null);
 
     try {
-      if (mode === "manual") {
+      if (mode === "manual" || isEditMode) {
         const req: CreateExamTemplateManualRequest = {
           title: title.trim(),
           durationMinutes,
@@ -102,7 +138,11 @@ export default function TemplateCreatePage() {
             orderIndex: idx + 1,
           })),
         };
-        await createExamTemplateManual(req);
+        if (isEditMode && templateId !== null) {
+          await updateExamTemplate(templateId, req);
+        } else {
+          await createExamTemplateManual(req);
+        }
       } else {
         const finalDist: RandomDistribution = {};
         if (distribution.easy > 0) finalDist.easy = distribution.easy;
@@ -149,7 +189,9 @@ export default function TemplateCreatePage() {
           ← 返回考試管理
         </button>
 
-        <h1 className="text-xl font-semibold text-slate-800 mb-6">建立考試模板</h1>
+        <h1 className="text-xl font-semibold text-slate-800 mb-6">
+          {isEditMode ? "編輯考試模板" : "建立考試模板"}
+        </h1>
 
         {problemsLoading ? (
           <p className="text-center py-12 text-slate-400">載入題目中...</p>
@@ -188,19 +230,23 @@ export default function TemplateCreatePage() {
             <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
               <div className="flex items-center gap-3">
                 <h2 className="font-medium text-slate-800">出題方式</h2>
-                <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
-                  {(["manual", "random"] as const).map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => setMode(m)}
-                      className={`px-3 py-1.5 transition-colors ${
-                        mode === m ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"
-                      }`}
-                    >
-                      {m === "manual" ? "手動選題" : "隨機派題"}
-                    </button>
-                  ))}
-                </div>
+                {!isEditMode && (
+                  <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+                    {(["manual", "random"] as const).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => setMode(m)}
+                        className={`px-3 py-1.5 transition-colors ${
+                          mode === m
+                            ? "bg-blue-600 text-white"
+                            : "text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        {m === "manual" ? "手動選題" : "隨機派題"}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {mode === "manual" ? (
@@ -310,7 +356,13 @@ export default function TemplateCreatePage() {
                   disabled={submitting}
                   className="px-8 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all shadow-lg shadow-blue-100"
                 >
-                  {submitting ? "建立中..." : "建立模板"}
+                  {submitting
+                    ? isEditMode
+                      ? "更新中..."
+                      : "建立中..."
+                    : isEditMode
+                      ? "更新模板"
+                      : "建立模板"}
                 </button>
               </div>
             </div>

@@ -17,6 +17,7 @@ const mockListExamTemplates = vi.hoisted(() => vi.fn());
 const mockGetUsers = vi.hoisted(() => vi.fn());
 const mockAssignExamToCandidates = vi.hoisted(() => vi.fn());
 const mockGetUserPassword = vi.hoisted(() => vi.fn());
+const mockDeleteExamTemplate = vi.hoisted(() => vi.fn());
 const mockCopyToClipboard = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -34,6 +35,7 @@ vi.mock("../api/client", () => ({
   getUsers: mockGetUsers,
   assignExamToCandidates: mockAssignExamToCandidates,
   getUserPassword: mockGetUserPassword,
+  deleteExamTemplate: mockDeleteExamTemplate,
 }));
 vi.mock("../utils/clipboard", () => ({
   copyToClipboard: mockCopyToClipboard,
@@ -140,12 +142,14 @@ describe("InterviewerDashboardPage()", () => {
     mockGetUsers.mockReset();
     mockAssignExamToCandidates.mockReset();
     mockGetUserPassword.mockReset();
+    mockDeleteExamTemplate.mockReset();
     mockCopyToClipboard.mockReset();
     // Default: API returns empty
     mockGetExamSessions.mockResolvedValue([]);
     mockListExamTemplates.mockResolvedValue([]);
     mockGetUsers.mockResolvedValue([]);
     mockAssignExamToCandidates.mockResolvedValue([]);
+    mockDeleteExamTemplate.mockResolvedValue(undefined);
   });
 
   it("renders 考試管理 heading and 4 main tabs", () => {
@@ -197,6 +201,30 @@ describe("InterviewerDashboardPage()", () => {
     await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "＋ 建立模板" }));
     expect(mockNavigate).toHaveBeenCalledWith("/interviewer/templates/new");
+  });
+
+  it("templates tab: 編輯 navigates to /interviewer/templates/:id/edit", async () => {
+    setupAuthStore();
+    setupInterviewerStore([], [mockTemplate], []);
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: "編輯" }));
+
+    expect(mockNavigate).toHaveBeenCalledWith("/interviewer/templates/42/edit");
+  });
+
+  it("templates tab: 刪除 confirms and deletes the template", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    setupAuthStore();
+    setupInterviewerStore([], [mockTemplate], []);
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: "刪除" }));
+
+    await waitFor(() => expect(mockDeleteExamTemplate).toHaveBeenCalledWith(42));
+    confirmSpy.mockRestore();
   });
 
   it("templates tab: shows empty state when no templates", async () => {

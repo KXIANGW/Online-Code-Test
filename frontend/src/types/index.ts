@@ -250,6 +250,8 @@ export interface CreateExamTemplateManualRequest {
   problems: ManualProblemEntry[];
 }
 
+export type UpdateExamTemplateRequest = CreateExamTemplateManualRequest;
+
 export interface CreateExamTemplateRandomRequest {
   title: string;
   durationMinutes: number;
