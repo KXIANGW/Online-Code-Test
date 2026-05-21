@@ -18,6 +18,7 @@ const mockGetUsers = vi.hoisted(() => vi.fn());
 const mockAssignExamToCandidates = vi.hoisted(() => vi.fn());
 const mockGetUserPassword = vi.hoisted(() => vi.fn());
 const mockDeleteExamTemplate = vi.hoisted(() => vi.fn());
+const mockUpdateUser = vi.hoisted(() => vi.fn());
 const mockCopyToClipboard = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -36,6 +37,7 @@ vi.mock("../api/client", () => ({
   assignExamToCandidates: mockAssignExamToCandidates,
   getUserPassword: mockGetUserPassword,
   deleteExamTemplate: mockDeleteExamTemplate,
+  updateUser: mockUpdateUser,
 }));
 vi.mock("../utils/clipboard", () => ({
   copyToClipboard: mockCopyToClipboard,
@@ -143,6 +145,7 @@ describe("InterviewerDashboardPage()", () => {
     mockAssignExamToCandidates.mockReset();
     mockGetUserPassword.mockReset();
     mockDeleteExamTemplate.mockReset();
+    mockUpdateUser.mockReset();
     mockCopyToClipboard.mockReset();
     // Default: API returns empty
     mockGetExamSessions.mockResolvedValue([]);
@@ -214,17 +217,18 @@ describe("InterviewerDashboardPage()", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/interviewer/templates/42/edit");
   });
 
-  it("templates tab: 刪除 confirms and deletes the template", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("templates tab: 刪除 opens confirm dialog → confirm → deletes the template", async () => {
     setupAuthStore();
     setupInterviewerStore([], [mockTemplate], []);
     renderPage();
     await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
 
     await userEvent.click(screen.getByRole("button", { name: "刪除" }));
+    // confirm dialog should appear
+    expect(screen.getByText("確定要刪除此考試模板嗎？已分發的考試與歷史紀錄不會受影響。")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "確定" }));
 
     await waitFor(() => expect(mockDeleteExamTemplate).toHaveBeenCalledWith(42));
-    confirmSpy.mockRestore();
   });
 
   it("templates tab: shows empty state when no templates", async () => {

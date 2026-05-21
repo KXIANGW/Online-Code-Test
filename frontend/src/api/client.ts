@@ -118,6 +118,15 @@ export async function updateUserRoles(id: number, roleNames: string[]): Promise<
   await api.put(`/users/${id}/roles`, { roleNames });
 }
 
+export interface UpdateUserRequest {
+  displayName?: string;
+  password?: string;
+}
+
+export async function updateUser(id: number, req: UpdateUserRequest): Promise<void> {
+  await api.put(`/users/${id}`, req);
+}
+
 export async function getProblems(): Promise<ProblemSummary[]> {
   const { data } = await api.get<ProblemSummary[]>("/problems");
   return data;

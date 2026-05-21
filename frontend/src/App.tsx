@@ -46,9 +46,8 @@ function RoleBasedRoute({
     // 嚴格模式 A：僅限 Root (is_superuser=true)
     hasAccess = !!isSuperuser;
   } else if (requiredPermission) {
-    // 嚴格模式 B：僅限具備該權限的使用者
-    // 根據需求，Root 在此不具備一般功能權限，會被攔截
-    hasAccess = permissions.includes(requiredPermission);
+    // 嚴格模式 B：具備該權限的使用者，或超級管理員可存取所有功能頁面
+    hasAccess = !!isSuperuser || permissions.includes(requiredPermission);
   }
 
   // 3. 權限拒絕 UI
@@ -57,9 +56,7 @@ function RoleBasedRoute({
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
         <h1 className="text-2xl font-bold text-red-500">🚫 存取拒絕</h1>
         <p className="text-slate-500 mt-2 text-center">
-          {isSuperuser
-            ? "管理員帳號 (Root) 禁止進入一般使用者區域。"
-            : "您的帳號權限不足，無法存取此路徑。"}
+          您的帳號權限不足，無法存取此路徑。
         </p>
         <button
           onClick={() => window.history.back()}

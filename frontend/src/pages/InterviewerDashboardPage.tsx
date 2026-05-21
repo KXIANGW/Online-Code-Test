@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { NavBar } from "../components/NavBar";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { EditCandidateDialog } from "../components/EditCandidateDialog";
 import { useInterviewerStore } from "../stores/interviewerStore";
 import { Toaster } from "react-hot-toast";
 import {
@@ -100,6 +102,8 @@ export default function InterviewerDashboardPage() {
   const [candidatePasswords, setCandidatePasswords] = useState<Map<number, string>>(
     () => new Map(),
   );
+  const [templateToDelete, setTemplateToDelete] = useState<number | null>(null);
+  const [editingCandidate, setEditingCandidate] = useState<UserSummary | null>(null);
 
   useEffect(() => {
     loadDashboardData().finally(() => setLoading(false));
@@ -167,12 +171,14 @@ export default function InterviewerDashboardPage() {
     }
   }
 
-  async function handleDeleteTemplate(templateId: number) {
-    if (!window.confirm("確定要刪除此考試模板嗎？已分發的考試與歷史紀錄不會受影響。")) {
-      return;
-    }
+  function handleDeleteTemplate(templateId: number) {
+    setTemplateToDelete(templateId);
+  }
 
-    await deleteExamTemplate(templateId);
+  async function handleConfirmDeleteTemplate() {
+    if (templateToDelete === null) return;
+    await deleteExamTemplate(templateToDelete);
+    setTemplateToDelete(null);
     await loadDashboardData();
   }
 
@@ -244,7 +250,7 @@ export default function InterviewerDashboardPage() {
                               {new Date(c.createdAt).toLocaleDateString("zh-TW")}
                             </p>
                           </div>
-                          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2">
+                          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
                             <span className="text-xs text-slate-400">密碼：</span>
                             {plainPwd !== undefined ? (
                               <>
@@ -277,6 +283,13 @@ export default function InterviewerDashboardPage() {
                             ) : (
                               <span className="text-xs text-slate-400">—</span>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => setEditingCandidate(c)}
+                              className="ml-auto rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                            >
+                              編輯
+                            </button>
                           </div>
                         </div>
                       );
@@ -477,6 +490,23 @@ export default function InterviewerDashboardPage() {
         )}
       </main>
       <Toaster position="bottom-center" reverseOrder={false} />
+      <ConfirmDialog
+        open={templateToDelete !== null}
+        title="刪除考試模板"
+        message="確定要刪除此考試模板嗎？已分發的考試與歷史紀錄不會受影響。"
+        onConfirm={handleConfirmDeleteTemplate}
+        onCancel={() => setTemplateToDelete(null)}
+      />
+      <EditCandidateDialog
+        open={editingCandidate !== null}
+        candidate={editingCandidate}
+        onClose={() => setEditingCandidate(null)}
+        onSaved={(id, newDisplayName) => {
+          setCandidates(candidates.map((c) => (c.id === id ? { ...c, displayName: newDisplayName } : c)));
+          setEditingCandidate(null);
+          loadDashboardData();
+        }}
+      />
     </div>
   );
 }

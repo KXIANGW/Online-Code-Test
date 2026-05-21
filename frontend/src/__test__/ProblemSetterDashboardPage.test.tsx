@@ -238,35 +238,39 @@ describe("ProblemSetterDashboardPage()", () => {
   });
 
   // ── Delete ──────────────────────────────────────────────────────────────────
-  it("clicking 刪除 → confirm → calls deleteProblem and removes problem from list", async () => {
+  it("clicking 刪除 → confirm dialog opens → confirm → calls deleteProblem and removes problem from list", async () => {
     // given
     const user = userEvent.setup();
     setupAuthStore();
     mockGetProblems.mockResolvedValue([mockProblemSummaries[0]!]);
     mockDeleteProblem.mockResolvedValue(undefined);
-    vi.spyOn(window, "confirm").mockReturnValueOnce(true);
     renderPage();
     await screen.findByText("Two Sum");
 
-    // when
+    // when: click 刪除 to open confirm dialog
     await user.click(screen.getByRole("button", { name: "刪除" }));
+    // confirm dialog should appear
+    expect(screen.getByText("確定要刪除這道題目嗎？此操作無法復原。")).toBeInTheDocument();
+    // click confirm in dialog
+    await user.click(screen.getByRole("button", { name: "確定" }));
 
     // expect
     await waitFor(() => expect(screen.queryByText("Two Sum")).not.toBeInTheDocument());
     expect(mockDeleteProblem).toHaveBeenCalledWith(1);
   });
 
-  it("clicking 刪除 → cancel → does not call deleteProblem", async () => {
+  it("clicking 刪除 → confirm dialog opens → cancel → does not call deleteProblem", async () => {
     // given
     const user = userEvent.setup();
     setupAuthStore();
     mockGetProblems.mockResolvedValue([mockProblemSummaries[0]!]);
-    vi.spyOn(window, "confirm").mockReturnValueOnce(false);
     renderPage();
     await screen.findByText("Two Sum");
 
-    // when
+    // when: click 刪除 to open confirm dialog, then cancel
     await user.click(screen.getByRole("button", { name: "刪除" }));
+    expect(screen.getByText("確定要刪除這道題目嗎？此操作無法復原。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "取消" }));
 
     // expect
     expect(mockDeleteProblem).not.toHaveBeenCalled();
