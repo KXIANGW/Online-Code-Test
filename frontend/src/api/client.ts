@@ -309,25 +309,22 @@ export function logApiError(error: AxiosError<ApiErrorData>): void {
   console.error(lines.join("\n"));
 }
 
-api.interceptors.response.use(
-  undefined,
-  async (rawError: unknown) => {
-    if (!axios.isAxiosError(rawError)) {
-      console.error("[API Error] Unexpected non-Axios error:", rawError);
-      return Promise.reject(rawError as Error);
-    }
+api.interceptors.response.use(undefined, async (rawError: unknown) => {
+  if (!axios.isAxiosError(rawError)) {
+    console.error("[API Error] Unexpected non-Axios error:", rawError);
+    return Promise.reject(rawError as Error);
+  }
 
-    const error = rawError as AxiosError<ApiErrorData>;
-    const config = error.config as RetryConfig | undefined;
+  const error = rawError as AxiosError<ApiErrorData>;
+  const config = error.config as RetryConfig | undefined;
 
-    if (config && isRetryableError(error) && (config._retryCount ?? 0) < MAX_RETRIES) {
-      config._retryCount = (config._retryCount ?? 0) + 1;
-      const delay = BASE_DELAY_MS * Math.pow(2, config._retryCount - 1);
-      await sleep(delay);
-      return api(config);
-    }
+  if (config && isRetryableError(error) && (config._retryCount ?? 0) < MAX_RETRIES) {
+    config._retryCount = (config._retryCount ?? 0) + 1;
+    const delay = BASE_DELAY_MS * Math.pow(2, config._retryCount - 1);
+    await sleep(delay);
+    return api(config);
+  }
 
-    logApiError(error);
-    return Promise.reject(error);
-  },
-);
+  logApiError(error);
+  return Promise.reject(error);
+});

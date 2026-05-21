@@ -30,7 +30,6 @@ function makeAxiosError(
   } as unknown as AxiosError<ApiErrorData>;
 }
 
-
 const server = setupServer(
   http.get("*/api/ping", ({ request }) => {
     capturedAuthHeader = request.headers.get("Authorization");
@@ -219,7 +218,12 @@ describe("logApiError()", () => {
 
   it("logs METHOD URL → STATUS and message on a 4xx error", () => {
     // given
-    const err = makeAxiosError(422, { message: "validation failed" }, "post", "/exam-sessions/5/submissions");
+    const err = makeAxiosError(
+      422,
+      { message: "validation failed" },
+      "post",
+      "/exam-sessions/5/submissions",
+    );
 
     // when
     logApiError(err);
@@ -265,9 +269,7 @@ describe("logApiError()", () => {
     logApiError(err);
 
     // expect
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("NETWORK_ERROR"),
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("NETWORK_ERROR"));
   });
 
   it("falls back to error.message when response data has no message field", () => {

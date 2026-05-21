@@ -1,10 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import {
-  getSessionResult,
-  getSubmissionDetail,
-  listSessionSubmissions,
-} from "../api/client";
+import { getSessionResult, getSubmissionDetail, listSessionSubmissions } from "../api/client";
 import { NavBar } from "../components/NavBar";
 import type { SessionResult, SubmissionSummary, TestcaseResult } from "../types";
 import { STATUS_LABEL, STATUS_COLOR } from "../config/examStatus";
@@ -148,7 +144,6 @@ export default function ExamResultPage() {
                   </span>
                 )}
               </div>
-
             </div>
 
             <section className="bg-white rounded-xl border border-slate-200">
