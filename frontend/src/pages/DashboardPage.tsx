@@ -7,6 +7,7 @@ import { NavBar } from "../components/NavBar";
 import { formatTimeLeft, useExamTimer } from "../hooks/useExamTimer";
 import { STORAGE_KEYS } from "../config/storage";
 import { ROUTES } from "../config/routes";
+import { toast, Toaster } from "react-hot-toast";
 
 function SectionCard({
   title,
@@ -139,11 +140,17 @@ export default function DashboardPage() {
     } catch {
       // 使用者拒絕全螢幕仍允許繼續（不強制阻擋）
     }
-    await handleStart(id);
+    try {
+      await handleStart(id);
+    } catch {
+      toast.error("開始考試失敗，請重試。");
+      setPendingSessionId(id);
+    }
   }
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <Toaster position="top-center" />
       <NavBar homeHref={ROUTES.DASHBOARD} />
 
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">

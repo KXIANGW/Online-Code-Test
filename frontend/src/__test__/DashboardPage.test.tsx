@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { toast } from "react-hot-toast";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -23,6 +24,10 @@ vi.mock("../stores/examStore", () => ({ useExamStore: mockUseExamStore }));
 vi.mock("../api/client", () => ({
   getExamSessions: mockGetExamSessions,
   startExamSession: mockStartExamSession,
+}));
+vi.mock("react-hot-toast", () => ({
+  toast: { error: vi.fn() },
+  Toaster: () => null,
 }));
 
 function setupAuthStore(username = "candidate01") {
@@ -371,5 +376,22 @@ describe("DashboardPage()", () => {
 
     // expect
     expect(mockNavigate).toHaveBeenCalledWith("/exam/1");
+  });
+
+  it("shows error toast and reopens modal when startExamSession API fails (500)", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[0]!]);
+    mockStartExamSession.mockRejectedValue(new Error("Internal Server Error"));
+    renderDashboard();
+
+    // when: open modal then confirm
+    await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意並開始考試" }));
+
+    // expect: toast shown, modal restored, navigation skipped
+    expect(toast.error).toHaveBeenCalledWith("開始考試失敗，請重試。");
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });
