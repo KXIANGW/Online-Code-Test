@@ -83,19 +83,20 @@ export default function ExamPage() {
 
         const enabledLangs = langs.filter((l) => l.isEnabled !== false);
         const enabledLanguageIds = new Set(enabledLangs.map((lang) => lang.language));
-        setProblems(sessionProblems);
+        const orderedProblems = [...sessionProblems].sort((a, b) => a.orderIndex - b.orderIndex);
+        setProblems(orderedProblems);
         setLanguages(enabledLangs);
         setSessionStatus(session.status);
         setSubmissions(history.filter((s) => s.submissionType === "formal"));
         if (session.expiresAt) setExpiresAt(session.expiresAt);
-        if (sessionProblems.length > 0) setActiveProblemId(sessionProblems[0].problemId);
+        if (orderedProblems.length > 0) setActiveProblemId(orderedProblems[0].problemId);
 
         const defaultLang = enabledLangs[0]?.language ?? "";
         // codes keyed by "${problemId}:${language}"
         const initialCodes: Record<string, string> = {};
         const initialLangs: Record<number, string> = {};
 
-        for (const p of sessionProblems) {
+        for (const p of orderedProblems) {
           // Restore code for each enabled language from per-language localStorage keys
           for (const lang of enabledLangs) {
             const lsKey = STORAGE_KEYS.draftKey(sessionId, p.problemId, lang.language);
@@ -114,7 +115,7 @@ export default function ExamPage() {
         setSelectedLangs(initialLangs);
 
         // Restore from Redis for problems with no localStorage data for any language
-        const missingIds = sessionProblems
+        const missingIds = orderedProblems
           .filter((p) =>
             enabledLangs.every(
               (lang) => initialCodes[`${p.problemId}:${lang.language}`] === undefined,
@@ -361,7 +362,7 @@ export default function ExamPage() {
                 memoryKb: message.memoryKb,
                 judgedAt: message.judgedAt,
                 score: message.score,
-                isFinalSubmission: message.score > 0,
+                isFinalSubmission: true,
               }
             : s,
         ),
@@ -747,7 +748,14 @@ export default function ExamPage() {
                           <span>
                             {submission.orderIndex}. {submission.problemTitle}
                           </span>
-                          <span>{SUBMISSION_TYPE_LABEL[submission.submissionType]}</span>
+                          <span className="flex items-center gap-2">
+                            <span>{SUBMISSION_TYPE_LABEL[submission.submissionType]}</span>
+                            {submission.isFinalSubmission && (
+                              <span className="rounded-full bg-green-50 px-2 py-0.5 text-green-600">
+                                最終提交
+                              </span>
+                            )}
+                          </span>
                           <span>{submission.verdict ?? submission.status}</span>
                           <span>{submission.language}</span>
                         </div>

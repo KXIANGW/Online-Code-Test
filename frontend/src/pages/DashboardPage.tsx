@@ -82,6 +82,14 @@ function ExamSessionCard({
           開始考試
         </button>
       )}
+      {(session.status === "submitted" || session.status === "expired") && (
+        <button
+          onClick={() => navigate(ROUTES.candidateResultPage(session.id))}
+          className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
+        >
+          查看結果
+        </button>
+      )}
     </div>
   );
 }

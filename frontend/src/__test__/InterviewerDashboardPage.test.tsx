@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import InterviewerDashboardPage from "../pages/InterviewerDashboardPage";
 import { mockSessionResult, mockUserSummaries } from "./mock-data";
-import type { ExamTemplate, SessionResult, UserSummary } from "../types";
+import type { ExamSession, ExamTemplate, SessionResult, UserSummary } from "../types";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 const mockNavigate = vi.hoisted(() => vi.fn());
@@ -17,6 +17,8 @@ const mockListExamTemplates = vi.hoisted(() => vi.fn());
 const mockGetUsers = vi.hoisted(() => vi.fn());
 const mockAssignExamToCandidates = vi.hoisted(() => vi.fn());
 const mockGetUserPassword = vi.hoisted(() => vi.fn());
+const mockDeleteExamTemplate = vi.hoisted(() => vi.fn());
+const mockUpdateUser = vi.hoisted(() => vi.fn());
 const mockCopyToClipboard = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -34,6 +36,8 @@ vi.mock("../api/client", () => ({
   getUsers: mockGetUsers,
   assignExamToCandidates: mockAssignExamToCandidates,
   getUserPassword: mockGetUserPassword,
+  deleteExamTemplate: mockDeleteExamTemplate,
+  updateUser: mockUpdateUser,
 }));
 vi.mock("../utils/clipboard", () => ({
   copyToClipboard: mockCopyToClipboard,
@@ -92,6 +96,61 @@ const mockCandidates: UserSummary[] = mockUserSummaries.filter((u) =>
   u.roles.includes("candidate"),
 );
 
+const pendingCandidate: UserSummary = {
+  id: 4,
+  username: "pending01",
+  displayName: "Pending Candidate",
+  isSuperuser: false,
+  createdAt: "2026-01-04T00:00:00.000Z",
+  roles: ["candidate"],
+};
+
+const activeCandidate: UserSummary = {
+  id: 5,
+  username: "active01",
+  displayName: "Active Candidate",
+  isSuperuser: false,
+  createdAt: "2026-01-05T00:00:00.000Z",
+  roles: ["candidate"],
+};
+
+const endedCandidate: UserSummary = {
+  id: 6,
+  username: "ended01",
+  displayName: "Ended Candidate",
+  isSuperuser: false,
+  createdAt: "2026-01-06T00:00:00.000Z",
+  roles: ["candidate"],
+};
+
+function sessionForCandidate(
+  candidate: UserSummary,
+  status: ExamSession["status"],
+  examTitle: string,
+): ExamSession {
+  return {
+    id: 100 + candidate.id,
+    examId: 200 + candidate.id,
+    examTitle,
+    candidateId: candidate.id,
+    candidate: {
+      id: candidate.id,
+      username: candidate.username,
+      displayName: candidate.displayName,
+    },
+    createdBy: 10,
+    status,
+    durationMinutes: 60,
+    actualStartAt: status === "not_started" ? null : "2026-05-20T00:00:00.000Z",
+    expiresAt: status === "in_progress" ? "2026-05-20T01:00:00.000Z" : null,
+    submittedAt: status === "submitted" ? "2026-05-20T01:00:00.000Z" : null,
+    totalScore: 0,
+    maxScore: 100,
+    createdAt: "2026-05-20T00:00:00.000Z",
+    updatedAt: "2026-05-20T00:00:00.000Z",
+  };
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function setupAuthStore(username = "alice") {
   mockUseAuthStore.mockImplementation((sel: any) =>
@@ -140,12 +199,15 @@ describe("InterviewerDashboardPage()", () => {
     mockGetUsers.mockReset();
     mockAssignExamToCandidates.mockReset();
     mockGetUserPassword.mockReset();
+    mockDeleteExamTemplate.mockReset();
+    mockUpdateUser.mockReset();
     mockCopyToClipboard.mockReset();
     // Default: API returns empty
     mockGetExamSessions.mockResolvedValue([]);
     mockListExamTemplates.mockResolvedValue([]);
     mockGetUsers.mockResolvedValue([]);
     mockAssignExamToCandidates.mockResolvedValue([]);
+    mockDeleteExamTemplate.mockResolvedValue(undefined);
   });
 
   it("renders 考試管理 heading and 4 main tabs", () => {
@@ -197,6 +259,33 @@ describe("InterviewerDashboardPage()", () => {
     await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "＋ 建立模板" }));
     expect(mockNavigate).toHaveBeenCalledWith("/interviewer/templates/new");
+  });
+
+  it("templates tab: 編輯 navigates to /interviewer/templates/:id/edit", async () => {
+    setupAuthStore();
+    setupInterviewerStore([], [mockTemplate], []);
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: "編輯" }));
+
+    expect(mockNavigate).toHaveBeenCalledWith("/interviewer/templates/42/edit");
+  });
+
+  it("templates tab: 刪除 opens confirm dialog → confirm → deletes the template", async () => {
+    setupAuthStore();
+    setupInterviewerStore([], [mockTemplate], []);
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: "刪除" }));
+    // confirm dialog should appear
+    expect(
+      screen.getByText("確定要刪除此考試模板嗎？已分發的考試與歷史紀錄不會受影響。"),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "確定" }));
+
+    await waitFor(() => expect(mockDeleteExamTemplate).toHaveBeenCalledWith(42));
   });
 
   it("templates tab: shows empty state when no templates", async () => {
@@ -301,6 +390,47 @@ describe("InterviewerDashboardPage()", () => {
 
     await waitFor(() => expect(mockAssignExamToCandidates).toHaveBeenCalledWith(42, [1]));
     expect(screen.getByText("分發成功")).toBeInTheDocument();
+  });
+
+  it("assignments tab: hides in-progress and ended candidates but shows pending candidate template", async () => {
+    const candidates = [mockCandidates[0]!, pendingCandidate, activeCandidate, endedCandidate];
+    mockGetExamSessions.mockResolvedValue([
+      sessionForCandidate(pendingCandidate, "not_started", "Legacy Backend Test"),
+      sessionForCandidate(activeCandidate, "in_progress", "Running Backend Test"),
+      sessionForCandidate(endedCandidate, "submitted", "Finished Backend Test"),
+    ]);
+    mockGetSessionResult.mockResolvedValue(mockSessionResult);
+    setupAuthStore();
+    setupInterviewerStore([], [mockTemplate], candidates);
+    renderPage();
+
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: "考試分發" }));
+
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(screen.getByText("Pending Candidate")).toBeInTheDocument();
+    expect(screen.getByText("目前模板：Legacy Backend Test")).toBeInTheDocument();
+    expect(screen.getByText("尚未分配模板")).toBeInTheDocument();
+    expect(screen.queryByText("Active Candidate")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ended Candidate")).not.toBeInTheDocument();
+  });
+
+  it("assignments tab: allows selecting a pending candidate to replace their template", async () => {
+    mockGetExamSessions.mockResolvedValue([
+      sessionForCandidate(pendingCandidate, "not_started", "Legacy Backend Test"),
+    ]);
+    mockGetSessionResult.mockResolvedValue(mockSessionResult);
+    setupAuthStore();
+    setupInterviewerStore([], [mockTemplate], [pendingCandidate]);
+    renderPage();
+
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: "考試分發" }));
+    await userEvent.selectOptions(screen.getByLabelText("考試模板"), "42");
+    await userEvent.click(screen.getByRole("checkbox", { name: /Pending Candidate/ }));
+    await userEvent.click(screen.getByRole("button", { name: /確認分發/ }));
+
+    await waitFor(() => expect(mockAssignExamToCandidates).toHaveBeenCalledWith(42, [4]));
   });
 
   // ── Data fetching ─────────────────────────────────────────────────────────

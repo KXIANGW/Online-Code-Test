@@ -4,6 +4,8 @@ import { authenticate } from "../hooks/authenticate";
 import {
   createExamTemplate,
   createExamTemplateRandom,
+  updateExamTemplate,
+  deleteExamTemplate,
   listExamTemplates,
   assignExamToCandidates,
   listExamSessions,
@@ -81,6 +83,22 @@ export const examRoutes: FastifyPluginAsync = async (app) => {
   // 3. 獲取考卷模板列表（主管選範本時使用）
   app.get("/templates", { preHandler: [authenticate] }, async (request) => {
     return listExamTemplates(request.user);
+  });
+
+  app.put("/templates/:id", { preHandler: [authenticate] }, async (request) => {
+    const { id } = request.params as { id: string };
+    const examId = parsePositiveIntParam(id, "id");
+
+    const result = createManualTemplateBody.safeParse(request.body);
+    if (!result.success) throw BadRequestError(result.error.message);
+
+    return updateExamTemplate(request.user, examId, result.data);
+  });
+
+  app.delete("/templates/:id", { preHandler: [authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    await deleteExamTemplate(request.user, parsePositiveIntParam(id, "id"));
+    return reply.status(204).send();
   });
 
   // 4. 核心新增：指派指定考卷模板給多位面試者帳號（批次派考）

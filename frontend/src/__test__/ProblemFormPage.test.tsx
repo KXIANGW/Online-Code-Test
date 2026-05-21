@@ -234,33 +234,42 @@ describe("ProblemFormPage()", () => {
     });
 
     // Boundary: empty title
-    it("shows alert and does not call API when title is empty on submit", async () => {
+    it("shows inline error and does not call API when title is empty on submit", async () => {
       // given
       const user = userEvent.setup();
       setupAuthStore();
-      vi.spyOn(window, "alert").mockImplementation(() => {});
       renderCreate();
 
       // when
       await user.click(screen.getByRole("button", { name: "儲存題目" }));
 
       // expect
-      expect(window.alert).toHaveBeenCalledWith("請輸入題目名稱");
+      expect(screen.getByText("請輸入題目名稱")).toBeInTheDocument();
       expect(mockCreateProblem).not.toHaveBeenCalled();
     });
 
-    // Happy path: create problem
-    it("calls createProblem with correct data, shows success alert and navigates", async () => {
+    // Happy path: create problem (requires title, description, ≥1 public and ≥1 hidden testcase)
+    it("calls createProblem with correct data and navigates on success", async () => {
       // given
       const user = userEvent.setup();
       setupAuthStore();
       mockCreateProblem.mockResolvedValue({ ...mockProblemDetail, id: 99 });
-      vi.spyOn(window, "alert").mockImplementation(() => {});
       renderCreate();
 
-      // when
+      // when: fill in all required fields
       await user.type(screen.getByPlaceholderText("輸入題目名稱"), "New Problem");
+      await user.type(
+        screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
+        "Some description",
+      );
       await user.click(screen.getByRole("radio", { name: "hard" }));
+      // add a public testcase
+      await user.click(screen.getByRole("button", { name: "+ 新增測資" }));
+      await user.click(screen.getByRole("button", { name: "隱藏" })); // toggle to 公開
+      // add a hidden testcase
+      await user.click(screen.getByRole("button", { name: "+ 新增測資" }));
+      // second testcase defaults to 隱藏
+
       await user.click(screen.getByRole("button", { name: "儲存題目" }));
 
       // expect
@@ -271,11 +280,9 @@ describe("ProblemFormPage()", () => {
             difficulty: "hard",
             timeLimitMs: 1000,
             memoryLimitMb: 256,
-            testcases: [],
           }),
         ),
       );
-      expect(window.alert).toHaveBeenCalledWith("儲存成功！");
       expect(mockNavigate).toHaveBeenCalledWith("/problem-setter");
     });
 
@@ -293,7 +300,7 @@ describe("ProblemFormPage()", () => {
       expect(screen.getByText("測資 #1")).toBeInTheDocument();
     });
 
-    it("clicking 刪除 on a testcase removes that card", async () => {
+    it("clicking 刪除 on a testcase opens confirm dialog, confirming removes that card", async () => {
       // given
       const user = userEvent.setup();
       setupAuthStore();
@@ -301,8 +308,10 @@ describe("ProblemFormPage()", () => {
       await user.click(screen.getByRole("button", { name: "+ 新增測資" }));
       expect(screen.getByText("測資 #1")).toBeInTheDocument();
 
-      // when
+      // when: click 刪除 → dialog opens → confirm
       await user.click(screen.getByRole("button", { name: "刪除" }));
+      expect(screen.getByText(/確定要刪除測資/)).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "確定" }));
 
       // expect
       expect(screen.queryByText("測資 #1")).not.toBeInTheDocument();
@@ -323,22 +332,26 @@ describe("ProblemFormPage()", () => {
     });
 
     // Negative: API failure
-    it("shows alert when createProblem rejects", async () => {
+    it("shows inline error message when createProblem rejects", async () => {
       // given
       const user = userEvent.setup();
       setupAuthStore();
       mockCreateProblem.mockRejectedValue(new Error("Server error"));
-      vi.spyOn(window, "alert").mockImplementation(() => {});
       renderCreate();
 
-      // when
+      // when: fill in all required fields to pass client-side validation
       await user.type(screen.getByPlaceholderText("輸入題目名稱"), "Fail Problem");
+      await user.type(
+        screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
+        "Some description",
+      );
+      await user.click(screen.getByRole("button", { name: "+ 新增測資" }));
+      await user.click(screen.getByRole("button", { name: "隱藏" })); // toggle to 公開
+      await user.click(screen.getByRole("button", { name: "+ 新增測資" }));
       await user.click(screen.getByRole("button", { name: "儲存題目" }));
 
-      // expect — alert starts with "儲存失敗：" and includes the error detail
-      await waitFor(() =>
-        expect(window.alert).toHaveBeenCalledWith(expect.stringContaining("儲存失敗：")),
-      );
+      // expect — inline error appears below submit button
+      await waitFor(() => expect(screen.getByText(/儲存失敗：/)).toBeInTheDocument());
       expect(mockNavigate).not.toHaveBeenCalledWith("/problem-setter");
     });
   });
@@ -386,13 +399,12 @@ describe("ProblemFormPage()", () => {
       expect(screen.getByText("測資 #2")).toBeInTheDocument();
     });
 
-    it("calls updateProblem on submit, shows success alert and navigates", async () => {
+    it("calls updateProblem on submit and navigates on success", async () => {
       // given
       const user = userEvent.setup();
       setupAuthStore();
       mockGetProblemById.mockResolvedValue(mockProblemDetail);
       mockUpdateProblem.mockResolvedValue(mockProblemDetail);
-      vi.spyOn(window, "alert").mockImplementation(() => {});
       renderEdit(1);
       await screen.findByDisplayValue("Two Sum");
 
@@ -409,7 +421,6 @@ describe("ProblemFormPage()", () => {
           expect.objectContaining({ title: "Two Sum Updated" }),
         ),
       );
-      expect(window.alert).toHaveBeenCalledWith("儲存成功！");
       expect(mockNavigate).toHaveBeenCalledWith("/problem-setter");
     });
 

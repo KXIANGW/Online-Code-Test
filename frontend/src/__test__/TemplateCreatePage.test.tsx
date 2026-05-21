@@ -10,8 +10,10 @@ const mockNavigate = vi.hoisted(() => vi.fn());
 const mockLogout = vi.hoisted(() => vi.fn());
 const mockUseAuthStore = vi.hoisted(() => vi.fn());
 const mockGetProblems = vi.hoisted(() => vi.fn());
+const mockListExamTemplates = vi.hoisted(() => vi.fn());
 const mockCreateExamTemplateManual = vi.hoisted(() => vi.fn());
 const mockCreateExamTemplateRandom = vi.hoisted(() => vi.fn());
+const mockUpdateExamTemplate = vi.hoisted(() => vi.fn());
 const mockSetTemplates = vi.hoisted(() => vi.fn());
 const mockUseInterviewerStore = vi.hoisted(() => vi.fn());
 
@@ -25,8 +27,10 @@ vi.mock("../stores/interviewerStore", () => ({
 }));
 vi.mock("../api/client", () => ({
   getProblems: mockGetProblems,
+  listExamTemplates: mockListExamTemplates,
   createExamTemplateManual: mockCreateExamTemplateManual,
   createExamTemplateRandom: mockCreateExamTemplateRandom,
+  updateExamTemplate: mockUpdateExamTemplate,
 }));
 
 const mockCreatedTemplate = {
@@ -56,20 +60,48 @@ function renderPage() {
   );
 }
 
+function renderEditPage(id = "42") {
+  return render(
+    <MemoryRouter initialEntries={[`/interviewer/templates/${id}/edit`]}>
+      <Routes>
+        <Route path="/interviewer/templates/:id/edit" element={<TemplateCreatePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 describe("TemplateCreatePage()", () => {
   beforeEach(() => {
     mockNavigate.mockReset();
     mockLogout.mockReset();
     mockUseAuthStore.mockReset();
     mockGetProblems.mockReset();
+    mockListExamTemplates.mockReset();
     mockCreateExamTemplateManual.mockReset();
     mockCreateExamTemplateRandom.mockReset();
+    mockUpdateExamTemplate.mockReset();
     mockSetTemplates.mockReset();
     setupAuthStore();
     mockUseInterviewerStore.mockImplementation((sel: any) =>
       sel({ setTemplates: mockSetTemplates }),
     );
     mockGetProblems.mockResolvedValue(mockProblemSummaries);
+    mockListExamTemplates.mockResolvedValue([
+      {
+        ...mockCreatedTemplate,
+        title: "Existing Exam",
+        durationMinutes: 60,
+        problems: [
+          {
+            problemId: 2,
+            title: "Binary Search",
+            difficulty: "medium",
+            orderIndex: 1,
+            scoreWeight: 70,
+          },
+        ],
+      },
+    ]);
   });
 
   it("shows loading state while problems are fetching", () => {
@@ -167,5 +199,37 @@ describe("TemplateCreatePage()", () => {
 
     await waitFor(() => expect(screen.getByText("Server error")).toBeInTheDocument());
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("edit mode pre-fills template fields and selected problems", async () => {
+    renderEditPage();
+
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
+
+    expect(screen.getByRole("heading", { name: "編輯考試模板" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "考試標題" })).toHaveValue("Existing Exam");
+    expect(screen.getByRole("spinbutton", { name: "測驗時長" })).toHaveValue(60);
+
+    await userEvent.click(screen.getByRole("button", { name: /中等/ }));
+    expect(screen.getByRole("checkbox", { name: /Binary Search/ })).toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Binary Search 配分" })).toHaveValue(70);
+  });
+
+  it("edit mode calls updateExamTemplate with manual payload and navigates to /interviewer", async () => {
+    mockUpdateExamTemplate.mockResolvedValue(mockCreatedTemplate);
+    renderEditPage();
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: "更新模板" }));
+
+    await waitFor(() =>
+      expect(mockUpdateExamTemplate).toHaveBeenCalledWith(42, {
+        title: "Existing Exam",
+        durationMinutes: 60,
+        problems: [{ problemId: 2, scoreWeight: 70, orderIndex: 1 }],
+      }),
+    );
+    expect(mockSetTemplates).toHaveBeenCalledWith([]);
+    expect(mockNavigate).toHaveBeenCalledWith("/interviewer");
   });
 });

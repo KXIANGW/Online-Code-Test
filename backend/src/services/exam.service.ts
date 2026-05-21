@@ -10,7 +10,7 @@ import {
   problemTestcases,
   users,
 } from "../db/schema";
-import { and, eq, sql, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, sql, inArray, isNull } from "drizzle-orm";
 import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 import { clearSessionDrafts } from "./draft.service";
@@ -248,6 +248,68 @@ export async function createExamTemplateRandom(
   });
 }
 
+export async function updateExamTemplate(
+  currentUser: CurrentUser,
+  examId: number,
+  data: {
+    title: string;
+    durationMinutes: number;
+    problems: { problemId: number; scoreWeight: number; orderIndex: number }[];
+  },
+) {
+  if (!canManageExam(currentUser)) throw ForbiddenError();
+  assertNoDuplicates(
+    data.problems.map((p) => p.problemId),
+    "Duplicate problem assignment",
+  );
+  assertNoDuplicates(
+    data.problems.map((p) => p.orderIndex),
+    "Duplicate problem orderIndex",
+  );
+  await assertProblemsAreActive(data.problems.map((p) => p.problemId));
+
+  const [existing] = await db.select().from(exams).where(eq(exams.id, examId));
+  if (!existing || existing.deletedAt !== null) throw NotFoundError("exam template");
+  if (!currentUser.isSuperuser && existing.createdBy !== currentUser.id) throw ForbiddenError();
+
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(exams)
+      .set({
+        title: data.title,
+        durationMinutes: data.durationMinutes,
+        updatedAt: new Date(),
+      })
+      .where(eq(exams.id, examId))
+      .returning();
+
+    await tx.delete(examProblems).where(eq(examProblems.examId, examId));
+    await tx.insert(examProblems).values(
+      data.problems.map((p) => ({
+        examId,
+        problemId: p.problemId,
+        orderIndex: p.orderIndex,
+        scoreWeight: p.scoreWeight,
+      })),
+    );
+
+    return updated!;
+  });
+}
+
+export async function deleteExamTemplate(currentUser: CurrentUser, examId: number) {
+  if (!canManageExam(currentUser)) throw ForbiddenError();
+
+  const [existing] = await db.select().from(exams).where(eq(exams.id, examId));
+  if (!existing || existing.deletedAt !== null) throw NotFoundError("exam template");
+  if (!currentUser.isSuperuser && existing.createdBy !== currentUser.id) throw ForbiddenError();
+
+  await db
+    .update(exams)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(eq(exams.id, examId));
+}
+
 /**
  * 查詢現有的考卷模板列表
  */
@@ -321,7 +383,8 @@ export async function assignExamToCandidates(
   const templateProblems = await db
     .select()
     .from(examProblems)
-    .where(eq(examProblems.examId, examId));
+    .where(eq(examProblems.examId, examId))
+    .orderBy(asc(examProblems.orderIndex), asc(examProblems.id));
   const maxScore = templateProblems.reduce((sum, p) => sum + p.scoreWeight, 0);
 
   // 3. 校驗所有面試者帳號狀態
@@ -330,26 +393,83 @@ export async function assignExamToCandidates(
     if (!currentUser.isSuperuser && candidateCreatedBy !== currentUser.id) throw ForbiddenError();
   }
 
-  const activeDuplicates = await db
-    .select({ candidateId: examSessions.candidateId })
+  const existingSessions = await db
+    .select({
+      id: examSessions.id,
+      candidateId: examSessions.candidateId,
+      status: examSessions.status,
+    })
     .from(examSessions)
     .where(
       and(
-        eq(examSessions.examId, examId),
         inArray(examSessions.candidateId, data.candidateIds),
-        inArray(examSessions.status, ["not_started", "in_progress"]),
+        inArray(examSessions.status, ["not_started", "in_progress", "submitted", "expired"]),
       ),
     );
 
-  if (activeDuplicates.length > 0) {
-    throw ConflictError("Active exam session already exists for this template and candidate");
+  const sessionsByCandidateId = new Map<number, typeof existingSessions>();
+  for (const session of existingSessions) {
+    const sessions = sessionsByCandidateId.get(session.candidateId) ?? [];
+    sessions.push(session);
+    sessionsByCandidateId.set(session.candidateId, sessions);
+  }
+
+  const pendingSessionByCandidateId = new Map<number, number>();
+  for (const candidateId of data.candidateIds) {
+    const sessions = sessionsByCandidateId.get(candidateId) ?? [];
+    if (sessions.some((session) => session.status === "in_progress")) {
+      throw ConflictError("考生正在考試中，不能更換模板");
+    }
+    if (
+      sessions.some((session) => session.status === "submitted" || session.status === "expired")
+    ) {
+      throw ConflictError("考生已完成考試，不能再分發模板");
+    }
+
+    const pendingSession = sessions.find((session) => session.status === "not_started");
+    if (pendingSession) {
+      pendingSessionByCandidateId.set(candidateId, pendingSession.id);
+    }
   }
 
   // 4. 利用 Transaction 執行全成功或全失敗的批次指派
-  const createdSessions = await db.transaction(async (tx) => {
-    const createdSessions = [];
+  const changedSessionIds = await db.transaction(async (tx) => {
+    const sessionIds: number[] = [];
 
     for (const candidateId of data.candidateIds) {
+      const pendingSessionId = pendingSessionByCandidateId.get(candidateId);
+      if (pendingSessionId !== undefined) {
+        await tx
+          .update(examSessions)
+          .set({
+            examId: examTemplate.id,
+            maxScore,
+            totalScore: 0,
+            actualStartAt: null,
+            expiresAt: null,
+            submittedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(examSessions.id, pendingSessionId));
+
+        await tx
+          .delete(examSessionProblems)
+          .where(eq(examSessionProblems.examSessionId, pendingSessionId));
+
+        await tx.insert(examSessionProblems).values(
+          templateProblems.map((p) => ({
+            examSessionId: pendingSessionId,
+            problemId: p.problemId,
+            orderIndex: p.orderIndex,
+            scoreWeight: p.scoreWeight,
+            score: 0,
+          })),
+        );
+
+        sessionIds.push(pendingSessionId);
+        continue;
+      }
+
       // 插入 Exam Session
       const sessionRows = await tx
         .insert(examSessions)
@@ -375,13 +495,13 @@ export async function assignExamToCandidates(
         })),
       );
 
-      createdSessions.push(session);
+      sessionIds.push(session.id);
     }
 
-    return createdSessions;
+    return sessionIds;
   });
 
-  return getSessionDtosByIds(createdSessions.map((session) => session.id));
+  return getSessionDtosByIds(changedSessionIds);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -569,7 +689,8 @@ export async function getExamSessionProblems(currentUser: CurrentUser, sessionId
     })
     .from(examSessionProblems)
     .innerJoin(problems, eq(examSessionProblems.problemId, problems.id))
-    .where(eq(examSessionProblems.examSessionId, sessionId));
+    .where(eq(examSessionProblems.examSessionId, sessionId))
+    .orderBy(asc(examSessionProblems.orderIndex), asc(examSessionProblems.id));
 
   if (sessionProblems.length === 0) return [];
 

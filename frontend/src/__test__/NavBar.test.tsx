@@ -15,9 +15,8 @@ vi.mock("../stores/authStore", () => ({ useAuthStore: mockUseAuthStore }));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockUseAuthStore.mockImplementation(
-    (sel: (s: { username: string; logout: () => void }) => unknown) =>
-      sel({ username: "alice", logout: vi.fn() }),
+  mockUseAuthStore.mockImplementation((sel: (s: object) => unknown) =>
+    sel({ username: "alice", logout: vi.fn(), isSuperuser: false, permissions: [] }),
   );
 });
 

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { buildApp } from "./helpers/app";
 import { truncateTestTables, seedUser, loginAs } from "./helpers/db";
 import { db } from "../db/client";
-import { examSessions, problems } from "../db/schema";
+import { examSessionProblems, examSessions, problems } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { redis } from "../db/redis";
 import type { FastifyInstance } from "fastify";
@@ -119,14 +119,25 @@ async function getProblemIds(): Promise<{ easy: number; medium: number }> {
 }
 
 async function createTemplate(token: string, problemId: number): Promise<number> {
+  return createTemplateWithOptions(token, {
+    title: "Test Exam",
+    problemId,
+    scoreWeight: 100,
+  });
+}
+
+async function createTemplateWithOptions(
+  token: string,
+  { title, problemId, scoreWeight }: { title: string; problemId: number; scoreWeight: number },
+): Promise<number> {
   const res = await app.inject({
     method: "POST",
     url: "/api/exam-sessions/templates/manual",
     headers: { authorization: `Bearer ${token}` },
     payload: {
-      title: "Test Exam",
+      title,
       durationMinutes: 60,
-      problems: [{ problemId, scoreWeight: 100, orderIndex: 1 }],
+      problems: [{ problemId, scoreWeight, orderIndex: 1 }],
     },
   });
   expect(res.statusCode).toBe(201);
@@ -443,6 +454,201 @@ describe("GET /api/exam-sessions/templates", () => {
   });
 });
 
+// ── PUT /api/exam-sessions/templates/:id ──────────────────────────────────────
+
+describe("PUT /api/exam-sessions/templates/:id", () => {
+  it("interviewer updates their template for future assignments", async () => {
+    const { easy, medium } = await getProblemIds();
+    const templateId = await createTemplate(aliceToken, easy);
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/exam-sessions/templates/${templateId}`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        title: "Updated Screening",
+        durationMinutes: 75,
+        problems: [
+          { problemId: medium, scoreWeight: 70, orderIndex: 1 },
+          { problemId: easy, scoreWeight: 30, orderIndex: 2 },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ title: string; durationMinutes: number }>()).toMatchObject({
+      title: "Updated Screening",
+      durationMinutes: 75,
+    });
+
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/api/exam-sessions/templates",
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+    const [template] = listRes.json<
+      Array<{
+        title: string;
+        durationMinutes: number;
+        problems: Array<{ problemId: number; orderIndex: number; scoreWeight: number }>;
+      }>
+    >();
+    expect(template).toMatchObject({
+      title: "Updated Screening",
+      durationMinutes: 75,
+      problems: [
+        { problemId: medium, orderIndex: 1, scoreWeight: 70 },
+        { problemId: easy, orderIndex: 2, scoreWeight: 30 },
+      ],
+    });
+  });
+
+  it("does not mutate already assigned session problem snapshots", async () => {
+    const { easy, medium } = await getProblemIds();
+    const templateId = await createTemplate(aliceToken, easy);
+    const assignRes = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${templateId}/assign`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [davidId] },
+    });
+    const sessionId = assignRes.json<Array<{ id: number }>>()[0]!.id;
+
+    const updateRes = await app.inject({
+      method: "PUT",
+      url: `/api/exam-sessions/templates/${templateId}`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        title: "Changed Future Template",
+        durationMinutes: 45,
+        problems: [{ problemId: medium, scoreWeight: 100, orderIndex: 1 }],
+      },
+    });
+    expect(updateRes.statusCode).toBe(200);
+
+    const sessionProblems = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/problems`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(sessionProblems.statusCode).toBe(200);
+    expect(
+      sessionProblems.json<Array<{ problemId: number; orderIndex: number; scoreWeight: number }>>(),
+    ).toEqual([expect.objectContaining({ problemId: easy, orderIndex: 1, scoreWeight: 100 })]);
+  });
+
+  it("rejects candidate update and another interviewer's template update", async () => {
+    const { easy } = await getProblemIds();
+    const templateId = await createTemplate(aliceToken, easy);
+    const payload = {
+      title: "Forbidden",
+      durationMinutes: 60,
+      problems: [{ problemId: easy, scoreWeight: 100, orderIndex: 1 }],
+    };
+
+    const candidateRes = await app.inject({
+      method: "PUT",
+      url: `/api/exam-sessions/templates/${templateId}`,
+      headers: { authorization: `Bearer ${candToken}` },
+      payload,
+    });
+    expect(candidateRes.statusCode).toBe(403);
+
+    const bobRes = await app.inject({
+      method: "PUT",
+      url: `/api/exam-sessions/templates/${templateId}`,
+      headers: { authorization: `Bearer ${bobToken}` },
+      payload,
+    });
+    expect(bobRes.statusCode).toBe(403);
+  });
+
+  it("rejects duplicate problem assignments and duplicate orderIndex", async () => {
+    const { easy, medium } = await getProblemIds();
+    const templateId = await createTemplate(aliceToken, easy);
+
+    const duplicateProblem = await app.inject({
+      method: "PUT",
+      url: `/api/exam-sessions/templates/${templateId}`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        title: "Duplicate Problem",
+        durationMinutes: 60,
+        problems: [
+          { problemId: easy, scoreWeight: 50, orderIndex: 1 },
+          { problemId: easy, scoreWeight: 50, orderIndex: 2 },
+        ],
+      },
+    });
+    expect(duplicateProblem.statusCode).toBe(409);
+
+    const duplicateOrder = await app.inject({
+      method: "PUT",
+      url: `/api/exam-sessions/templates/${templateId}`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: {
+        title: "Duplicate Order",
+        durationMinutes: 60,
+        problems: [
+          { problemId: easy, scoreWeight: 50, orderIndex: 1 },
+          { problemId: medium, scoreWeight: 50, orderIndex: 1 },
+        ],
+      },
+    });
+    expect(duplicateOrder.statusCode).toBe(409);
+  });
+});
+
+// ── DELETE /api/exam-sessions/templates/:id ───────────────────────────────────
+
+describe("DELETE /api/exam-sessions/templates/:id", () => {
+  it("soft-deletes an owned template and prevents future assignment", async () => {
+    const { easy } = await getProblemIds();
+    const templateId = await createTemplate(aliceToken, easy);
+
+    const deleteRes = await app.inject({
+      method: "DELETE",
+      url: `/api/exam-sessions/templates/${templateId}`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+    expect(deleteRes.statusCode).toBe(204);
+
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/api/exam-sessions/templates",
+      headers: { authorization: `Bearer ${aliceToken}` },
+    });
+    expect(listRes.json<unknown[]>()).toHaveLength(0);
+
+    const assignRes = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${templateId}/assign`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [davidId] },
+    });
+    expect(assignRes.statusCode).toBe(404);
+  });
+
+  it("rejects candidate delete and another interviewer's template delete", async () => {
+    const { easy } = await getProblemIds();
+    const templateId = await createTemplate(aliceToken, easy);
+
+    const candidateRes = await app.inject({
+      method: "DELETE",
+      url: `/api/exam-sessions/templates/${templateId}`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(candidateRes.statusCode).toBe(403);
+
+    const bobRes = await app.inject({
+      method: "DELETE",
+      url: `/api/exam-sessions/templates/${templateId}`,
+      headers: { authorization: `Bearer ${bobToken}` },
+    });
+    expect(bobRes.statusCode).toBe(403);
+  });
+});
+
 // ── POST /api/exam-sessions/templates/:id/assign ──────────────────────────────
 
 describe("POST /api/exam-sessions/templates/:id/assign", () => {
@@ -500,7 +706,117 @@ describe("POST /api/exam-sessions/templates/:id/assign", () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it("rejects assigning the same active template to the same candidate twice", async () => {
+  it("updates an existing pending session when assigning a new template to the same candidate", async () => {
+    const { easy, medium } = await getProblemIds();
+    const originalTemplateId = await createTemplateWithOptions(aliceToken, {
+      title: "Original Exam",
+      problemId: easy,
+      scoreWeight: 30,
+    });
+    const replacementTemplateId = await createTemplateWithOptions(aliceToken, {
+      title: "Replacement Exam",
+      problemId: medium,
+      scoreWeight: 70,
+    });
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${originalTemplateId}/assign`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [davidId] },
+    });
+    expect(first.statusCode).toBe(201);
+    const originalSession =
+      first.json<Array<{ id: number; examId: number; maxScore: number }>>()[0]!;
+    expect(originalSession.examId).toBe(originalTemplateId);
+    expect(originalSession.maxScore).toBe(30);
+
+    const reassigned = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${replacementTemplateId}/assign`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [davidId] },
+    });
+    expect(reassigned.statusCode).toBe(201);
+
+    const updatedSession =
+      reassigned.json<
+        Array<{ id: number; examId: number; examTitle: string; maxScore: number; status: string }>
+      >()[0]!;
+    expect(updatedSession.id).toBe(originalSession.id);
+    expect(updatedSession.examId).toBe(replacementTemplateId);
+    expect(updatedSession.examTitle).toBe("Replacement Exam");
+    expect(updatedSession.maxScore).toBe(70);
+    expect(updatedSession.status).toBe("not_started");
+
+    const snapshotRows = await db
+      .select({
+        problemId: examSessionProblems.problemId,
+        scoreWeight: examSessionProblems.scoreWeight,
+      })
+      .from(examSessionProblems)
+      .where(eq(examSessionProblems.examSessionId, originalSession.id));
+    expect(snapshotRows).toEqual([{ problemId: medium, scoreWeight: 70 }]);
+  });
+
+  it("rejects assigning a template to a candidate who is currently taking an exam", async () => {
+    const { easy, medium } = await getProblemIds();
+    const activeSessionId = await createSession(aliceToken, davidId, easy);
+    const replacementTemplateId = await createTemplate(aliceToken, medium);
+
+    const start = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${activeSessionId}/start`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(start.statusCode).toBe(200);
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/templates/${replacementTemplateId}/assign`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { candidateIds: [davidId] },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ message: string }>().message).toBe("考生正在考試中，不能更換模板");
+  });
+
+  it("rejects assigning a template to a candidate who has submitted or expired an exam", async () => {
+    const { easy, medium } = await getProblemIds();
+    const submittedSessionId = await createSession(aliceToken, davidId, easy);
+    const expiredSessionId = await createSession(aliceToken, graceId, easy);
+    const replacementTemplateId = await createTemplate(aliceToken, medium);
+
+    await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${submittedSessionId}/start`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    const submit = await app.inject({
+      method: "POST",
+      url: `/api/exam-sessions/${submittedSessionId}/submit`,
+      headers: { authorization: `Bearer ${candToken}` },
+    });
+    expect(submit.statusCode).toBe(200);
+
+    await db
+      .update(examSessions)
+      .set({ status: "expired" })
+      .where(eq(examSessions.id, expiredSessionId));
+
+    for (const candidateId of [davidId, graceId]) {
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/exam-sessions/templates/${replacementTemplateId}/assign`,
+        headers: { authorization: `Bearer ${aliceToken}` },
+        payload: { candidateIds: [candidateId] },
+      });
+      expect(res.statusCode).toBe(409);
+      expect(res.json<{ message: string }>().message).toBe("考生已完成考試，不能再分發模板");
+    }
+  });
+
+  it("allows assigning a new session after the candidate's prior session is cancelled", async () => {
     const { easy } = await getProblemIds();
     const templateId = await createTemplate(aliceToken, easy);
 
@@ -511,14 +827,6 @@ describe("POST /api/exam-sessions/templates/:id/assign", () => {
       payload: { candidateIds: [davidId] },
     });
     expect(first.statusCode).toBe(201);
-
-    const duplicate = await app.inject({
-      method: "POST",
-      url: `/api/exam-sessions/templates/${templateId}/assign`,
-      headers: { authorization: `Bearer ${aliceToken}` },
-      payload: { candidateIds: [davidId] },
-    });
-    expect(duplicate.statusCode).toBe(409);
 
     const sessionId = first.json<Array<{ id: number }>>()[0]!.id;
     await app.inject({
@@ -880,8 +1188,8 @@ describe("GET /api/exam-sessions/:id/problems", () => {
         title: "Problems Test Exam",
         durationMinutes: 90,
         problems: [
-          { problemId: easy, scoreWeight: 30, orderIndex: 1 },
           { problemId: medium, scoreWeight: 70, orderIndex: 2 },
+          { problemId: easy, scoreWeight: 30, orderIndex: 1 },
         ],
       },
     });
@@ -910,7 +1218,8 @@ describe("GET /api/exam-sessions/:id/problems", () => {
       }[]
     >();
     expect(body).toHaveLength(2);
-    expect(body.map((p) => p.orderIndex).sort()).toEqual([1, 2]);
+    expect(body.map((p) => p.orderIndex)).toEqual([1, 2]);
+    expect(body.map((p) => p.title)).toEqual(["Two Sum", "Binary Search"]);
     expect(body[0]!.descriptionMd).toBeDefined();
     expect(body[0]!.outputLimitKb).toBeDefined();
     expect(Array.isArray(body[0]!.languageLimits)).toBe(true);

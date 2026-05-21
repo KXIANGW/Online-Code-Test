@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { NavBar } from "../components/NavBar";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { EditCandidateDialog } from "../components/EditCandidateDialog";
 import { useInterviewerStore } from "../stores/interviewerStore";
 import { Toaster } from "react-hot-toast";
 import {
@@ -10,12 +12,14 @@ import {
   getUsers,
   assignExamToCandidates,
   getUserPassword,
+  deleteExamTemplate,
 } from "../api/client";
-import type { ExamStatus, SessionResult, ExamTemplate, UserSummary } from "../types";
+import type { ExamSession, ExamStatus, SessionResult, ExamTemplate, UserSummary } from "../types";
 import { STATUS_COLOR, STATUS_LABEL } from "../config/examStatus";
 import { DIFFICULTY_LABEL } from "../config/difficulty";
 import { ROUTES } from "../config/routes";
 import { copyToClipboard } from "../utils/clipboard";
+import { getAssignableCandidates } from "../utils/assignmentEligibility";
 
 function maskPassword(pw: string): string {
   if (pw.length <= 6) return "*".repeat(pw.length);
@@ -96,9 +100,12 @@ export default function InterviewerDashboardPage() {
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignSuccess, setAssignSuccess] = useState<string | null>(null);
+  const [assignmentSessions, setAssignmentSessions] = useState<ExamSession[]>([]);
   const [candidatePasswords, setCandidatePasswords] = useState<Map<number, string>>(
     () => new Map(),
   );
+  const [templateToDelete, setTemplateToDelete] = useState<number | null>(null);
+  const [editingCandidate, setEditingCandidate] = useState<UserSummary | null>(null);
 
   useEffect(() => {
     loadDashboardData().finally(() => setLoading(false));
@@ -110,6 +117,7 @@ export default function InterviewerDashboardPage() {
       listExamTemplates(),
       getUsers(),
     ]);
+    setAssignmentSessions(sessions);
     const resultList = await Promise.all(sessions.map((s) => getSessionResult(s.id)));
     setResults(resultList);
     setTemplates(templateList);
@@ -166,12 +174,24 @@ export default function InterviewerDashboardPage() {
     }
   }
 
+  function handleDeleteTemplate(templateId: number) {
+    setTemplateToDelete(templateId);
+  }
+
+  async function handleConfirmDeleteTemplate() {
+    if (templateToDelete === null) return;
+    await deleteExamTemplate(templateToDelete);
+    setTemplateToDelete(null);
+    await loadDashboardData();
+  }
+
   const filteredRecords =
     recordTab === "all"
       ? results
       : recordTab === "ended"
         ? results.filter((r) => r.status === "submitted" || r.status === "expired")
         : results.filter((r) => r.status === recordTab);
+  const assignableCandidates = getAssignableCandidates(candidates, assignmentSessions);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -234,7 +254,7 @@ export default function InterviewerDashboardPage() {
                               {new Date(c.createdAt).toLocaleDateString("zh-TW")}
                             </p>
                           </div>
-                          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2">
+                          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
                             <span className="text-xs text-slate-400">密碼：</span>
                             {plainPwd !== undefined ? (
                               <>
@@ -267,6 +287,13 @@ export default function InterviewerDashboardPage() {
                             ) : (
                               <span className="text-xs text-slate-400">—</span>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => setEditingCandidate(c)}
+                              className="ml-auto rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                            >
+                              編輯
+                            </button>
                           </div>
                         </div>
                       );
@@ -300,11 +327,31 @@ export default function InterviewerDashboardPage() {
                       return (
                         <div key={t.id} className="bg-white rounded-xl border border-slate-200 p-5">
                           <div className="space-y-1">
-                            <p className="font-medium text-slate-800">{t.title}</p>
-                            <p className="text-xs text-slate-400">
-                              {t.durationMinutes} 分鐘 ·{" "}
-                              {new Date(t.createdAt).toLocaleDateString("zh-TW")}
-                            </p>
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium text-slate-800">{t.title}</p>
+                                <p className="text-xs text-slate-400">
+                                  {t.durationMinutes} 分鐘 ·{" "}
+                                  {new Date(t.createdAt).toLocaleDateString("zh-TW")}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(ROUTES.templateEdit(t.id))}
+                                  className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                                >
+                                  編輯
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDeleteTemplate(t.id)}
+                                  className="text-xs font-medium text-red-500 hover:text-red-700"
+                                >
+                                  刪除
+                                </button>
+                              </div>
+                            </div>
                           </div>
                           {templateProblems.length > 0 && (
                             <div className="mt-4 border-t border-slate-100 pt-3">
@@ -368,11 +415,11 @@ export default function InterviewerDashboardPage() {
 
                   <div>
                     <p className="block text-xs font-semibold text-slate-500 mb-2">選擇考生</p>
-                    {candidates.length === 0 ? (
+                    {assignableCandidates.length === 0 ? (
                       <p className="text-sm text-slate-400 py-4">目前沒有考生可分發</p>
                     ) : (
                       <div className="space-y-2 max-h-72 overflow-auto pr-1">
-                        {candidates.map((candidate) => {
+                        {assignableCandidates.map(({ candidate, pendingSession }) => {
                           const name = candidate.displayName ?? candidate.username;
                           return (
                             <label
@@ -385,6 +432,11 @@ export default function InterviewerDashboardPage() {
                                 </span>
                                 <span className="block text-xs text-slate-400">
                                   @{candidate.username}
+                                </span>
+                                <span className="block text-xs text-slate-500 mt-1">
+                                  {pendingSession
+                                    ? `目前模板：${pendingSession.examTitle}`
+                                    : "尚未分配模板"}
                                 </span>
                               </span>
                               <input
@@ -447,6 +499,25 @@ export default function InterviewerDashboardPage() {
         )}
       </main>
       <Toaster position="bottom-center" reverseOrder={false} />
+      <ConfirmDialog
+        open={templateToDelete !== null}
+        title="刪除考試模板"
+        message="確定要刪除此考試模板嗎？已分發的考試與歷史紀錄不會受影響。"
+        onConfirm={handleConfirmDeleteTemplate}
+        onCancel={() => setTemplateToDelete(null)}
+      />
+      <EditCandidateDialog
+        open={editingCandidate !== null}
+        candidate={editingCandidate}
+        onClose={() => setEditingCandidate(null)}
+        onSaved={(id, newDisplayName) => {
+          setCandidates(
+            candidates.map((c) => (c.id === id ? { ...c, displayName: newDisplayName } : c)),
+          );
+          setEditingCandidate(null);
+          loadDashboardData();
+        }}
+      />
     </div>
   );
 }

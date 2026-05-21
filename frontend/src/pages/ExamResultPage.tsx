@@ -28,6 +28,10 @@ const VERDICT_COLOR: Record<string, string> = {
   judging: "text-blue-500",
 };
 
+function testcaseLabel(tc: TestcaseResult) {
+  return `${tc.isPublic ? "公開測資" : "隱藏測資"} ${tc.orderIndex}`;
+}
+
 export default function ExamResultPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -49,7 +53,9 @@ export default function ExamResultPage() {
     Promise.all([getSessionResult(Number(id)), listSessionSubmissions(Number(id))])
       .then(([sessionResult, submissionHistory]) => {
         setResult(sessionResult);
-        setSubmissions(submissionHistory);
+        setSubmissions(
+          submissionHistory.filter((submission) => submission.submissionType === "formal"),
+        );
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
@@ -91,10 +97,7 @@ export default function ExamResultPage() {
     setHistoryTcCache((prev) => ({ ...prev, [submissionId]: "loading" }));
     getSubmissionDetail(Number(id), submissionId)
       .then((detail) =>
-        setHistoryTcCache((prev) => ({
-          ...prev,
-          [submissionId]: detail.testcaseResults.filter((tc) => tc.isPublic),
-        })),
+        setHistoryTcCache((prev) => ({ ...prev, [submissionId]: detail.testcaseResults })),
       )
       .catch(() => setHistoryTcCache((prev) => ({ ...prev, [submissionId]: "error" })));
   }
@@ -208,30 +211,28 @@ export default function ExamResultPage() {
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                {tcState
-                                  .filter((tc) => !tc.isPublic)
-                                  .map((tc) => (
-                                    <tr key={tc.id}>
-                                      <td className="py-2 text-slate-600">測資 {tc.orderIndex}</td>
-                                      <td
-                                        className={`py-2 font-medium ${
-                                          TC_VERDICT_COLOR[tc.verdict] ?? "text-slate-600"
-                                        }`}
-                                      >
-                                        {tc.verdict}
-                                      </td>
-                                      <td className="py-2 text-slate-600">
-                                        {tc.verdict === "skipped" || tc.runtimeMs === null
-                                          ? "—"
-                                          : `${tc.runtimeMs} ms`}
-                                      </td>
-                                      <td className="py-2 text-slate-600">
-                                        {tc.verdict === "skipped" || tc.memoryKb === null
-                                          ? "—"
-                                          : `${tc.memoryKb} KB`}
-                                      </td>
-                                    </tr>
-                                  ))}
+                                {tcState.map((tc) => (
+                                  <tr key={tc.id}>
+                                    <td className="py-2 text-slate-600">{testcaseLabel(tc)}</td>
+                                    <td
+                                      className={`py-2 font-medium ${
+                                        TC_VERDICT_COLOR[tc.verdict] ?? "text-slate-600"
+                                      }`}
+                                    >
+                                      {tc.verdict}
+                                    </td>
+                                    <td className="py-2 text-slate-600">
+                                      {tc.verdict === "skipped" || tc.runtimeMs === null
+                                        ? "—"
+                                        : `${tc.runtimeMs} ms`}
+                                    </td>
+                                    <td className="py-2 text-slate-600">
+                                      {tc.verdict === "skipped" || tc.memoryKb === null
+                                        ? "—"
+                                        : `${tc.memoryKb} KB`}
+                                    </td>
+                                  </tr>
+                                ))}
                               </tbody>
                             </table>
                           )}
@@ -285,10 +286,10 @@ export default function ExamResultPage() {
                           <button
                             type="button"
                             onClick={() => toggleHistoryDetail(submission.id)}
-                            aria-label={`查看公開測資：提交 ${submission.id}`}
+                            aria-label={`查看詳細測資：提交 ${submission.id}`}
                             className="text-xs text-blue-600 hover:text-blue-800 transition-colors whitespace-nowrap"
                           >
-                            {isExpanded ? "收合公開測資 ▲" : "查看公開測資"}
+                            {isExpanded ? "收合詳細測資 ▲" : "查看詳細測資"}
                           </button>
                         </div>
 
@@ -296,17 +297,17 @@ export default function ExamResultPage() {
                           <div className="border-t border-slate-100 bg-slate-50 px-5 pb-4">
                             {tcState === "loading" && (
                               <p className="py-3 text-center text-xs text-slate-400">
-                                載入公開測資中...
+                                載入詳細測資中...
                               </p>
                             )}
                             {tcState === "error" && (
                               <p className="py-3 text-center text-xs text-red-500">
-                                無法載入公開測資結果
+                                無法載入詳細測資結果
                               </p>
                             )}
                             {Array.isArray(tcState) && tcState.length === 0 && (
                               <p className="py-3 text-center text-xs text-slate-400">
-                                無公開測資結果
+                                無詳細測資結果
                               </p>
                             )}
                             {Array.isArray(tcState) && tcState.length > 0 && (
@@ -322,9 +323,7 @@ export default function ExamResultPage() {
                                 <tbody className="divide-y divide-slate-100">
                                   {tcState.map((tc) => (
                                     <tr key={tc.id}>
-                                      <td className="py-2 text-slate-600">
-                                        公開測資 {tc.orderIndex}
-                                      </td>
+                                      <td className="py-2 text-slate-600">{testcaseLabel(tc)}</td>
                                       <td
                                         className={`py-2 font-medium ${
                                           TC_VERDICT_COLOR[tc.verdict] ?? "text-slate-600"

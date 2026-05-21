@@ -235,6 +235,24 @@ describe("ExamPage", () => {
     expect(problemTabs).toHaveLength(2);
   });
 
+  it("renders problem tabs by orderIndex even when API returns them out of order", async () => {
+    mockGetExamSessionProblems.mockResolvedValue([
+      mockExamPageProblems[1]!,
+      mockExamPageProblems[0]!,
+    ]);
+
+    await renderExamPage();
+
+    const problemTabs = screen
+      .getAllByRole("tab")
+      .filter((tab) => /^\d+\./.test(tab.textContent ?? ""));
+    expect(problemTabs.map((tab) => tab.textContent)).toEqual(["1. Two Sum", "2. Binary Search"]);
+    expect(screen.getByRole("tab", { name: "1. Two Sum" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
   it("renders timer with placeholder '--:--:--' when exam not started", async () => {
     // given
     await renderExamPage();
@@ -1418,6 +1436,41 @@ describe("ExamPage", () => {
     const panel = screen.getByLabelText("底部面板");
     expect(within(panel).getByText("1. Two Sum")).toBeInTheDocument();
     expect(within(panel).getByText("AC")).toBeInTheDocument();
+  });
+
+  it("marks a formal judge result as final even when the score is 0", async () => {
+    mockListSessionSubmissions.mockResolvedValue([
+      {
+        ...mockSubmissions[1]!,
+        id: 9002,
+        verdict: null,
+        score: 0,
+        isFinalSubmission: false,
+      },
+    ]);
+    await renderExamPage();
+
+    act(() => {
+      realtimeHandler?.({
+        type: "judge_result",
+        sessionId: 42,
+        submissionId: 9002,
+        examSessionProblemId: 101,
+        submissionType: "formal",
+        status: "done",
+        verdict: "WA",
+        runtimeMs: 12,
+        memoryKb: 1024,
+        judgedAt: "2026-01-01T00:10:02.000Z",
+        score: 0,
+        testcaseResults: [],
+      });
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+
+    expect(screen.getByText("WA")).toBeInTheDocument();
+    expect(screen.getByText("最終提交")).toBeInTheDocument();
   });
 
   it("submitting on problem 2 does not pollute problem 1 history tab", async () => {

@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { NavBar } from "../components/NavBar";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import axios from "axios";
 import {
   createProblem,
@@ -159,6 +160,13 @@ export default function ProblemFormPage() {
 
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<{
+    title?: string;
+    description?: string;
+    testcases?: string;
+    api?: string;
+  }>({});
+  const [tcDeleteIndex, setTcDeleteIndex] = useState<number | null>(null);
 
   // Form fields
   const [title, setTitle] = useState("");
@@ -228,10 +236,21 @@ export default function ProblemFormPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) {
-      alert("請輸入題目名稱");
-      return;
+
+    if (!isEdit) {
+      const newErrors: typeof errors = {};
+      if (!title.trim()) newErrors.title = "請輸入題目名稱";
+      if (!descriptionMd.trim()) newErrors.description = "請輸入題目描述";
+      const pubCount = testcases.filter((tc) => tc.isPublic).length;
+      const hidCount = testcases.filter((tc) => !tc.isPublic).length;
+      if (pubCount === 0) newErrors.testcases = "至少需要 1 筆公開測資";
+      else if (hidCount === 0) newErrors.testcases = "至少需要 1 筆隱藏測資";
+      if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors);
+        return;
+      }
     }
+    setErrors({});
 
     setSaving(true);
     try {
@@ -283,13 +302,12 @@ export default function ProblemFormPage() {
         });
       }
 
-      alert("儲存成功！");
       navigate(ROUTES.PROBLEM_SETTER);
     } catch (err) {
       const detail = axios.isAxiosError(err)
         ? ((err.response?.data as { message?: string })?.message ?? err.message)
         : String(err);
-      alert(`儲存失敗：${detail}`);
+      setErrors({ api: detail });
     } finally {
       setSaving(false);
     }
@@ -335,6 +353,7 @@ export default function ProblemFormPage() {
                 placeholder="輸入題目名稱"
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
+              {errors.title && <p className="text-xs text-red-500 mt-1">{errors.title}</p>}
             </div>
 
             <div>
@@ -436,6 +455,9 @@ export default function ProblemFormPage() {
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-mono text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 resize-y"
               />
             )}
+            {errors.description && (
+              <p className="text-xs text-red-500 mt-1">{errors.description}</p>
+            )}
           </section>
 
           {/* ── 測試資料 ── */}
@@ -456,10 +478,12 @@ export default function ProblemFormPage() {
                   row={tc}
                   onTogglePublic={() => togglePublic(i)}
                   onFileUpload={(field, file) => handleFileUpload(i, field, file)}
-                  onDelete={() => removeTestcase(i)}
+                  onDelete={() => setTcDeleteIndex(i)}
                 />
               ))}
             </div>
+
+            {errors.testcases && <p className="text-xs text-red-500">{errors.testcases}</p>}
 
             <button
               type="button"
@@ -471,24 +495,39 @@ export default function ProblemFormPage() {
           </section>
 
           {/* ── Actions ── */}
-          <div className="flex justify-end gap-3 pb-8">
-            <button
-              type="button"
-              onClick={() => navigate(ROUTES.PROBLEM_SETTER)}
-              className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
-            >
-              取消
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-2xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 transition"
-            >
-              {saving ? "儲存中..." : "儲存題目"}
-            </button>
+          <div className="flex flex-col items-end gap-2 pb-8">
+            {errors.api && (
+              <p className="text-xs text-red-500 self-stretch">儲存失敗：{errors.api}</p>
+            )}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => navigate(ROUTES.PROBLEM_SETTER)}
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-2xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 transition"
+              >
+                {saving ? "儲存中..." : "儲存題目"}
+              </button>
+            </div>
           </div>
         </form>
       </main>
+      <ConfirmDialog
+        open={tcDeleteIndex !== null}
+        title="刪除測資"
+        message={`確定要刪除測資 #${(tcDeleteIndex ?? 0) + 1} 嗎？`}
+        onConfirm={() => {
+          if (tcDeleteIndex !== null) removeTestcase(tcDeleteIndex);
+          setTcDeleteIndex(null);
+        }}
+        onCancel={() => setTcDeleteIndex(null)}
+      />
     </div>
   );
 }

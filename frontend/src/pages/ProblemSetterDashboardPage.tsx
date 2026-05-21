@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getProblems, deleteProblem } from "../api/client";
 import { NavBar } from "../components/NavBar";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import type { Difficulty, ProblemSummary } from "../types";
 import { DIFFICULTY_LABEL, DIFFICULTY_BADGE_COLOR } from "../config/difficulty";
 import { ROUTES } from "../config/routes";
@@ -25,6 +26,7 @@ export default function ProblemSetterDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [difficultyFilter, setDifficultyFilter] = useState<DifficultyFilter>("all");
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -43,10 +45,17 @@ export default function ProblemSetterDashboardPage() {
   });
 
   function handleDelete(id: number) {
-    if (!confirm("確定要刪除這道題目嗎？此操作無法復原。")) return;
-    deleteProblem(id)
-      .then(() => setProblems((prev) => prev.filter((p) => p.id !== id)))
-      .catch(() => alert("刪除失敗，請稍後再試。"));
+    setDeleteTarget(id);
+  }
+
+  async function handleConfirmDelete() {
+    if (deleteTarget === null) return;
+    try {
+      await deleteProblem(deleteTarget);
+      setProblems((prev) => prev.filter((p) => p.id !== deleteTarget));
+    } finally {
+      setDeleteTarget(null);
+    }
   }
 
   return (
@@ -168,6 +177,13 @@ export default function ProblemSetterDashboardPage() {
           </div>
         </section>
       </main>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="刪除題目"
+        message="確定要刪除這道題目嗎？此操作無法復原。"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
