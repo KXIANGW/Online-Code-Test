@@ -16,11 +16,10 @@ import { DIFFICULTY_LABEL } from "../config/difficulty";
 import { ROUTES } from "../config/routes";
 import { copyToClipboard } from "../utils/clipboard";
 
-type PasswordState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "error" }
-  | { status: "ready"; value: string };
+function maskPassword(pw: string): string {
+  if (pw.length <= 6) return "*".repeat(pw.length);
+  return pw.slice(0, 3) + "*".repeat(pw.length - 6) + pw.slice(-3);
+}
 
 type MainTab = "candidates" | "templates" | "assignments" | "records";
 type RecordTab = "all" | "in_progress" | "not_started" | "ended";
@@ -96,8 +95,7 @@ export default function InterviewerDashboardPage() {
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignSuccess, setAssignSuccess] = useState<string | null>(null);
-  const [pwdStates, setPwdStates] = useState<Map<number, PasswordState>>(() => new Map());
-  const [pwdVisible, setPwdVisible] = useState<Map<number, boolean>>(() => new Map());
+  const [candidatePasswords, setCandidatePasswords] = useState<Map<number, string>>(() => new Map());
 
   useEffect(() => {
     loadDashboardData().finally(() => setLoading(false));
@@ -112,24 +110,19 @@ export default function InterviewerDashboardPage() {
     const resultList = await Promise.all(sessions.map((s) => getSessionResult(s.id)));
     setResults(resultList);
     setTemplates(templateList);
-    setCandidates(userList.filter((u) => u.roles.includes("candidate")));
-  }
+    const candidateUsers = userList.filter((u) => u.roles.includes("candidate"));
+    setCandidates(candidateUsers);
 
-  function handleFetchPassword(candidateId: number) {
-    const cur = pwdStates.get(candidateId);
-    if (cur?.status === "loading" || cur?.status === "ready") return;
-    setPwdStates((prev) => new Map(prev).set(candidateId, { status: "loading" }));
-    getUserPassword(candidateId)
-      .then(({ password }) =>
-        setPwdStates((prev) => new Map(prev).set(candidateId, { status: "ready", value: password })),
-      )
-      .catch(() =>
-        setPwdStates((prev) => new Map(prev).set(candidateId, { status: "error" })),
-      );
-  }
-
-  function togglePasswordVisible(candidateId: number) {
-    setPwdVisible((prev) => new Map(prev).set(candidateId, !prev.get(candidateId)));
+    const pwResults = await Promise.allSettled(
+      candidateUsers.map((c) =>
+        getUserPassword(c.id).then((r) => [c.id, r.password] as [number, string]),
+      ),
+    );
+    const pwMap = new Map<number, string>();
+    pwResults.forEach((r) => {
+      if (r.status === "fulfilled") pwMap.set(r.value[0], r.value[1]);
+    });
+    setCandidatePasswords(pwMap);
   }
 
   function toggleCandidate(candidateId: number) {
@@ -224,8 +217,7 @@ export default function InterviewerDashboardPage() {
                 ) : (
                   <div className="space-y-2">
                     {candidates.map((c: UserSummary) => {
-                      const pwd = pwdStates.get(c.id) ?? { status: "idle" };
-                      const visible = pwdVisible.get(c.id) ?? false;
+                      const plainPwd = candidatePasswords.get(c.id);
                       return (
                         <div
                           key={c.id}
@@ -242,39 +234,16 @@ export default function InterviewerDashboardPage() {
                               {new Date(c.createdAt).toLocaleDateString("zh-TW")}
                             </p>
                           </div>
-                          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+                          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2">
                             <span className="text-xs text-slate-400">密碼：</span>
-                            {pwd.status === "idle" && (
-                              <button
-                                type="button"
-                                onClick={() => handleFetchPassword(c.id)}
-                                className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
-                              >
-                                查看密碼
-                              </button>
-                            )}
-                            {pwd.status === "loading" && (
-                              <span className="text-xs text-slate-400">載入中...</span>
-                            )}
-                            {pwd.status === "error" && (
-                              <span className="text-xs text-red-500">無法取得密碼</span>
-                            )}
-                            {pwd.status === "ready" && (
+                            {plainPwd !== undefined ? (
                               <>
-                                <span className="font-mono text-xs text-slate-800 select-all">
-                                  {visible ? pwd.value : "••••••••"}
+                                <span className="font-mono text-xs text-slate-700">
+                                  {maskPassword(plainPwd)}
                                 </span>
                                 <button
                                   type="button"
-                                  onClick={() => togglePasswordVisible(c.id)}
-                                  aria-label={visible ? `隱藏 ${c.username} 密碼` : `顯示 ${c.username} 密碼`}
-                                  className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
-                                >
-                                  {visible ? "隱藏" : "顯示"}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => copyToClipboard(pwd.value)}
+                                  onClick={() => copyToClipboard(plainPwd)}
                                   aria-label={`複製 ${c.username} 密碼`}
                                   className="text-slate-400 hover:text-slate-700 transition-colors"
                                 >
@@ -295,6 +264,8 @@ export default function InterviewerDashboardPage() {
                                   </svg>
                                 </button>
                               </>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
                             )}
                           </div>
                         </div>

@@ -324,6 +324,7 @@ describe("InterviewerDashboardPage()", () => {
     mockGetSessionResult.mockResolvedValue(mockSessionResult);
     mockListExamTemplates.mockResolvedValue([mockTemplate]);
     mockGetUsers.mockResolvedValue(mockUserSummaries);
+    mockGetUserPassword.mockResolvedValue({ password: "Passw0rd!" });
 
     renderPage();
 
@@ -335,116 +336,110 @@ describe("InterviewerDashboardPage()", () => {
     });
   });
 
-  // ── Candidate password reveal (考生帳號 tab) ─────────────────────────────
+  // ── Candidate masked password display (考生帳號 tab) ────────────────────────
 
-  describe("candidate password reveal in 考生帳號 tab", () => {
-    beforeEach(async () => {
+  describe("candidate masked password display in 考生帳號 tab", () => {
+    it("shows masked password (first 3 + stars + last 3) after load", async () => {
+      // given: getUserPassword resolves with "Passw0rd!" (9 chars → "Pas***rd!")
       setupAuthStore();
       setupInterviewerStore([], [], mockCandidates);
+      mockGetUsers.mockResolvedValue(mockUserSummaries);
+      mockGetUserPassword.mockResolvedValue({ password: "Passw0rd!" });
+
+      renderPage();
+      await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+      // when
+      await userEvent.click(screen.getByRole("button", { name: "考生帳號" }));
+
+      // expect: masked form shown, full plaintext hidden
+      await waitFor(() => expect(screen.getByText("Pas***rd!")).toBeInTheDocument());
+      expect(screen.queryByText("Passw0rd!")).not.toBeInTheDocument();
+    });
+
+    it("does not render a 查看密碼 button — password is displayed directly", async () => {
+      // given
+      setupAuthStore();
+      setupInterviewerStore([], [], mockCandidates);
+      mockGetUsers.mockResolvedValue(mockUserSummaries);
+      mockGetUserPassword.mockResolvedValue({ password: "Passw0rd!" });
+
+      renderPage();
+      await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+      // when
+      await userEvent.click(screen.getByRole("button", { name: "考生帳號" }));
+
+      // expect: no on-demand reveal button
+      expect(screen.queryByRole("button", { name: "查看密碼" })).not.toBeInTheDocument();
+    });
+
+    it("copy button calls copyToClipboard with full plaintext password", async () => {
+      // given
+      setupAuthStore();
+      setupInterviewerStore([], [], mockCandidates);
+      mockGetUsers.mockResolvedValue(mockUserSummaries);
+      mockGetUserPassword.mockResolvedValue({ password: "Passw0rd!" });
+
       renderPage();
       await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
       await userEvent.click(screen.getByRole("button", { name: "考生帳號" }));
-    });
+      await waitFor(() => expect(screen.getByText("Pas***rd!")).toBeInTheDocument());
 
-    it("shows 查看密碼 button next to each candidate in idle state", () => {
-      // given: password state is idle (no API call yet)
-      // expect
-      expect(screen.getByRole("button", { name: "查看密碼" })).toBeInTheDocument();
-    });
+      // when: click copy icon
+      await userEvent.click(screen.getByRole("button", { name: /複製.*密碼/ }));
 
-    it("shows 載入中... while getUserPassword is in flight", async () => {
-      // given: API never resolves
-      const user = userEvent.setup();
-      mockGetUserPassword.mockReturnValue(new Promise(() => {}));
-
-      // when
-      await user.click(screen.getByRole("button", { name: "查看密碼" }));
-
-      // expect: idle button disappears, loading span appears
-      expect(screen.queryByRole("button", { name: "查看密碼" })).not.toBeInTheDocument();
-      expect(screen.getByText("載入中...")).toBeInTheDocument();
-    });
-
-    it("shows masked password by default after successful fetch", async () => {
-      // given
-      const user = userEvent.setup();
-      mockGetUserPassword.mockResolvedValue({ password: "Passw0rd!" });
-
-      // when
-      await user.click(screen.getByRole("button", { name: "查看密碼" }));
-
-      // expect: dots appear, plaintext hidden
-      await waitFor(() => expect(screen.getByText("••••••••")).toBeInTheDocument());
-      expect(screen.queryByText("Passw0rd!")).not.toBeInTheDocument();
-    });
-
-    it("reveals password when 顯示 is clicked, masks again when 隱藏 is clicked", async () => {
-      // given
-      const user = userEvent.setup();
-      mockGetUserPassword.mockResolvedValue({ password: "Passw0rd!" });
-      await user.click(screen.getByRole("button", { name: "查看密碼" }));
-      await screen.findByText("••••••••");
-
-      // when: reveal
-      await user.click(screen.getByRole("button", { name: /顯示.*密碼/ }));
-      expect(screen.getByText("Passw0rd!")).toBeInTheDocument();
-      expect(screen.queryByText("••••••••")).not.toBeInTheDocument();
-
-      // when: re-mask
-      await user.click(screen.getByRole("button", { name: /隱藏.*密碼/ }));
-      expect(screen.getByText("••••••••")).toBeInTheDocument();
-      expect(screen.queryByText("Passw0rd!")).not.toBeInTheDocument();
-    });
-
-    it("copy icon button calls copyToClipboard with the plaintext password", async () => {
-      // given
-      const user = userEvent.setup();
-      mockGetUserPassword.mockResolvedValue({ password: "Passw0rd!" });
-      await user.click(screen.getByRole("button", { name: "查看密碼" }));
-      await screen.findByText("••••••••");
-
-      // when
-      await user.click(screen.getByRole("button", { name: /複製.*密碼/ }));
-
-      // expect
+      // expect: called with the FULL plaintext, not the masked form
       expect(mockCopyToClipboard).toHaveBeenCalledWith("Passw0rd!");
     });
 
-    it("shows 無法取得密碼 when getUserPassword rejects (500 / auth error)", async () => {
-      // given
-      const user = userEvent.setup();
-      mockGetUserPassword.mockRejectedValue(new Error("Forbidden"));
-
-      // when
-      await user.click(screen.getByRole("button", { name: "查看密碼" }));
-
-      // expect
-      await waitFor(() => expect(screen.getByText("無法取得密碼")).toBeInTheDocument());
-      expect(screen.queryByRole("button", { name: "查看密碼" })).not.toBeInTheDocument();
-    });
-
-    it("getUserPassword called only once — no re-fetch on state ready", async () => {
-      // given
-      const user = userEvent.setup();
-      mockGetUserPassword.mockResolvedValue({ password: "Passw0rd!" });
-      await user.click(screen.getByRole("button", { name: "查看密碼" }));
-      await screen.findByText("••••••••");
-
-      // expect: button gone, API called once
-      expect(screen.queryByRole("button", { name: "查看密碼" })).not.toBeInTheDocument();
-      expect(mockGetUserPassword).toHaveBeenCalledTimes(1);
-    });
-
-    it("getUserPassword receives the correct candidate userId", async () => {
-      // given: mockCandidates has id=1 (Alice Chen)
-      const user = userEvent.setup();
+    it("getUserPassword is called with the correct candidate userId", async () => {
+      // given: Alice Chen has id=1 in mockUserSummaries
+      setupAuthStore();
+      setupInterviewerStore([], [], mockCandidates);
+      mockGetUsers.mockResolvedValue(mockUserSummaries);
       mockGetUserPassword.mockResolvedValue({ password: "Passw0rd!" });
 
-      // when
-      await user.click(screen.getByRole("button", { name: "查看密碼" }));
+      renderPage();
+      await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
 
       // expect
-      await waitFor(() => expect(mockGetUserPassword).toHaveBeenCalledWith(1));
+      expect(mockGetUserPassword).toHaveBeenCalledWith(1);
+    });
+
+    it("shows — when getUserPassword rejects (404 / 500)", async () => {
+      // given: API rejects for this candidate
+      setupAuthStore();
+      setupInterviewerStore([], [], mockCandidates);
+      mockGetUsers.mockResolvedValue(mockUserSummaries);
+      mockGetUserPassword.mockRejectedValue(new Error("404 Not Found"));
+
+      renderPage();
+      await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+      // when
+      await userEvent.click(screen.getByRole("button", { name: "考生帳號" }));
+
+      // expect: fallback dash shown, no masked password
+      expect(screen.getByText("—")).toBeInTheDocument();
+      expect(screen.queryByText("Pas***rd!")).not.toBeInTheDocument();
+    });
+
+    it("masks a short password (≤ 6 chars) with all stars — boundary case", async () => {
+      // given: password shorter than 7 chars → all stars
+      setupAuthStore();
+      setupInterviewerStore([], [], mockCandidates);
+      mockGetUsers.mockResolvedValue(mockUserSummaries);
+      mockGetUserPassword.mockResolvedValue({ password: "abc" });
+
+      renderPage();
+      await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+      // when
+      await userEvent.click(screen.getByRole("button", { name: "考生帳號" }));
+
+      // expect: "abc" (len 3) → "***"
+      await waitFor(() => expect(screen.getByText("***")).toBeInTheDocument());
     });
   });
 
