@@ -89,4 +89,8 @@ COPY sandbox/isolate-seccomp.policy /etc/oct/seccomp.policy
 COPY --from=isolate-build /usr/local/bin/oct-seccomp-wrapper /etc/oct/seccomp-wrapper
 RUN chmod 755 /etc/oct/seccomp-wrapper
 
+# Entrypoint delegates cgroup v2 controllers so isolate --cg works.
+COPY scripts/entrypoint.sh /usr/local/bin/oct-worker-entrypoint
+RUN chmod 755 /usr/local/bin/oct-worker-entrypoint
+ENTRYPOINT ["/usr/local/bin/oct-worker-entrypoint"]
 CMD ["node", "dist/index.js"]

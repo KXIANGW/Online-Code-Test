@@ -4,6 +4,16 @@ import path from "path";
 import { prepareSandboxWorkDir, truncateUtf8 } from "../sandbox";
 import { classifyVerdict, parseIsolateMeta, type Verdict } from "../meta-parser";
 import { RootfsResolver, RootfsNotReadyError } from "../rootfs-resolver";
+
+// Isolate itself failed to set up / tear down the sandbox (vs. candidate
+// failure). Judge consumer routes these to system_error rather than a
+// verdict so a broken sandbox doesn't silently grade every submission WA.
+export class SandboxSystemError extends Error {
+  constructor(message: string, public readonly stderr?: string) {
+    super(message);
+    this.name = "SandboxSystemError";
+  }
+}
 import type {
   CompileResult,
   CompileTask,
@@ -126,6 +136,7 @@ export class IsolateEngine implements SandboxEngine {
       };
     } catch (err) {
       if (err instanceof RootfsNotReadyError) throw err; // surface as system error
+      if (err instanceof SandboxSystemError) throw err;  // surface as system error
       return {
         success: false,
         errorLog: err instanceof Error ? err.message : String(err),
@@ -178,6 +189,7 @@ export class IsolateEngine implements SandboxEngine {
       };
     } catch (err) {
       if (err instanceof RootfsNotReadyError) throw err;
+      if (err instanceof SandboxSystemError) throw err;
       return {
         verdict: "RE",
         stdout: "",
@@ -193,16 +205,36 @@ export class IsolateEngine implements SandboxEngine {
     const metaPath = path.join(args.hostWorkDir, META_FILE);
     await fs.remove(metaPath).catch(() => undefined);
 
-    // Phase 1: init box
-    await this.runIsolate([`--box-id=${this.boxId}`, "--cg", "--init"]);
+    const initResult = await this.runIsolateCapturingStderr([
+      `--box-id=${this.boxId}`,
+      "--cg",
+      "--init",
+    ]);
+    if (initResult.exitCode !== 0) {
+      throw new SandboxSystemError(
+        `isolate --init failed (exit=${initResult.exitCode}): ${initResult.stderr.trim()}`,
+        initResult.stderr
+      );
+    }
 
     try {
       const isolateArgs = this.buildRunArgs(args, chroot, metaPath);
-      const exitCode = await this.runIsolate(isolateArgs);
+      const runResult = await this.runIsolateCapturingStderr(isolateArgs);
       const meta = await this.readMeta(metaPath);
       const stdout = await this.readOutput(args.hostWorkDir, STDOUT_FILE);
       const stderr = await this.readOutput(args.hostWorkDir, STDERR_FILE);
-      return { exitCode, meta, stdout, stderr };
+
+      // Isolate exits 0/1 with a meta file for any valid verdict; >1 without
+      // a meta file means isolate itself crashed.
+      const metaIsEmpty = meta.status === null && meta.exitcode === null;
+      if (runResult.exitCode > 1 && metaIsEmpty) {
+        throw new SandboxSystemError(
+          `isolate --run failed (exit=${runResult.exitCode}): ${runResult.stderr.trim()}`,
+          runResult.stderr
+        );
+      }
+
+      return { exitCode: runResult.exitCode, meta, stdout, stderr };
     } finally {
       await this.runIsolate([`--box-id=${this.boxId}`, "--cg", "--cleanup"]).catch(
         () => undefined
@@ -292,7 +324,13 @@ export class IsolateEngine implements SandboxEngine {
   }
 
   private runIsolate(args: string[]): Promise<number> {
-    return new Promise<number>((resolve, reject) => {
+    return this.runIsolateCapturingStderr(args).then((r) => r.exitCode);
+  }
+
+  private runIsolateCapturingStderr(
+    args: string[]
+  ): Promise<{ exitCode: number; stderr: string }> {
+    return new Promise((resolve, reject) => {
       const child = this.spawner(args);
       let stderr = "";
       child.stderr?.on("data", (chunk: Buffer) => {
@@ -306,7 +344,7 @@ export class IsolateEngine implements SandboxEngine {
         if (code !== 0 && stderr.trim()) {
           console.error(`[isolate] exit=${code}: ${stderr.trim()}`);
         }
-        resolve(code ?? -1);
+        resolve({ exitCode: code ?? -1, stderr });
       });
     });
   }

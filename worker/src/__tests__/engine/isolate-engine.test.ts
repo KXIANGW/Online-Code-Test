@@ -3,7 +3,11 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IsolateEngine, type IsolateSpawner } from "../../engine/engines/isolate-engine";
+import {
+  IsolateEngine,
+  SandboxSystemError,
+  type IsolateSpawner,
+} from "../../engine/engines/isolate-engine";
 import { RootfsResolver } from "../../engine/rootfs-resolver";
 import type { LanguageSpec } from "../../engine/languages";
 
@@ -379,6 +383,66 @@ describe("IsolateEngine.runOne", () => {
     expect(result.verdict).toBe("RE");
     expect(Buffer.byteLength(result.stdout, "utf8")).toBeLessThanOrEqual(1024);
     expect(result.stderr).toBeTruthy();
+  });
+
+  it("throws SandboxSystemError when isolate --init exits non-zero", async () => {
+    // Simulates the cgroup-readonly failure (`Failed to create control group
+    // /sys/fs/cgroup/box-0: Read-only file system`) — isolate exits 2, no
+    // meta file is written. Must surface as a system error, NOT a verdict.
+    const { spawner } = buildFakeSpawner([{ exitCode: 2 }]); // init fails
+    const engine = new IsolateEngine({
+      rootfsResolver: new RootfsResolver({ baseDir: rootfsRoot }),
+      spawner,
+    });
+
+    await expect(
+      engine.runOne({
+        spec: cppSpec,
+        hostWorkDir: workDir,
+        inputData: "",
+        timeLimitMs: 1000,
+        memoryLimitMb: 64,
+        outputLimitKb: 64,
+      })
+    ).rejects.toBeInstanceOf(SandboxSystemError);
+  });
+
+  it("throws SandboxSystemError when isolate --run exits >1 without producing a meta file", async () => {
+    // Simulates isolate internally failing during the run phase (e.g.
+    // cgroup controller missing). No meta file is written -> previously
+    // classifyVerdict() fell through to "AC" with empty stdout -> WA.
+    const { spawner } = buildFakeSpawner([
+      { exitCode: 0 }, // init OK
+      { exitCode: 2 }, // run exits 2, no side effect -> no meta file
+      { exitCode: 0 }, // cleanup
+    ]);
+    const engine = new IsolateEngine({
+      rootfsResolver: new RootfsResolver({ baseDir: rootfsRoot }),
+      spawner,
+    });
+
+    await expect(
+      engine.runOne({
+        spec: cppSpec,
+        hostWorkDir: workDir,
+        inputData: "",
+        timeLimitMs: 1000,
+        memoryLimitMb: 64,
+        outputLimitKb: 64,
+      })
+    ).rejects.toBeInstanceOf(SandboxSystemError);
+  });
+
+  it("compile() also surfaces SandboxSystemError instead of returning success", async () => {
+    const { spawner } = buildFakeSpawner([{ exitCode: 2 }]); // init fails
+    const engine = new IsolateEngine({
+      rootfsResolver: new RootfsResolver({ baseDir: rootfsRoot }),
+      spawner,
+    });
+
+    await expect(
+      engine.compile({ spec: cppSpec, hostWorkDir: workDir })
+    ).rejects.toBeInstanceOf(SandboxSystemError);
   });
 
   it("propagates RootfsNotReadyError so caller marks system error", async () => {

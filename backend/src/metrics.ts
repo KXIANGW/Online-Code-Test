@@ -61,3 +61,17 @@ export const wsActiveConnections = new Gauge({
     this.set(countActiveSubscribers());
   },
 });
+
+// Initialise label combinations at zero so Prometheus sees the time series
+// before the first burst arrives. Without this, prom-client only emits the
+// series after the first .inc(), so rate() over the burst window has only
+// one sample (the post-burst value) and resolves to 0 — the visible symptom
+// being a flat "Submission created vs completed (per s)" panel.
+for (const type of ["simple", "formal"] as const) {
+  for (const lang of ["cpp17", "python3"]) {
+    submissionCreatedTotal.labels(type, lang).inc(0);
+  }
+  for (const verdict of ["AC", "WA", "TLE", "MLE", "RE", "CE", "system_error"]) {
+    submissionCompletedTotal.labels(type, verdict).inc(0);
+  }
+}

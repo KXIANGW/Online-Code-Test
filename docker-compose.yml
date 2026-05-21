@@ -104,17 +104,10 @@ services:
       ROOTFS_BASE_DIR: /var/lib/oct/rootfs
       SECCOMP_BUNDLE_DIR: /etc/oct
       NODE_ENV: ${NODE_ENV:-development}
-    # SYS_ADMIN is needed for isolate's namespace + cgroup syscalls
-    # (isolate is setuid-root inside the worker image).
-    cap_add:
-      - SYS_ADMIN
-    # Share the host's cgroup namespace. Without this the container gets its
-    # own cgroup view and `mkdir /sys/fs/cgroup/box-0` does not get the
-    # required controllers (memory.events etc.) auto-created. In K8s the
-    # kubelet delegates a writable cgroup subtree per Pod, so this is a
-    # docker-compose-only concern (cf. K8S_SETUP_Ubuntu.md cgroup driver
-    # configuration).
-    cgroup: host
+    # privileged: required by isolate v2.0 `--cg --init` to write under
+    # /sys/fs/cgroup (Docker mounts it read-only without privileged, even
+    # with cap_add: SYS_ADMIN). Matches k8s/08-worker.yaml.
+    privileged: true
     volumes:
       - ${HOST_WORK_DIR:-/tmp/judge}:${HOST_WORK_DIR:-/tmp/judge}
       # Local Isolate rootfs cache, populated by `make build-isolate-rootfs`.

@@ -15,7 +15,19 @@ HOST_ROOTFS_DIR ?= /tmp/oct-rootfs
 NODE_BIN ?= node
 
 # Helper: emit "<id>\t<image>\t<dockerfileContext>" lines for enabled langs.
-LIST_LANGUAGES_CMD := $(NODE_BIN) scripts/list-languages.mjs --enabled-only
+#
+# Runs through docker if the host's node is too old (or missing), so users
+# with an nvm default of node 12 / 14 don't need to switch shells just to
+# rebuild sandbox images. The docker fallback uses node:20-alpine (tiny,
+# already-pulled most of the time) and mounts the worker dir read-only.
+LIST_LANGUAGES_CMD = $(shell \
+  if command -v $(NODE_BIN) >/dev/null 2>&1 && \
+     v=$$( $(NODE_BIN) -e 'console.log(parseInt(process.versions.node.split(".")[0]))' 2>/dev/null) && \
+     [ -n "$$v" ] && [ "$$v" -ge 18 ]; then \
+    echo "$(NODE_BIN) scripts/list-languages.mjs --enabled-only"; \
+  else \
+    echo "docker run --rm -v $(CURDIR):/w:ro -w /w node:20-alpine node scripts/list-languages.mjs --enabled-only"; \
+  fi)
 
 install:
 	npm install
@@ -25,10 +37,12 @@ install:
 # Convention: worker/sandbox/<id>/Dockerfile (override via spec.dockerfileContext).
 
 build-language-images:
-	@$(LIST_LANGUAGES_CMD) | while IFS=$$'\t' read -r id image ctx; do \
-	  echo "→ building $$id ($$image) from sandbox/$$ctx/Dockerfile"; \
-	  docker build -t "$$image" "sandbox/$$ctx" || exit 1; \
-	done
+	@set -o pipefail; langs=$$($(LIST_LANGUAGES_CMD)); \
+	  test -n "$$langs" || { echo "ERROR: no enabled languages found in sandbox/languages.yaml" >&2; exit 1; }; \
+	  echo "$$langs" | while IFS=$$'\t' read -r id image ctx; do \
+	    echo "→ building $$id ($$image) from sandbox/$$ctx/Dockerfile"; \
+	    docker build -t "$$image" "sandbox/$$ctx" || exit 1; \
+	  done
 
 # Legacy aliases retained for the root Makefile / CI workflow / README that
 # still reference `build-sandbox-images`. Both call the data-driven target.
@@ -47,14 +61,16 @@ list-languages:
 
 build-isolate-rootfs: build-language-images
 	@mkdir -p $(HOST_ROOTFS_DIR)
-	@$(LIST_LANGUAGES_CMD) | while IFS=$$'\t' read -r id image ctx; do \
-	  echo "→ extracting $$image into $(HOST_ROOTFS_DIR)/$$id"; \
-	  cid=$$(docker create $$image /bin/true); \
-	  rm -rf "$(HOST_ROOTFS_DIR)/$$id"; \
-	  mkdir -p "$(HOST_ROOTFS_DIR)/$$id"; \
-	  docker export "$$cid" | tar -x -C "$(HOST_ROOTFS_DIR)/$$id" 2>/dev/null || true; \
-	  docker rm "$$cid" >/dev/null; \
-	done
+	@set -o pipefail; langs=$$($(LIST_LANGUAGES_CMD)); \
+	  test -n "$$langs" || { echo "ERROR: no enabled languages found in sandbox/languages.yaml" >&2; exit 1; }; \
+	  echo "$$langs" | while IFS=$$'\t' read -r id image ctx; do \
+	    echo "→ extracting $$image into $(HOST_ROOTFS_DIR)/$$id"; \
+	    cid=$$(docker create $$image /bin/true); \
+	    rm -rf "$(HOST_ROOTFS_DIR)/$$id"; \
+	    mkdir -p "$(HOST_ROOTFS_DIR)/$$id"; \
+	    docker export "$$cid" | tar -x -C "$(HOST_ROOTFS_DIR)/$$id" 2>/dev/null || true; \
+	    docker rm "$$cid" >/dev/null; \
+	  done
 	@echo "isolate rootfs ready under $(HOST_ROOTFS_DIR)"
 
 clean-isolate-rootfs:
