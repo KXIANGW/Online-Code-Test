@@ -7,13 +7,7 @@ import { examViolations, examSessions } from "../db/schema";
 import { parsePositiveIntParam } from "./params";
 import { BadRequestError } from "../errors";
 
-const VIOLATION_TYPES = [
-  "fullscreen_exit",
-  "tab_switch",
-  "window_blur",
-  "paste",
-  "copy",
-] as const;
+const VIOLATION_TYPES = ["fullscreen_exit", "tab_switch", "window_blur", "paste", "copy"] as const;
 
 const reportViolationBody = z.object({
   type: z.enum(VIOLATION_TYPES),
@@ -56,8 +50,7 @@ export const violationRoutes: FastifyPluginAsync = async (app) => {
     const { id } = request.params as { id: string };
     const sessionId = parsePositiveIntParam(id, "id");
 
-    const canRead =
-      request.user.isSuperuser || request.user.permissions.includes("exam:manage");
+    const canRead = request.user.isSuperuser || request.user.permissions.includes("exam:manage");
     if (!canRead) return reply.status(403).send({ message: "Forbidden" });
 
     const violations = await db
