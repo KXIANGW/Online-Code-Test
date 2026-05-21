@@ -80,9 +80,9 @@ verify-language: build-isolate-rootfs
 	  -e SECCOMP_BUNDLE_DIR=/etc/oct \
 	  -e VERIFY_LANG=$(LANG) \
 	  -v $(HOST_ROOTFS_DIR):/var/lib/oct/rootfs:ro \
-	  -v $(PWD)/sandbox/languages.yaml:/app/sandbox/languages.yaml:ro \
-	  -v $(PWD)/sandbox:/host-sandbox:ro \
-	  -v $(PWD)/scripts/verify-language.mjs:/verify.mjs:ro \
+	  -v $(CURDIR)/sandbox/languages.yaml:/app/sandbox/languages.yaml:ro \
+	  -v $(CURDIR)/sandbox:/host-sandbox:ro \
+	  -v $(CURDIR)/scripts/verify-language.mjs:/verify.mjs:ro \
 	  oct-worker:test \
 	  sh -c "mkdir -p /tmp/judge && node /verify.mjs"
 
@@ -105,7 +105,7 @@ test-integration-isolate: build-isolate-rootfs
 	docker run --rm --privileged --cgroupns=host \
 	  -e SECCOMP_BUNDLE_DIR=/etc/oct \
 	  -v $(HOST_ROOTFS_DIR):/var/lib/oct/rootfs:ro \
-	  -v $(PWD)/scripts/isolate-e2e.mjs:/e2e.mjs:ro \
+	  -v $(CURDIR)/scripts/isolate-e2e.mjs:/e2e.mjs:ro \
 	  oct-worker:test \
 	  sh -c "mkdir -p /tmp/judge && node /e2e.mjs"
 
