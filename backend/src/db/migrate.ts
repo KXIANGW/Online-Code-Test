@@ -31,6 +31,10 @@ async function main() {
         ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES users(id);
     `);
     await pool.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS encrypted_password TEXT;
+    `);
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS exams (
         id               BIGSERIAL   PRIMARY KEY,
         title            VARCHAR(255) NOT NULL,

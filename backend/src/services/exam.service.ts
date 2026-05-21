@@ -248,6 +248,68 @@ export async function createExamTemplateRandom(
   });
 }
 
+export async function updateExamTemplate(
+  currentUser: CurrentUser,
+  examId: number,
+  data: {
+    title: string;
+    durationMinutes: number;
+    problems: { problemId: number; scoreWeight: number; orderIndex: number }[];
+  },
+) {
+  if (!canManageExam(currentUser)) throw ForbiddenError();
+  assertNoDuplicates(
+    data.problems.map((p) => p.problemId),
+    "Duplicate problem assignment",
+  );
+  assertNoDuplicates(
+    data.problems.map((p) => p.orderIndex),
+    "Duplicate problem orderIndex",
+  );
+  await assertProblemsAreActive(data.problems.map((p) => p.problemId));
+
+  const [existing] = await db.select().from(exams).where(eq(exams.id, examId));
+  if (!existing || existing.deletedAt !== null) throw NotFoundError("exam template");
+  if (!currentUser.isSuperuser && existing.createdBy !== currentUser.id) throw ForbiddenError();
+
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(exams)
+      .set({
+        title: data.title,
+        durationMinutes: data.durationMinutes,
+        updatedAt: new Date(),
+      })
+      .where(eq(exams.id, examId))
+      .returning();
+
+    await tx.delete(examProblems).where(eq(examProblems.examId, examId));
+    await tx.insert(examProblems).values(
+      data.problems.map((p) => ({
+        examId,
+        problemId: p.problemId,
+        orderIndex: p.orderIndex,
+        scoreWeight: p.scoreWeight,
+      })),
+    );
+
+    return updated!;
+  });
+}
+
+export async function deleteExamTemplate(currentUser: CurrentUser, examId: number) {
+  if (!canManageExam(currentUser)) throw ForbiddenError();
+
+  const [existing] = await db.select().from(exams).where(eq(exams.id, examId));
+  if (!existing || existing.deletedAt !== null) throw NotFoundError("exam template");
+  if (!currentUser.isSuperuser && existing.createdBy !== currentUser.id) throw ForbiddenError();
+
+  await db
+    .update(exams)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(eq(exams.id, examId));
+}
+
 /**
  * 查詢現有的考卷模板列表
  */
