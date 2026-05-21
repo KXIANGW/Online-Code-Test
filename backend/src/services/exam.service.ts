@@ -1,4 +1,5 @@
 import { db } from "../db/client";
+import { decryptPassword } from "./crypto.service";
 import {
   exams,
   examProblems,
@@ -657,6 +658,31 @@ async function assertCandidateExists(candidateId: number): Promise<{ createdBy: 
     throw NotFoundError("candidate");
   }
   return { createdBy: candidate.createdBy };
+}
+
+export async function getCandidatePassword(
+  currentUser: CurrentUser,
+  sessionId: number,
+): Promise<{ password: string }> {
+  const canAccess = currentUser.isSuperuser || currentUser.permissions.includes("exam:manage");
+  if (!canAccess) throw ForbiddenError();
+
+  const [session] = await db
+    .select({ createdBy: examSessions.createdBy, candidateId: examSessions.candidateId })
+    .from(examSessions)
+    .where(eq(examSessions.id, sessionId));
+
+  if (!session) throw NotFoundError("session");
+  if (!currentUser.isSuperuser && session.createdBy !== currentUser.id) throw ForbiddenError();
+
+  const [candidate] = await db
+    .select({ encryptedPassword: users.encryptedPassword })
+    .from(users)
+    .where(eq(users.id, session.candidateId));
+
+  if (!candidate?.encryptedPassword) throw NotFoundError("password");
+
+  return { password: decryptPassword(candidate.encryptedPassword) };
 }
 
 async function assertProblemsAreActive(problemIds: number[]): Promise<void> {

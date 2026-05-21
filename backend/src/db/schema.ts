@@ -52,6 +52,7 @@ export const users = pgTable("users", {
   displayName: varchar("display_name", { length: 128 }),
   isSuperuser: boolean("is_superuser").notNull().default(false),
   createdBy: bigint("created_by", { mode: "number" }).references((): AnyPgColumn => users.id),
+  encryptedPassword: text("encrypted_password"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),

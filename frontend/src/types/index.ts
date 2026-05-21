@@ -321,3 +321,7 @@ export interface SubmissionStatusMessage {
 }
 
 export type JudgeSocketMessage = JudgeResultMessage | SubmissionStatusMessage;
+
+export interface CandidatePasswordResponse {
+  password: string;
+}

@@ -62,6 +62,7 @@ services:
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://oct:oct_dev_password@rabbitmq:5672}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET:-oct_dev_jwt_secret_change_me_32_chars}
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:-000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f}
       PORT: ${BACKEND_PORT:-3000}
       NODE_ENV: ${NODE_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-info}
