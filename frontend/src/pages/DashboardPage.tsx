@@ -41,14 +41,13 @@ function EmptyState({ message }: { message: string }) {
 
 function ExamSessionCard({
   session,
-  onStart,
+  onResume,
   onRequestStart,
 }: {
   session: ExamSession;
-  onStart: (sessionId: number) => Promise<void>;
+  onResume: (sessionId: number) => void;
   onRequestStart: (sessionId: number) => void;
 }) {
-  const navigate = useNavigate();
   const timeLeft = useExamTimer(session.expiresAt);
   const title = session.examTitle || `考試 #${session.id}`;
 
@@ -71,7 +70,7 @@ function ExamSessionCard({
 
       {session.status === "in_progress" && (
         <button
-          onClick={() => navigate(ROUTES.examPage(session.id))}
+          onClick={() => onResume(session.id)}
           className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
         >
           繼續考試
@@ -131,6 +130,16 @@ export default function DashboardPage() {
     navigate(ROUTES.examPage(sessionId));
   }
 
+  async function handleResume(sessionId: number) {
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch {
+      toast.error("請允許全螢幕模式才能繼續考試。");
+      return;
+    }
+    navigate(ROUTES.examPage(sessionId));
+  }
+
   async function handleConfirmFullscreen() {
     if (pendingSessionId === null) return;
     const id = pendingSessionId;
@@ -164,7 +173,7 @@ export default function DashboardPage() {
               <ExamSessionCard
                 key={s.id}
                 session={s}
-                onStart={handleStart}
+                onResume={handleResume}
                 onRequestStart={setPendingSessionId}
               />
             ))
@@ -179,7 +188,7 @@ export default function DashboardPage() {
               <ExamSessionCard
                 key={s.id}
                 session={s}
-                onStart={handleStart}
+                onResume={handleResume}
                 onRequestStart={setPendingSessionId}
               />
             ))
@@ -194,7 +203,7 @@ export default function DashboardPage() {
               <ExamSessionCard
                 key={s.id}
                 session={s}
-                onStart={handleStart}
+                onResume={handleResume}
                 onRequestStart={setPendingSessionId}
               />
             ))

@@ -183,8 +183,9 @@ describe("DashboardPage()", () => {
     expect(oneBadges.length).toBeGreaterThanOrEqual(2); // 進行中=1, 待考=1
   });
 
-  it("clicking 繼續考試 navigates to /exam/2", async () => {
+  it("clicking 繼續考試 requests fullscreen then navigates to /exam/2", async () => {
     // given
+    mockRequestFullscreen.mockResolvedValue(undefined);
     setupAuthStore();
     setupExamStore([mockExamSessions[1]!]);
     renderDashboard();
@@ -193,6 +194,7 @@ describe("DashboardPage()", () => {
     await userEvent.click(screen.getByRole("button", { name: "繼續考試" }));
 
     // expect
+    expect(mockRequestFullscreen).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith("/exam/2");
   });
 
@@ -207,6 +209,21 @@ describe("DashboardPage()", () => {
 
     // expect
     expect(mockNavigate).toHaveBeenCalledWith("/exam/3/result");
+  });
+
+  it("clicking 繼續考試 shows error toast and does not navigate when fullscreen is rejected", async () => {
+    // given
+    mockRequestFullscreen.mockRejectedValue(new Error("Permission denied"));
+    setupAuthStore();
+    setupExamStore([mockExamSessions[1]!]);
+    renderDashboard();
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "繼續考試" }));
+
+    // expect
+    expect(toast.error).toHaveBeenCalledWith("請允許全螢幕模式才能繼續考試。");
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it("clicking 開始考試 shows the fullscreen consent modal", async () => {
