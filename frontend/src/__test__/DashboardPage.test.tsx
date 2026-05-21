@@ -150,6 +150,7 @@ describe("DashboardPage()", () => {
     // expect
     expect(screen.getByText("考試 #3")).toBeInTheDocument();
     expect(screen.getByText("50 / 100 分")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看結果" })).toBeInTheDocument();
     expect(screen.queryByText("尚無歷史紀錄")).not.toBeInTheDocument();
   });
 
@@ -180,6 +181,19 @@ describe("DashboardPage()", () => {
 
     // expect
     expect(mockNavigate).toHaveBeenCalledWith("/exam/2");
+  });
+
+  it("clicking 查看結果 navigates to the candidate result page", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[2]!]);
+    renderDashboard();
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "查看結果" }));
+
+    // expect
+    expect(mockNavigate).toHaveBeenCalledWith("/exam/3/result");
   });
 
   it("clicking 開始考試 starts the session before navigating", async () => {
