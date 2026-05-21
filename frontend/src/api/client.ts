@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 import type {
   LoginRequest,
   LoginResponse,
@@ -274,3 +274,60 @@ export async function getUserPassword(userId: number): Promise<CandidatePassword
   const { data } = await api.get<CandidatePasswordResponse>(`/users/${userId}/password`);
   return data;
 }
+
+// ── Response error interceptor ────────────────────────────────────────────────
+
+interface RetryConfig extends InternalAxiosRequestConfig {
+  _retryCount?: number;
+}
+
+export interface ApiErrorData {
+  message?: string;
+}
+
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
+
+export function isRetryableError(error: AxiosError): boolean {
+  if (!error.response) return true; // network / timeout — no HTTP response received
+  return error.response.status === 429 || error.response.status === 503;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function logApiError(error: AxiosError<ApiErrorData>): void {
+  const method = (error.config?.method ?? "UNKNOWN").toUpperCase();
+  const url = error.config?.url ?? "UNKNOWN";
+  const status = error.response?.status ?? "NETWORK_ERROR";
+  const message = error.response?.data?.message ?? error.message;
+  const requestId = error.response?.headers?.["x-request-id"] as string | undefined;
+
+  const lines = [`[API Error] ${method} ${url} → ${status}`, `message: ${message}`];
+  if (requestId) lines.push(`request-id: ${requestId}`);
+  console.error(lines.join("\n"));
+}
+
+api.interceptors.response.use(
+  undefined,
+  async (rawError: unknown) => {
+    if (!axios.isAxiosError(rawError)) {
+      console.error("[API Error] Unexpected non-Axios error:", rawError);
+      return Promise.reject(rawError as Error);
+    }
+
+    const error = rawError as AxiosError<ApiErrorData>;
+    const config = error.config as RetryConfig | undefined;
+
+    if (config && isRetryableError(error) && (config._retryCount ?? 0) < MAX_RETRIES) {
+      config._retryCount = (config._retryCount ?? 0) + 1;
+      const delay = BASE_DELAY_MS * Math.pow(2, config._retryCount - 1);
+      await sleep(delay);
+      return api(config);
+    }
+
+    logApiError(error);
+    return Promise.reject(error);
+  },
+);
