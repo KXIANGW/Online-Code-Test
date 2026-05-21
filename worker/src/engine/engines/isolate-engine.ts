@@ -116,7 +116,7 @@ export class IsolateEngine implements SandboxEngine {
         spec: task.spec,
         hostWorkDir: task.hostWorkDir,
         cmd: task.spec.compile.cmd,
-        memoryLimitMb: COMPILE_MEM_MB,
+        memoryLimitMb: task.memoryLimitMb ?? task.spec.compile.memoryLimitMb ?? COMPILE_MEM_MB,
         timeLimitMs: COMPILE_TIME_SEC * 1000,
         pidsLimit: COMPILE_PIDS,
         withStdin: false,

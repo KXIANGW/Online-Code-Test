@@ -67,9 +67,21 @@ EOF
   compile:
     # IsolateEngine 呼叫 execve()，所以必須給絕對路徑。
     # 技巧：`docker run --rm <image> which javac` 可以找出真實路徑。
-    cmd: ["/opt/java/openjdk/bin/javac", "Main.java"]
+    #
+    # JVM 語言必填 memoryLimitMb（見下方 Optional 欄位說明）。
+    memoryLimitMb: 1024
+    cmd: ["/opt/java/openjdk/bin/javac",
+          "-J-Xmx128m", "-J-Xss512k",
+          "-J-XX:CompressedClassSpaceSize=32m",
+          "-J-XX:ReservedCodeCacheSize=64m",
+          "Main.java"]
   run:
-    cmd: ["/opt/java/openjdk/bin/java", "Main"]
+    memoryLimitMb: 1024
+    cmd: ["/opt/java/openjdk/bin/java",
+          "-Xmx200m", "-Xss512k",
+          "-XX:CompressedClassSpaceSize=32m",
+          "-XX:ReservedCodeCacheSize=64m",
+          "Main"]
   enabled: true
 ```
 
@@ -78,6 +90,8 @@ EOF
 - `rootfsPath: /var/lib/oct/rootfs/<custom>` — 改 Node 上 rootfs 的位置。預設 = `${ROOTFS_BASE_DIR}/${id}`。
 - `run.entrypointPath: /opt/.../bin/java` — 額外告訴工具鏈解譯器路徑（給不想 parse `run.cmd` 的下游程式用）。
 - `run.env: { KEY: value, ... }` — 給候選人程式追加的環境變數。（`PATH` IsolateEngine 已自動設好，不必重複。）
+- `compile.memoryLimitMb: N` — 覆蓋引擎層的 `COMPILE_MEM_MB`（預設 512）。**JVM / CLR 語言必填**，原因見下方「常見地雷」。
+- `run.memoryLimitMb: N` — `verify-language` smoke test 的記憶體下限。Production 的記憶體限制由各題目設定決定，此欄位僅影響 smoke test；若不填，smoke test 預設 256 MB。
 
 ### Step 3 — 放 smoke fixture
 
@@ -198,9 +212,56 @@ Rootfs 會整份鋪到每個 Worker Node。目標 < 500 MB。技巧：
 - `RUN apt-get install --no-install-recommends` 並在同一層 `rm -rf /var/lib/apt/lists/*`。
 - `dpkg --purge` 拔掉純文件 / 純 man page 的套件。
 
-### Smoke 很單純卻拿到 TLE / RE
+### JVM / CLR 語言出現「Could not reserve … object heap」或「Failed to reserve memory for metaspace」
 
-通常是 JVM / CLR 類語言 cold-start 太重。在 `verify-language.mjs` 把 smoke 的 `timeLimitMs` / `memoryLimitMb` 預設拉高，**並**在 `languages.yaml` 給該語言寫合理的預設（語言級預設目前還沒做，列為未來增強）。
+**根本原因：** isolate 的 `--mem=N` 在 `--cg` 模式下會**同時**設定兩個上限：
+
+| 限制 | 影響 |
+| --- | --- |
+| cgroup `memory.max` | 實際可用實體記憶體（RSS） |
+| `RLIMIT_AS` | 虛擬位址空間（virtual address space） |
+
+JDK 17 啟動時即使只跑 Hello World，光是載入 `libjvm.so`、預保留 code cache（預設 240 MB）、compressed class space（預設 1 GB）就需要 **超過 768 MB 的虛擬位址空間**，然而實際用掉的實體記憶體只有約 55–80 MB。
+
+預設的 `COMPILE_MEM_MB = 512` 讓 `RLIMIT_AS = 512 MB`，JVM 的虛擬空間申請失敗，程式在 `javac` / `java` 第一行都還沒跑到就 crash，stderr 是空的，exit code 是 1。
+
+**解法：在 `languages.yaml` 為該語言設 `compile.memoryLimitMb` / `run.memoryLimitMb`**，並附上 JVM 旗標縮小各區段的虛擬保留量。實測最小可用值為 **1024 MB**（768–1024 MB 之間，保守取 1024）：
+
+```yaml
+compile:
+  memoryLimitMb: 1024          # RLIMIT_AS = 1 GB；實體 RSS 仍 ≈ 80 MB
+  cmd: ["/opt/java/openjdk/bin/javac",
+        "-J-Xmx128m",                        # javac JVM 的 heap 上限
+        "-J-Xss512k",                         # javac JVM 的 thread stack
+        "-J-XX:CompressedClassSpaceSize=32m", # 預設 1 GB → 32 MB
+        "-J-XX:ReservedCodeCacheSize=64m",    # 預設 240 MB → 64 MB
+        "Main.java"]
+run:
+  memoryLimitMb: 1024
+  cmd: ["/opt/java/openjdk/bin/java",
+        "-Xmx200m",                           # 候選人程式的 heap 上限
+        "-Xss512k",
+        "-XX:CompressedClassSpaceSize=32m",
+        "-XX:ReservedCodeCacheSize=64m",
+        "Main"]
+```
+
+> **為什麼不直接調高全域 `COMPILE_MEM_MB`？** 因為這會同時改大所有語言的 `RLIMIT_AS`，讓 C++ / Python 的沙箱虛擬記憶體限制也跟著放寬，失去各語言獨立可控的意義。`compile.memoryLimitMb` / `run.memoryLimitMb` 讓每個語言**手動指定需要的值**，不影響其他語言。
+
+**記憶體分佈一覽（JDK 17 + 上述旗標，1024 MB RLIMIT_AS 下）：**
+
+| 區段 | 縮小前（預設） | 縮小後（本設定） |
+| --- | --- | --- |
+| Compressed class space | 1024 MB | 32 MB |
+| Code cache | 240 MB | 64 MB |
+| Heap（compile） | ~256 MB（auto） | 128 MB（`-J-Xmx128m`） |
+| Heap（run） | ~256 MB（auto） | 200 MB（`-Xmx200m`） |
+| native libs + JVM overhead | ~150 MB | ~150 MB |
+| 實際物理 RSS | — | ≈ 55–80 MB |
+
+### Smoke 很單純卻拿到 TLE
+
+JVM cold-start 耗時（`javac` + `java` 各需 0.2–1 秒 wall time）。`verify-language.mjs` 預設 `timeLimitMs: 5000`，一般夠用；若拿到 TLE，確認 wall-time 是否被 isolate 截斷，可在 meta.txt 看 `time-wall`。
 
 ---
 
@@ -215,7 +276,8 @@ Rootfs 會整份鋪到每個 Worker Node。目標 < 500 MB。技巧：
 | `worker/scripts/list-languages.mjs` | 為 Makefile 列出所有 enabled 語言 |
 | `worker/scripts/verify-language.mjs` | 在 worker container 內透過 `IsolateEngine` 跑 smoke |
 | `worker/Makefile` | `verify-language` / `build-language-images` / `build-isolate-rootfs` |
-| `worker/src/engine/languages.ts` | Zod schema + `loadLanguages()` |
-| `worker/src/engine/engines/isolate-engine.ts` | 唯一的 sandbox engine |
+| `worker/src/engine/languages.ts` | Zod schema + `loadLanguages()`（含 `compile/run.memoryLimitMb`） |
+| `worker/src/engine/sandbox-engine.ts` | `CompileTask` / `RunTask` 型別定義 |
+| `worker/src/engine/engines/isolate-engine.ts` | 唯一的 sandbox engine；compile 優先讀 `task.spec.compile.memoryLimitMb` |
 | `.github/workflows/ci.yml` | `build-sandbox-images` matrix → GHCR |
 | `k8s/08a-language-puller.yaml` | 從 GHCR 拉 image 鋪到 hostPath 的 DaemonSet |

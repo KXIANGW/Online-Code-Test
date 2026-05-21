@@ -21,6 +21,10 @@ const LanguageSpecSchema = z.object({
   compile: z
     .object({
       cmd: z.array(z.string()).min(1),
+      // Overrides COMPILE_MEM_MB for this language. isolate --mem sets both
+      // cgroup memory.max AND RLIMIT_AS; JVM/CLR runtimes need >768 MB of
+      // virtual address space to start even though physical RSS stays ~80 MB.
+      memoryLimitMb: z.number().int().positive().optional(),
     })
     .optional(),
   run: z.object({
@@ -30,6 +34,9 @@ const LanguageSpecSchema = z.object({
     // IsolateEngine to avoid PATH-dependent lookups. Falls back to the first
     // element of cmd when not given.
     entrypointPath: z.string().optional(),
+    // Floor memory limit used by verify-language smoke tests. Production
+    // memory limits come from per-problem config and override this value.
+    memoryLimitMb: z.number().int().positive().optional(),
   }),
   enabled: z.boolean(),
 });

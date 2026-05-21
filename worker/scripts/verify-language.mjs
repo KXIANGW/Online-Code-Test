@@ -75,7 +75,7 @@ const run = await engine.runOne({
   hostWorkDir: workDir,
   inputData: "",
   timeLimitMs: 5000,
-  memoryLimitMb: 256,
+  memoryLimitMb: spec.run.memoryLimitMb ?? 256,
   outputLimitKb: 64,
 });
 

@@ -10,6 +10,9 @@ import { RootfsResolver } from "./rootfs-resolver";
 export interface CompileTask {
   spec: LanguageSpec;
   hostWorkDir: string;
+  // Caller-side override for compile memory. Falls back to spec.compile.memoryLimitMb,
+  // then to the engine-level COMPILE_MEM_MB constant.
+  memoryLimitMb?: number;
 }
 
 export interface CompileResult {
