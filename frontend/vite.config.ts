@@ -15,6 +15,12 @@ export default defineConfig({
     },
     setupFiles: ["./src/__test__/setup.ts"],
     globals: true,
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/__test__/**", "src/main.tsx", "node_modules/**"],
+      reporter: ["text", "lcov"],
+    },
   },
   server: {
     host: true,

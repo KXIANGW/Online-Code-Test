@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images dev test help \
+.PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images dev test coverage help \
         demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls
 
 help:
@@ -17,6 +17,7 @@ help:
 	@echo "  make psql           Open psql shell inside the postgres container"
 	@echo "  make sandbox-images Build judge sandbox images"
 	@echo "  make test           Run lint + test + build (mirrors CI)"
+	@echo "  make coverage       Run tests with coverage report (text + lcov)"
 	@echo ""
 	@echo "  Demo (Phase A+B+C — 100 concurrent observability):"
 	@echo "  make demo-up        Build sandbox images, bring full stack + prom/grafana/cadvisor"
@@ -60,6 +61,10 @@ psql:
 test:
 	cd backend && npm run format:check && npm run lint && npm test
 	cd frontend && npm run format:check && npm run lint && npm test && npm run build
+
+coverage:
+	cd backend && npm test -- --coverage
+	cd frontend && npm test -- --coverage
 
 sandbox-images:
 	$(MAKE) -C worker build-sandbox-images

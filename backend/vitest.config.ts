@@ -20,5 +20,11 @@ export default defineConfig({
     poolOptions: { forks: { singleFork: true } },
     fileParallelism: false,
     testTimeout: 20000,
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      exclude: ["src/__tests__/**", "src/db/migrate.ts", "node_modules/**"],
+      reporter: ["text", "lcov"],
+    },
   },
 });
