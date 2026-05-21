@@ -235,6 +235,24 @@ describe("ExamPage", () => {
     expect(problemTabs).toHaveLength(2);
   });
 
+  it("renders problem tabs by orderIndex even when API returns them out of order", async () => {
+    mockGetExamSessionProblems.mockResolvedValue([
+      mockExamPageProblems[1]!,
+      mockExamPageProblems[0]!,
+    ]);
+
+    await renderExamPage();
+
+    const problemTabs = screen
+      .getAllByRole("tab")
+      .filter((tab) => /^\d+\./.test(tab.textContent ?? ""));
+    expect(problemTabs.map((tab) => tab.textContent)).toEqual(["1. Two Sum", "2. Binary Search"]);
+    expect(screen.getByRole("tab", { name: "1. Two Sum" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
   it("renders timer with placeholder '--:--:--' when exam not started", async () => {
     // given
     await renderExamPage();

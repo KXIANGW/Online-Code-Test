@@ -10,7 +10,7 @@ import {
   problemTestcases,
   users,
 } from "../db/schema";
-import { and, eq, sql, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, sql, inArray, isNull } from "drizzle-orm";
 import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 import { clearSessionDrafts } from "./draft.service";
@@ -383,7 +383,8 @@ export async function assignExamToCandidates(
   const templateProblems = await db
     .select()
     .from(examProblems)
-    .where(eq(examProblems.examId, examId));
+    .where(eq(examProblems.examId, examId))
+    .orderBy(asc(examProblems.orderIndex), asc(examProblems.id));
   const maxScore = templateProblems.reduce((sum, p) => sum + p.scoreWeight, 0);
 
   // 3. 校驗所有面試者帳號狀態
@@ -631,7 +632,8 @@ export async function getExamSessionProblems(currentUser: CurrentUser, sessionId
     })
     .from(examSessionProblems)
     .innerJoin(problems, eq(examSessionProblems.problemId, problems.id))
-    .where(eq(examSessionProblems.examSessionId, sessionId));
+    .where(eq(examSessionProblems.examSessionId, sessionId))
+    .orderBy(asc(examSessionProblems.orderIndex), asc(examSessionProblems.id));
 
   if (sessionProblems.length === 0) return [];
 

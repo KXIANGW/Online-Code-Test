@@ -1075,8 +1075,8 @@ describe("GET /api/exam-sessions/:id/problems", () => {
         title: "Problems Test Exam",
         durationMinutes: 90,
         problems: [
-          { problemId: easy, scoreWeight: 30, orderIndex: 1 },
           { problemId: medium, scoreWeight: 70, orderIndex: 2 },
+          { problemId: easy, scoreWeight: 30, orderIndex: 1 },
         ],
       },
     });
@@ -1105,7 +1105,8 @@ describe("GET /api/exam-sessions/:id/problems", () => {
       }[]
     >();
     expect(body).toHaveLength(2);
-    expect(body.map((p) => p.orderIndex).sort()).toEqual([1, 2]);
+    expect(body.map((p) => p.orderIndex)).toEqual([1, 2]);
+    expect(body.map((p) => p.title)).toEqual(["Two Sum", "Binary Search"]);
     expect(body[0]!.descriptionMd).toBeDefined();
     expect(body[0]!.outputLimitKb).toBeDefined();
     expect(Array.isArray(body[0]!.languageLimits)).toBe(true);
