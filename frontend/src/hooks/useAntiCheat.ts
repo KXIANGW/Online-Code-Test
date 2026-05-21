@@ -10,11 +10,15 @@ interface UseAntiCheatOptions {
 }
 
 interface UseAntiCheatReturn {
-  /**
-   * 傳給 Monaco Editor 的 onDidPaste 回呼
-   * 在 ExamPage 的 onMount 中呼叫 editor.onDidPaste(handleEditorPaste)
-   */
+  /** 偵測到外部貼上時呼叫：記錄違規並顯示警告 */
   handleEditorPaste: (pastedText: string) => void;
+  /** Editor 內部 copy/cut 時呼叫，記錄允許貼回的內容 */
+  markEditorCopy: (text: string) => void;
+  /**
+   * 判斷此次貼上是否為 Editor 內部的複製。
+   * disabled 狀態下一律返回 true（允許所有貼上，不阻擋）。
+   */
+  isInternalPaste: (text: string) => boolean;
 }
 
 export function useAntiCheat({ sessionId, enabled }: UseAntiCheatOptions): UseAntiCheatReturn {
@@ -105,7 +109,7 @@ export function useAntiCheat({ sessionId, enabled }: UseAntiCheatOptions): UseAn
     return () => document.removeEventListener("copy", handleCopy);
   }, [report]);
 
-  // ── Monaco 貼入程式碼偵測（由 ExamPage 透過 onMount 傳入） ────────────────
+  // ── Monaco 貼入程式碼偵測（由 ExamPage DOM capture 層攔截後呼叫） ─────────
   const handleEditorPaste = useCallback(
     (pastedText: string) => {
       if (!enabledRef.current) return;
@@ -115,5 +119,21 @@ export function useAntiCheat({ sessionId, enabled }: UseAntiCheatOptions): UseAn
     [report],
   );
 
-  return { handleEditorPaste };
+  // ── 追蹤 Editor 內部的複製內容，允許內部 copy-paste ─────────────────────
+  const internalCopyRef = useRef("");
+
+  const markEditorCopy = useCallback((text: string) => {
+    internalCopyRef.current = text;
+  }, []);
+
+  const isInternalPaste = useCallback(
+    (text: string): boolean => {
+      // 未啟用時不阻擋任何貼上（考試結束後應恢復正常行為）
+      if (!enabledRef.current) return true;
+      return text === internalCopyRef.current;
+    },
+    [],
+  );
+
+  return { handleEditorPaste, markEditorCopy, isInternalPaste };
 }

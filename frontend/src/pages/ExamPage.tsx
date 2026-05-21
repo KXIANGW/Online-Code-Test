@@ -70,21 +70,42 @@ export default function ExamPage() {
   const vertDragState = useRef<{ startY: number; startHeight: number } | null>(null);
   const lsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { handleEditorPaste } = useAntiCheat({
+  const { handleEditorPaste, markEditorCopy, isInternalPaste } = useAntiCheat({
     sessionId,
     enabled: sessionStatus === "in_progress",
   });
 
   const handleMonacoMount: OnMount = useCallback(
     (monacoEditor) => {
-      monacoEditor.onDidPaste((e) => {
+      const editorDom = monacoEditor.getDomNode();
+      if (!editorDom) return;
+
+      // 記錄從 Editor 內部複製/剪切的文字，允許貼回
+      const captureSelection = () => {
+        const selection = monacoEditor.getSelection();
         const model = monacoEditor.getModel();
-        if (model) {
-          handleEditorPaste(model.getValueInRange(e.range));
+        if (selection && model) {
+          markEditorCopy(model.getValueInRange(selection));
         }
-      });
+      };
+      editorDom.addEventListener("copy", captureSelection);
+      editorDom.addEventListener("cut", captureSelection);
+
+      // Capture phase 在 Monaco 自身 handler 之前攔截 paste 事件
+      editorDom.addEventListener(
+        "paste",
+        (e) => {
+          const pastedText = e.clipboardData?.getData("text/plain") ?? "";
+          if (!isInternalPaste(pastedText)) {
+            e.preventDefault();
+            e.stopPropagation();
+            handleEditorPaste(pastedText);
+          }
+        },
+        true,
+      );
     },
-    [handleEditorPaste],
+    [handleEditorPaste, markEditorCopy, isInternalPaste],
   );
   const apiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchedEspIds = useRef<Set<number>>(new Set());

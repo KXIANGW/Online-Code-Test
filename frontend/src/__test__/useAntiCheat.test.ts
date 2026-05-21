@@ -262,6 +262,73 @@ describe("useAntiCheat — copy", () => {
   });
 });
 
+describe("useAntiCheat — markEditorCopy / isInternalPaste", () => {
+  it("isInternalPaste returns true for empty string before any copy (pasting nothing is a no-op)", () => {
+    // given
+    const { result } = renderHook(() => useAntiCheat({ sessionId: 1, enabled: true }));
+
+    // expect: initial internalCopyRef is '' so empty paste matches
+    expect(result.current.isInternalPaste("")).toBe(true);
+  });
+
+  it("isInternalPaste returns false for non-empty text before any editor copy", () => {
+    // given
+    const { result } = renderHook(() => useAntiCheat({ sessionId: 1, enabled: true }));
+
+    // expect: no internal copy registered yet → external paste blocked
+    expect(result.current.isInternalPaste("external code")).toBe(false);
+  });
+
+  it("isInternalPaste returns true after markEditorCopy with the same text", () => {
+    // given
+    const { result } = renderHook(() => useAntiCheat({ sessionId: 1, enabled: true }));
+
+    // when
+    act(() => {
+      result.current.markEditorCopy("function hello() {}");
+    });
+
+    // expect: same text is treated as internal
+    expect(result.current.isInternalPaste("function hello() {}")).toBe(true);
+  });
+
+  it("isInternalPaste returns false for text that differs from the last editor copy", () => {
+    // given
+    const { result } = renderHook(() => useAntiCheat({ sessionId: 1, enabled: true }));
+    act(() => {
+      result.current.markEditorCopy("internal code");
+    });
+
+    // expect: different text is treated as external
+    expect(result.current.isInternalPaste("external code")).toBe(false);
+  });
+
+  it("markEditorCopy overwrites the previous internal copy", () => {
+    // given
+    const { result } = renderHook(() => useAntiCheat({ sessionId: 1, enabled: true }));
+    act(() => {
+      result.current.markEditorCopy("first copy");
+    });
+
+    // when
+    act(() => {
+      result.current.markEditorCopy("second copy");
+    });
+
+    // expect: only the latest copy is allowed
+    expect(result.current.isInternalPaste("first copy")).toBe(false);
+    expect(result.current.isInternalPaste("second copy")).toBe(true);
+  });
+
+  it("isInternalPaste returns true for any text when disabled (no blocking after exam ends)", () => {
+    // given
+    const { result } = renderHook(() => useAntiCheat({ sessionId: 1, enabled: false }));
+
+    // expect: disabled → all pastes allowed regardless of content
+    expect(result.current.isInternalPaste("external code from ChatGPT")).toBe(true);
+  });
+});
+
 describe("useAntiCheat — cleanup", () => {
   it("removes all event listeners on unmount", async () => {
     // given
