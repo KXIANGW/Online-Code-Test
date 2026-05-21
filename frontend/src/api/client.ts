@@ -269,3 +269,8 @@ export async function getCandidatePassword(sessionId: number): Promise<Candidate
   );
   return data;
 }
+
+export async function getUserPassword(userId: number): Promise<CandidatePasswordResponse> {
+  const { data } = await api.get<CandidatePasswordResponse>(`/users/${userId}/password`);
+  return data;
+}

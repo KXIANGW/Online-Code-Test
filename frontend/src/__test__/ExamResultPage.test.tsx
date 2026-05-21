@@ -13,8 +13,6 @@ const mockUseAuthStore = vi.hoisted(() => vi.fn());
 const mockGetSessionResult = vi.hoisted(() => vi.fn());
 const mockGetSubmissionDetail = vi.hoisted(() => vi.fn());
 const mockListSessionSubmissions = vi.hoisted(() => vi.fn());
-const mockGetCandidatePassword = vi.hoisted(() => vi.fn());
-const mockCopyToClipboard = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
@@ -25,10 +23,6 @@ vi.mock("../api/client", () => ({
   getSessionResult: mockGetSessionResult,
   getSubmissionDetail: mockGetSubmissionDetail,
   listSessionSubmissions: mockListSessionSubmissions,
-  getCandidatePassword: mockGetCandidatePassword,
-}));
-vi.mock("../utils/clipboard", () => ({
-  copyToClipboard: mockCopyToClipboard,
 }));
 
 // ── Extra fixture data ────────────────────────────────────────────────────────
@@ -86,8 +80,6 @@ describe("ExamResultPage()", () => {
     mockGetSessionResult.mockReset();
     mockGetSubmissionDetail.mockReset();
     mockListSessionSubmissions.mockReset();
-    mockGetCandidatePassword.mockReset();
-    mockCopyToClipboard.mockReset();
     mockListSessionSubmissions.mockResolvedValue([]);
     setupAuthStore();
   });
@@ -604,146 +596,6 @@ describe("ExamResultPage()", () => {
 
       // 3. 驗證 API 呼叫
       expect(mockGetSubmissionDetail).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  // ── Candidate password reveal ─────────────────────────────────────────────
-
-  describe("candidate password reveal", () => {
-    beforeEach(() => {
-      mockGetSessionResult.mockResolvedValue(mockSessionResult);
-    });
-
-    it("shows 查看密碼 button in idle state after result loads", async () => {
-      // given: getCandidatePassword not yet called
-      mockGetCandidatePassword.mockReturnValue(new Promise(() => {}));
-
-      // when
-      renderPage();
-
-      // expect
-      expect(await screen.findByRole("button", { name: "查看密碼" })).toBeInTheDocument();
-    });
-
-    it("shows 載入中... while getCandidatePassword is in flight", async () => {
-      // given: API never resolves
-      const user = userEvent.setup();
-      mockGetCandidatePassword.mockReturnValue(new Promise(() => {}));
-      renderPage();
-      await screen.findByRole("button", { name: "查看密碼" });
-
-      // when
-      await user.click(screen.getByRole("button", { name: "查看密碼" }));
-
-      // expect: idle button disappears, loading text appears
-      expect(screen.queryByRole("button", { name: "查看密碼" })).not.toBeInTheDocument();
-      expect(screen.getAllByText("載入中...")).not.toHaveLength(0);
-    });
-
-    it("shows masked password by default after successful fetch", async () => {
-      // given
-      const user = userEvent.setup();
-      mockGetCandidatePassword.mockResolvedValue({ password: "s3cr3tPass!" });
-      renderPage();
-      await screen.findByRole("button", { name: "查看密碼" });
-
-      // when
-      await user.click(screen.getByRole("button", { name: "查看密碼" }));
-
-      // expect: dots placeholder, not the real password
-      await waitFor(() => expect(screen.getByText("••••••••")).toBeInTheDocument());
-      expect(screen.queryByText("s3cr3tPass!")).not.toBeInTheDocument();
-    });
-
-    it("reveals password text when 顯示 button is clicked", async () => {
-      // given
-      const user = userEvent.setup();
-      mockGetCandidatePassword.mockResolvedValue({ password: "s3cr3tPass!" });
-      renderPage();
-      await user.click(await screen.findByRole("button", { name: "查看密碼" }));
-      await screen.findByText("••••••••");
-
-      // when
-      await user.click(screen.getByRole("button", { name: "顯示密碼" }));
-
-      // expect: real password visible, dots gone
-      expect(screen.getByText("s3cr3tPass!")).toBeInTheDocument();
-      expect(screen.queryByText("••••••••")).not.toBeInTheDocument();
-    });
-
-    it("re-masks password when 隱藏 button is clicked", async () => {
-      // given
-      const user = userEvent.setup();
-      mockGetCandidatePassword.mockResolvedValue({ password: "s3cr3tPass!" });
-      renderPage();
-      await user.click(await screen.findByRole("button", { name: "查看密碼" }));
-      await screen.findByText("••••••••");
-      await user.click(screen.getByRole("button", { name: "顯示密碼" }));
-      expect(screen.getByText("s3cr3tPass!")).toBeInTheDocument();
-
-      // when
-      await user.click(screen.getByRole("button", { name: "隱藏密碼" }));
-
-      // expect: dots restored, real password hidden
-      expect(screen.getByText("••••••••")).toBeInTheDocument();
-      expect(screen.queryByText("s3cr3tPass!")).not.toBeInTheDocument();
-    });
-
-    it("copy button calls copyToClipboard with the plaintext password", async () => {
-      // given
-      const user = userEvent.setup();
-      mockGetCandidatePassword.mockResolvedValue({ password: "s3cr3tPass!" });
-      renderPage();
-      await user.click(await screen.findByRole("button", { name: "查看密碼" }));
-      await screen.findByText("••••••••");
-
-      // when
-      await user.click(screen.getByRole("button", { name: "複製密碼" }));
-
-      // expect
-      expect(mockCopyToClipboard).toHaveBeenCalledWith("s3cr3tPass!");
-    });
-
-    it("shows 無法取得密碼 when getCandidatePassword rejects (500 / auth error)", async () => {
-      // given
-      const user = userEvent.setup();
-      mockGetCandidatePassword.mockRejectedValue(new Error("Internal Server Error"));
-      renderPage();
-      await screen.findByRole("button", { name: "查看密碼" });
-
-      // when
-      await user.click(screen.getByRole("button", { name: "查看密碼" }));
-
-      // expect
-      await waitFor(() => expect(screen.getByText("無法取得密碼")).toBeInTheDocument());
-      expect(screen.queryByRole("button", { name: "查看密碼" })).not.toBeInTheDocument();
-    });
-
-    it("second click while loading is a no-op — getCandidatePassword called only once", async () => {
-      // given: API never resolves so state stays 'loading'
-      const user = userEvent.setup();
-      mockGetCandidatePassword.mockReturnValue(new Promise(() => {}));
-      renderPage();
-      const btn = await screen.findByRole("button", { name: "查看密碼" });
-
-      // when
-      await user.click(btn);
-      // button is gone in loading state, so no second click possible — guard via direct invocation
-      // verify API was called exactly once up to this point
-      expect(mockGetCandidatePassword).toHaveBeenCalledTimes(1);
-    });
-
-    it("getCandidatePassword is not called again when state is already ready", async () => {
-      // given
-      const user = userEvent.setup();
-      mockGetCandidatePassword.mockResolvedValue({ password: "s3cr3tPass!" });
-      renderPage();
-      await user.click(await screen.findByRole("button", { name: "查看密碼" }));
-      await screen.findByText("••••••••");
-
-      // expect: button is no longer rendered, API was called exactly once
-      expect(screen.queryByRole("button", { name: "查看密碼" })).not.toBeInTheDocument();
-      expect(mockGetCandidatePassword).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -4,14 +4,12 @@ import {
   getSessionResult,
   getSubmissionDetail,
   listSessionSubmissions,
-  getCandidatePassword,
 } from "../api/client";
 import { NavBar } from "../components/NavBar";
 import type { SessionResult, SubmissionSummary, TestcaseResult } from "../types";
 import { STATUS_LABEL, STATUS_COLOR } from "../config/examStatus";
 import { ROUTES } from "../config/routes";
 import { SUBMISSION_TYPE_LABEL } from "../config/submission";
-import { copyToClipboard } from "../utils/clipboard";
 
 const TC_VERDICT_COLOR: Record<string, string> = {
   AC: "text-green-600",
@@ -41,14 +39,6 @@ export default function ExamResultPage() {
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  type PasswordState =
-    | { status: "idle" }
-    | { status: "loading" }
-    | { status: "error" }
-    | { status: "ready"; value: string };
-
-  const [passwordState, setPasswordState] = useState<PasswordState>({ status: "idle" });
-  const [passwordVisible, setPasswordVisible] = useState(false);
   const [expandedEspId, setExpandedEspId] = useState<Set<number>>(new Set());
   const [tcCache, setTcCache] = useState<Record<number, TestcaseResult[] | "loading" | "error">>(
     {},
@@ -68,14 +58,6 @@ export default function ExamResultPage() {
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [id]);
-
-  function handleFetchPassword() {
-    if (passwordState.status === "loading" || passwordState.status === "ready") return;
-    setPasswordState({ status: "loading" });
-    getCandidatePassword(Number(id))
-      .then(({ password }) => setPasswordState({ status: "ready", value: password }))
-      .catch(() => setPasswordState({ status: "error" }));
-  }
 
   function toggleDetail(espId: number, submissionId: number) {
     setExpandedEspId((prev) => {
@@ -167,47 +149,6 @@ export default function ExamResultPage() {
                 )}
               </div>
 
-              <div className="mt-3 pt-3 border-t border-slate-100">
-                <p className="text-xs text-slate-500 mb-1.5">考生密碼</p>
-                {passwordState.status === "idle" && (
-                  <button
-                    type="button"
-                    onClick={handleFetchPassword}
-                    className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
-                  >
-                    查看密碼
-                  </button>
-                )}
-                {passwordState.status === "loading" && (
-                  <p className="text-xs text-slate-400">載入中...</p>
-                )}
-                {passwordState.status === "error" && (
-                  <p className="text-xs text-red-500">無法取得密碼</p>
-                )}
-                {passwordState.status === "ready" && (
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm text-slate-800 select-all">
-                      {passwordVisible ? passwordState.value : "••••••••"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setPasswordVisible((v) => !v)}
-                      aria-label={passwordVisible ? "隱藏密碼" : "顯示密碼"}
-                      className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
-                    >
-                      {passwordVisible ? "隱藏" : "顯示"}
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="複製密碼"
-                      onClick={() => copyToClipboard(passwordState.value)}
-                      className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
-                    >
-                      複製
-                    </button>
-                  </div>
-                )}
-              </div>
             </div>
 
             <section className="bg-white rounded-xl border border-slate-200">

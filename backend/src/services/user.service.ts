@@ -1,5 +1,5 @@
 import bcrypt from "bcrypt";
-import { encryptPassword } from "./crypto.service";
+import { encryptPassword, decryptPassword } from "./crypto.service";
 import { db } from "../db/client";
 import { users, userRoles, roles } from "../db/schema";
 import { and, eq, isNull, inArray, sql } from "drizzle-orm";
@@ -303,6 +303,29 @@ export async function deleteUser(currentUser: CurrentUser, targetId: number) {
     .where(eq(users.id, targetId));
 
   cacheDel(`user:${targetId}`).catch(() => {});
+}
+
+export async function getUserPassword(
+  currentUser: CurrentUser,
+  targetId: number,
+): Promise<{ password: string }> {
+  const canAccess = currentUser.isSuperuser || currentUser.permissions.includes("exam:manage");
+  if (!canAccess) throw ForbiddenError();
+
+  const [user] = await db
+    .select({
+      encryptedPassword: users.encryptedPassword,
+      createdBy: users.createdBy,
+      deletedAt: users.deletedAt,
+    })
+    .from(users)
+    .where(eq(users.id, targetId));
+
+  if (!user || user.deletedAt !== null) throw NotFoundError("user");
+  if (!currentUser.isSuperuser && user.createdBy !== currentUser.id) throw ForbiddenError();
+  if (!user.encryptedPassword) throw NotFoundError("password");
+
+  return { password: decryptPassword(user.encryptedPassword) };
 }
 
 function generatePassword(length: number): string {
