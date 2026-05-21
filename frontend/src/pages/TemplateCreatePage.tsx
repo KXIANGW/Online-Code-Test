@@ -237,9 +237,7 @@ export default function TemplateCreatePage() {
                         key={m}
                         onClick={() => setMode(m)}
                         className={`px-3 py-1.5 transition-colors ${
-                          mode === m
-                            ? "bg-blue-600 text-white"
-                            : "text-slate-600 hover:bg-slate-50"
+                          mode === m ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"
                         }`}
                       >
                         {m === "manual" ? "手動選題" : "隨機派題"}
