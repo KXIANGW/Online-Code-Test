@@ -13,6 +13,7 @@ import {
   cancelExamSession,
   getExamSessionProblems,
   getPublicTestcases,
+  getCandidatePassword,
 } from "../services/exam.service";
 import { saveDraft, getDrafts } from "../services/draft.service";
 import { BadRequestError } from "../errors";
@@ -165,5 +166,11 @@ export const examRoutes: FastifyPluginAsync = async (app) => {
   app.get("/:id/drafts", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
     return getDrafts(request.user, parsePositiveIntParam(id, "id"));
+  });
+
+  // 14. 面試官查詢考生密碼（需 exam:manage 或 superuser 權限）
+  app.get("/:id/candidate-password", { preHandler: [authenticate] }, async (request) => {
+    const { id } = request.params as { id: string };
+    return getCandidatePassword(request.user, parsePositiveIntParam(id, "id"));
   });
 };

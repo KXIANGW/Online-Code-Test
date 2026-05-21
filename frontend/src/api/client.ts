@@ -23,6 +23,7 @@ import type {
   CreateExamTemplateManualRequest,
   CreateExamTemplateRandomRequest,
   CreateSubmissionRequest,
+  CandidatePasswordResponse,
 } from "../types";
 
 const baseURL = import.meta.env.VITE_API_BASE ?? "/api";
@@ -259,5 +260,12 @@ export async function saveExamDraft(
 // Returns Record<"problemId:language", code>
 export async function getExamDrafts(sessionId: number): Promise<Record<string, string>> {
   const { data } = await api.get<Record<string, string>>(`/exam-sessions/${sessionId}/drafts`);
+  return data;
+}
+
+export async function getCandidatePassword(sessionId: number): Promise<CandidatePasswordResponse> {
+  const { data } = await api.get<CandidatePasswordResponse>(
+    `/exam-sessions/${sessionId}/candidate-password`,
+  );
   return data;
 }
