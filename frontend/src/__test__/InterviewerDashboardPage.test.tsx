@@ -225,7 +225,9 @@ describe("InterviewerDashboardPage()", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "刪除" }));
     // confirm dialog should appear
-    expect(screen.getByText("確定要刪除此考試模板嗎？已分發的考試與歷史紀錄不會受影響。")).toBeInTheDocument();
+    expect(
+      screen.getByText("確定要刪除此考試模板嗎？已分發的考試與歷史紀錄不會受影響。"),
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "確定" }));
 
     await waitFor(() => expect(mockDeleteExamTemplate).toHaveBeenCalledWith(42));

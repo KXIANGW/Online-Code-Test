@@ -258,7 +258,10 @@ describe("ProblemFormPage()", () => {
 
       // when: fill in all required fields
       await user.type(screen.getByPlaceholderText("輸入題目名稱"), "New Problem");
-      await user.type(screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."), "Some description");
+      await user.type(
+        screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
+        "Some description",
+      );
       await user.click(screen.getByRole("radio", { name: "hard" }));
       // add a public testcase
       await user.click(screen.getByRole("button", { name: "+ 新增測資" }));
@@ -338,16 +341,17 @@ describe("ProblemFormPage()", () => {
 
       // when: fill in all required fields to pass client-side validation
       await user.type(screen.getByPlaceholderText("輸入題目名稱"), "Fail Problem");
-      await user.type(screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."), "Some description");
+      await user.type(
+        screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."),
+        "Some description",
+      );
       await user.click(screen.getByRole("button", { name: "+ 新增測資" }));
       await user.click(screen.getByRole("button", { name: "隱藏" })); // toggle to 公開
       await user.click(screen.getByRole("button", { name: "+ 新增測資" }));
       await user.click(screen.getByRole("button", { name: "儲存題目" }));
 
       // expect — inline error appears below submit button
-      await waitFor(() =>
-        expect(screen.getByText(/儲存失敗：/)).toBeInTheDocument(),
-      );
+      await waitFor(() => expect(screen.getByText(/儲存失敗：/)).toBeInTheDocument());
       expect(mockNavigate).not.toHaveBeenCalledWith("/problem-setter");
     });
   });

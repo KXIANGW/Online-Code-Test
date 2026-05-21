@@ -502,7 +502,9 @@ export default function InterviewerDashboardPage() {
         candidate={editingCandidate}
         onClose={() => setEditingCandidate(null)}
         onSaved={(id, newDisplayName) => {
-          setCandidates(candidates.map((c) => (c.id === id ? { ...c, displayName: newDisplayName } : c)));
+          setCandidates(
+            candidates.map((c) => (c.id === id ? { ...c, displayName: newDisplayName } : c)),
+          );
           setEditingCandidate(null);
           loadDashboardData();
         }}

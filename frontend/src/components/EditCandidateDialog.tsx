@@ -10,11 +10,18 @@ interface EditCandidateDialogProps {
   onSaved: (id: number, displayName: string) => void;
 }
 
-export function EditCandidateDialog({ open, candidate, onClose, onSaved }: EditCandidateDialogProps) {
+export function EditCandidateDialog({
+  open,
+  candidate,
+  onClose,
+  onSaved,
+}: EditCandidateDialogProps) {
   const [displayName, setDisplayName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [errors, setErrors] = useState<{ displayName?: string; password?: string; api?: string }>({});
+  const [errors, setErrors] = useState<{ displayName?: string; password?: string; api?: string }>(
+    {},
+  );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -104,12 +111,8 @@ export function EditCandidateDialog({ open, candidate, onClose, onSaved }: EditC
               </div>
             )}
 
-            {errors.password && (
-              <p className="text-xs text-red-500">{errors.password}</p>
-            )}
-            {errors.api && (
-              <p className="text-xs text-red-500">{errors.api}</p>
-            )}
+            {errors.password && <p className="text-xs text-red-500">{errors.password}</p>}
+            {errors.api && <p className="text-xs text-red-500">{errors.api}</p>}
 
             <div className="flex justify-end gap-2 pt-2">
               <button

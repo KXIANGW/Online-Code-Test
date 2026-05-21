@@ -353,9 +353,7 @@ export default function ProblemFormPage() {
                 placeholder="輸入題目名稱"
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
-              {errors.title && (
-                <p className="text-xs text-red-500 mt-1">{errors.title}</p>
-              )}
+              {errors.title && <p className="text-xs text-red-500 mt-1">{errors.title}</p>}
             </div>
 
             <div>
@@ -485,9 +483,7 @@ export default function ProblemFormPage() {
               ))}
             </div>
 
-            {errors.testcases && (
-              <p className="text-xs text-red-500">{errors.testcases}</p>
-            )}
+            {errors.testcases && <p className="text-xs text-red-500">{errors.testcases}</p>}
 
             <button
               type="button"

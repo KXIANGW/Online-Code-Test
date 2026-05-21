@@ -55,9 +55,7 @@ function RoleBasedRoute({
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
         <h1 className="text-2xl font-bold text-red-500">🚫 存取拒絕</h1>
-        <p className="text-slate-500 mt-2 text-center">
-          您的帳號權限不足，無法存取此路徑。
-        </p>
+        <p className="text-slate-500 mt-2 text-center">您的帳號權限不足，無法存取此路徑。</p>
         <button
           onClick={() => window.history.back()}
           className="mt-6 px-4 py-2 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
