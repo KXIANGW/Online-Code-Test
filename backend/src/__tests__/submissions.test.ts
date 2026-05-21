@@ -702,6 +702,13 @@ describe("Submission API state guards", () => {
     });
     expect(submitted.statusCode).toBe(409);
 
+    // Reset submittedId to "cancelled" so the service allows creating a new session for David.
+    // The service blocks reassignment when a candidate has a "submitted" or "expired" session.
+    await db
+      .update(examSessions)
+      .set({ status: "cancelled" })
+      .where(eq(examSessions.id, submittedId));
+
     const { sessionId: expiredId, espIds: expiredEspIds } = await createSession(
       aliceToken,
       davidId,
