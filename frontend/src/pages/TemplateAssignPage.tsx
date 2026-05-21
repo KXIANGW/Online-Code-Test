@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { NavBar } from "../components/NavBar";
-import { listExamTemplates, getUsers, assignExamToCandidates } from "../api/client";
-import type { ExamTemplate, UserSummary } from "../types";
+import {
+  listExamTemplates,
+  getUsers,
+  assignExamToCandidates,
+  getExamSessions,
+} from "../api/client";
+import type { ExamSession, ExamTemplate, UserSummary } from "../types";
+import { getAssignableCandidates } from "../utils/assignmentEligibility";
 
 export default function TemplateAssignPage() {
   const navigate = useNavigate();
@@ -11,6 +17,7 @@ export default function TemplateAssignPage() {
 
   const [template, setTemplate] = useState<ExamTemplate | null>(null);
   const [candidates, setCandidates] = useState<UserSummary[]>([]);
+  const [sessions, setSessions] = useState<ExamSession[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -20,10 +27,15 @@ export default function TemplateAssignPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [templates, users] = await Promise.all([listExamTemplates(), getUsers()]);
+        const [templates, users, sessionList] = await Promise.all([
+          listExamTemplates(),
+          getUsers(),
+          getExamSessions(),
+        ]);
 
         const found = templates.find((t) => t.id === templateId) ?? null;
         setTemplate(found);
+        setSessions(sessionList);
 
         const filteredCandidates = users.filter((u) => u.roles.includes("candidate"));
         setCandidates(filteredCandidates);
@@ -35,6 +47,8 @@ export default function TemplateAssignPage() {
     }
     load();
   }, [templateId]);
+
+  const assignableCandidates = getAssignableCandidates(candidates, sessions);
 
   function toggleCandidate(id: number) {
     setSelectedIds((prev) => {
@@ -122,11 +136,11 @@ export default function TemplateAssignPage() {
 
         {/* Candidate list */}
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-4">
-          {candidates.length === 0 ? (
+          {assignableCandidates.length === 0 ? (
             <p className="text-center py-8 text-slate-400 text-sm">目前沒有考生帳號</p>
           ) : (
             <div className="divide-y divide-slate-100">
-              {candidates.map((c) => (
+              {assignableCandidates.map(({ candidate: c, pendingSession }) => (
                 <label
                   key={c.id}
                   className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50"
@@ -143,6 +157,9 @@ export default function TemplateAssignPage() {
                       {c.displayName ?? c.username}
                     </p>
                     <p className="text-xs text-slate-400">@{c.username}</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {pendingSession ? `目前模板：${pendingSession.examTitle}` : "尚未分配模板"}
+                    </p>
                   </div>
                 </label>
               ))}

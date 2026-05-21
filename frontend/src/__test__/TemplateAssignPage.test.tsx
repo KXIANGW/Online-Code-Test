@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import TemplateAssignPage from "../pages/TemplateAssignPage";
 import { mockUserSummaries } from "./mock-data";
+import type { ExamSession, UserSummary } from "../types";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 const mockNavigate = vi.hoisted(() => vi.fn());
@@ -11,6 +12,7 @@ const mockLogout = vi.hoisted(() => vi.fn());
 const mockUseAuthStore = vi.hoisted(() => vi.fn());
 const mockListExamTemplates = vi.hoisted(() => vi.fn());
 const mockGetUsers = vi.hoisted(() => vi.fn());
+const mockGetExamSessions = vi.hoisted(() => vi.fn());
 const mockAssignExamToCandidates = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -21,6 +23,7 @@ vi.mock("../stores/authStore", () => ({ useAuthStore: mockUseAuthStore }));
 vi.mock("../api/client", () => ({
   listExamTemplates: mockListExamTemplates,
   getUsers: mockGetUsers,
+  getExamSessions: mockGetExamSessions,
   assignExamToCandidates: mockAssignExamToCandidates,
 }));
 
@@ -36,6 +39,61 @@ const mockTemplate = {
 
 // Only the candidate from mockUserSummaries (id=1, username="candidate01", roles=["candidate"])
 const candidates = mockUserSummaries.filter((u) => u.roles.includes("candidate"));
+
+const pendingCandidate: UserSummary = {
+  id: 4,
+  username: "pending01",
+  displayName: "Pending Candidate",
+  isSuperuser: false,
+  createdAt: "2026-01-04T00:00:00.000Z",
+  roles: ["candidate"],
+};
+
+const activeCandidate: UserSummary = {
+  id: 5,
+  username: "active01",
+  displayName: "Active Candidate",
+  isSuperuser: false,
+  createdAt: "2026-01-05T00:00:00.000Z",
+  roles: ["candidate"],
+};
+
+const endedCandidate: UserSummary = {
+  id: 6,
+  username: "ended01",
+  displayName: "Ended Candidate",
+  isSuperuser: false,
+  createdAt: "2026-01-06T00:00:00.000Z",
+  roles: ["candidate"],
+};
+
+function sessionForCandidate(
+  candidate: UserSummary,
+  status: ExamSession["status"],
+  examTitle: string,
+): ExamSession {
+  return {
+    id: 100 + candidate.id,
+    examId: 200 + candidate.id,
+    examTitle,
+    candidateId: candidate.id,
+    candidate: {
+      id: candidate.id,
+      username: candidate.username,
+      displayName: candidate.displayName,
+    },
+    createdBy: 10,
+    status,
+    durationMinutes: 60,
+    actualStartAt: status === "not_started" ? null : "2026-05-20T00:00:00.000Z",
+    expiresAt: status === "in_progress" ? "2026-05-20T01:00:00.000Z" : null,
+    submittedAt: status === "submitted" ? "2026-05-20T01:00:00.000Z" : null,
+    totalScore: 0,
+    maxScore: 100,
+    createdAt: "2026-05-20T00:00:00.000Z",
+    updatedAt: "2026-05-20T00:00:00.000Z",
+  };
+}
 
 function setupAuthStore(username = "interviewer01") {
   mockUseAuthStore.mockImplementation(
@@ -59,9 +117,11 @@ describe("TemplateAssignPage()", () => {
     mockNavigate.mockReset();
     mockLogout.mockReset();
     mockAssignExamToCandidates.mockReset();
+    mockGetExamSessions.mockReset();
     setupAuthStore();
     mockListExamTemplates.mockResolvedValue([mockTemplate]);
     mockGetUsers.mockResolvedValue(mockUserSummaries);
+    mockGetExamSessions.mockResolvedValue([]);
   });
 
   it("shows loading state on mount", () => {
@@ -127,5 +187,29 @@ describe("TemplateAssignPage()", () => {
 
     await waitFor(() => expect(screen.getByText("Assignment failed")).toBeInTheDocument());
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("hides in-progress and ended candidates but shows pending candidate template", async () => {
+    mockGetUsers.mockResolvedValue([
+      ...mockUserSummaries,
+      pendingCandidate,
+      activeCandidate,
+      endedCandidate,
+    ]);
+    mockGetExamSessions.mockResolvedValue([
+      sessionForCandidate(pendingCandidate, "not_started", "Legacy Backend Test"),
+      sessionForCandidate(activeCandidate, "in_progress", "Running Backend Test"),
+      sessionForCandidate(endedCandidate, "submitted", "Finished Backend Test"),
+    ]);
+
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(screen.getByText("Pending Candidate")).toBeInTheDocument();
+    expect(screen.getByText("目前模板：Legacy Backend Test")).toBeInTheDocument();
+    expect(screen.getByText("尚未分配模板")).toBeInTheDocument();
+    expect(screen.queryByText("Active Candidate")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ended Candidate")).not.toBeInTheDocument();
   });
 });

@@ -14,11 +14,12 @@ import {
   getUserPassword,
   deleteExamTemplate,
 } from "../api/client";
-import type { ExamStatus, SessionResult, ExamTemplate, UserSummary } from "../types";
+import type { ExamSession, ExamStatus, SessionResult, ExamTemplate, UserSummary } from "../types";
 import { STATUS_COLOR, STATUS_LABEL } from "../config/examStatus";
 import { DIFFICULTY_LABEL } from "../config/difficulty";
 import { ROUTES } from "../config/routes";
 import { copyToClipboard } from "../utils/clipboard";
+import { getAssignableCandidates } from "../utils/assignmentEligibility";
 
 function maskPassword(pw: string): string {
   if (pw.length <= 6) return "*".repeat(pw.length);
@@ -99,6 +100,7 @@ export default function InterviewerDashboardPage() {
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignSuccess, setAssignSuccess] = useState<string | null>(null);
+  const [assignmentSessions, setAssignmentSessions] = useState<ExamSession[]>([]);
   const [candidatePasswords, setCandidatePasswords] = useState<Map<number, string>>(
     () => new Map(),
   );
@@ -115,6 +117,7 @@ export default function InterviewerDashboardPage() {
       listExamTemplates(),
       getUsers(),
     ]);
+    setAssignmentSessions(sessions);
     const resultList = await Promise.all(sessions.map((s) => getSessionResult(s.id)));
     setResults(resultList);
     setTemplates(templateList);
@@ -188,6 +191,7 @@ export default function InterviewerDashboardPage() {
       : recordTab === "ended"
         ? results.filter((r) => r.status === "submitted" || r.status === "expired")
         : results.filter((r) => r.status === recordTab);
+  const assignableCandidates = getAssignableCandidates(candidates, assignmentSessions);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -411,11 +415,11 @@ export default function InterviewerDashboardPage() {
 
                   <div>
                     <p className="block text-xs font-semibold text-slate-500 mb-2">選擇考生</p>
-                    {candidates.length === 0 ? (
+                    {assignableCandidates.length === 0 ? (
                       <p className="text-sm text-slate-400 py-4">目前沒有考生可分發</p>
                     ) : (
                       <div className="space-y-2 max-h-72 overflow-auto pr-1">
-                        {candidates.map((candidate) => {
+                        {assignableCandidates.map(({ candidate, pendingSession }) => {
                           const name = candidate.displayName ?? candidate.username;
                           return (
                             <label
@@ -428,6 +432,11 @@ export default function InterviewerDashboardPage() {
                                 </span>
                                 <span className="block text-xs text-slate-400">
                                   @{candidate.username}
+                                </span>
+                                <span className="block text-xs text-slate-500 mt-1">
+                                  {pendingSession
+                                    ? `目前模板：${pendingSession.examTitle}`
+                                    : "尚未分配模板"}
                                 </span>
                               </span>
                               <input
