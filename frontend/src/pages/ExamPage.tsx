@@ -362,7 +362,7 @@ export default function ExamPage() {
                 memoryKb: message.memoryKb,
                 judgedAt: message.judgedAt,
                 score: message.score,
-                isFinalSubmission: message.score > 0,
+                isFinalSubmission: true,
               }
             : s,
         ),
@@ -748,7 +748,14 @@ export default function ExamPage() {
                           <span>
                             {submission.orderIndex}. {submission.problemTitle}
                           </span>
-                          <span>{SUBMISSION_TYPE_LABEL[submission.submissionType]}</span>
+                          <span className="flex items-center gap-2">
+                            <span>{SUBMISSION_TYPE_LABEL[submission.submissionType]}</span>
+                            {submission.isFinalSubmission && (
+                              <span className="rounded-full bg-green-50 px-2 py-0.5 text-green-600">
+                                最終提交
+                              </span>
+                            )}
+                          </span>
                           <span>{submission.verdict ?? submission.status}</span>
                           <span>{submission.language}</span>
                         </div>

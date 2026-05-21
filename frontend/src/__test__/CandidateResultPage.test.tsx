@@ -7,14 +7,17 @@ import type {
   SessionResult,
   SubmissionStatusMessage,
   SubmissionSummary,
+  SubmissionDetail,
 } from "../types";
 
 const mockGetSessionResult = vi.hoisted(() => vi.fn());
+const mockGetSubmissionDetail = vi.hoisted(() => vi.fn());
 const mockListSessionSubmissions = vi.hoisted(() => vi.fn());
 const mockUseJudgeSocket = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
   getSessionResult: mockGetSessionResult,
+  getSubmissionDetail: mockGetSubmissionDetail,
   listSessionSubmissions: mockListSessionSubmissions,
 }));
 
@@ -73,6 +76,24 @@ const sessionResult: SessionResult = {
 
 const submissions: SubmissionSummary[] = [
   {
+    id: 8999,
+    examSessionProblemId: 101,
+    problemId: 1,
+    problemTitle: "Practice Run",
+    orderIndex: 1,
+    language: "python3",
+    submissionType: "simple",
+    status: "done",
+    verdict: "WA",
+    runtimeMs: 22,
+    memoryKb: 1024,
+    submittedAt: "2026-01-01T00:09:00.000Z",
+    judgedAt: "2026-01-01T00:09:02.000Z",
+    score: 0,
+    scoreWeight: 50,
+    isFinalSubmission: false,
+  },
+  {
     id: 9001,
     examSessionProblemId: 101,
     problemId: 1,
@@ -110,6 +131,32 @@ const submissions: SubmissionSummary[] = [
   },
 ];
 
+const submissionDetail: SubmissionDetail = {
+  ...submissions[1]!,
+  sourceCode: "print('ok')",
+  testcaseResults: [
+    {
+      id: 1,
+      testcaseId: 1,
+      orderIndex: 1,
+      isPublic: true,
+      verdict: "AC",
+      runtimeMs: 12,
+      memoryKb: 1024,
+      actualOutput: "ok",
+    },
+    {
+      id: 2,
+      testcaseId: 2,
+      orderIndex: 2,
+      isPublic: false,
+      verdict: "WA",
+      runtimeMs: 18,
+      memoryKb: 2048,
+    },
+  ],
+};
+
 async function renderPage() {
   render(
     <MemoryRouter initialEntries={["/exam/42/result"]}>
@@ -129,6 +176,7 @@ describe("CandidateResultPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetSessionResult.mockResolvedValue(sessionResult);
+    mockGetSubmissionDetail.mockResolvedValue(submissionDetail);
     mockListSessionSubmissions.mockResolvedValue(submissions);
     mockUseJudgeSocket.mockImplementation(
       (
@@ -140,7 +188,7 @@ describe("CandidateResultPage", () => {
     );
   });
 
-  it("renders candidate-visible summary without testcase details", async () => {
+  it("renders candidate-visible summary using the interviewer result format", async () => {
     await renderPage();
 
     expect(screen.getByTestId("navbar")).toHaveAttribute("data-home", "/candidate");
@@ -148,7 +196,38 @@ describe("CandidateResultPage", () => {
     expect(screen.getByText("50 / 100")).toBeInTheDocument();
     expect(screen.getAllByText("1. Two Sum")).toHaveLength(2);
     expect(screen.getAllByText("2. Binary Search")).toHaveLength(2);
-    expect(screen.queryByText(/測資/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("正式")).toHaveLength(2);
+    expect(screen.getByText("最終提交")).toBeInTheDocument();
+    expect(screen.queryByText("Practice Run")).not.toBeInTheDocument();
+  });
+
+  it("expands candidate history details with public and hidden testcase verdicts", async () => {
+    await renderPage();
+
+    await screen.findByRole("button", { name: "查看詳細測資：提交 9001" });
+    await act(async () => {
+      screen.getByRole("button", { name: "查看詳細測資：提交 9001" }).click();
+    });
+
+    expect(await screen.findByText("公開測資 1")).toBeInTheDocument();
+    expect(screen.getByText("隱藏測資 2")).toBeInTheDocument();
+    expect(mockGetSubmissionDetail).toHaveBeenCalledWith(42, 9001);
+  });
+
+  it("shows final-submission tag even when the formal final submission has score 0", async () => {
+    mockListSessionSubmissions.mockResolvedValue([
+      {
+        ...submissions[1]!,
+        verdict: "WA",
+        score: 0,
+        isFinalSubmission: true,
+      },
+    ]);
+
+    await renderPage();
+
+    expect(screen.getByText("WA")).toBeInTheDocument();
+    expect(screen.getByText("最終提交")).toBeInTheDocument();
   });
 
   it("updates pending history rows when lifecycle events arrive", async () => {

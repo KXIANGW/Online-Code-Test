@@ -1438,6 +1438,41 @@ describe("ExamPage", () => {
     expect(within(panel).getByText("AC")).toBeInTheDocument();
   });
 
+  it("marks a formal judge result as final even when the score is 0", async () => {
+    mockListSessionSubmissions.mockResolvedValue([
+      {
+        ...mockSubmissions[1]!,
+        id: 9002,
+        verdict: null,
+        score: 0,
+        isFinalSubmission: false,
+      },
+    ]);
+    await renderExamPage();
+
+    act(() => {
+      realtimeHandler?.({
+        type: "judge_result",
+        sessionId: 42,
+        submissionId: 9002,
+        examSessionProblemId: 101,
+        submissionType: "formal",
+        status: "done",
+        verdict: "WA",
+        runtimeMs: 12,
+        memoryKb: 1024,
+        judgedAt: "2026-01-01T00:10:02.000Z",
+        score: 0,
+        testcaseResults: [],
+      });
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+
+    expect(screen.getByText("WA")).toBeInTheDocument();
+    expect(screen.getByText("最終提交")).toBeInTheDocument();
+  });
+
   it("submitting on problem 2 does not pollute problem 1 history tab", async () => {
     // given — createSubmission returns espId 102 (problem 2)
     mockCreateSubmission.mockResolvedValue({

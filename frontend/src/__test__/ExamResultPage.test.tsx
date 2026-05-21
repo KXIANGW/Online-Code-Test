@@ -253,22 +253,22 @@ describe("ExamResultPage()", () => {
     renderPage();
 
     expect(await screen.findByText("提交紀錄")).toBeInTheDocument();
-    expect(screen.getByText("一般")).toBeInTheDocument();
+    expect(screen.queryByText("一般")).not.toBeInTheDocument();
     expect(screen.getByText("正式")).toBeInTheDocument();
     expect(screen.getByText("最終提交")).toBeInTheDocument();
   });
 
-  it("expands a history item and shows only public testcase results", async () => {
+  it("expands a history item and shows public and hidden testcase results", async () => {
     mockGetSessionResult.mockResolvedValue(mockSessionResult);
     mockListSessionSubmissions.mockResolvedValue(mockSubmissions);
     mockGetSubmissionDetail.mockResolvedValue(mockSubmissionDetail);
 
     renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "查看公開測資：提交 2" }));
+    await userEvent.click(await screen.findByRole("button", { name: "查看詳細測資：提交 2" }));
 
     expect(await screen.findByText("公開測資 1")).toBeInTheDocument();
     expect(screen.getByText("公開測資 2")).toBeInTheDocument();
-    expect(screen.queryByText("測資 3")).not.toBeInTheDocument();
+    expect(screen.getByText("隱藏測資 3")).toBeInTheDocument();
   });
 
   // ── Exam date ─────────────────────────────────────────────────────────────
@@ -483,8 +483,8 @@ describe("ExamResultPage()", () => {
       await waitFor(() => expect(screen.getByText("無法載入測資結果")).toBeTruthy());
     });
 
-    it("renders only hidden testcase rows with verdict and runtime after successful fetch", async () => {
-      // given: mockSubmissionDetail has 3 testcaseResults; only orderIndex 3 is hidden (isPublic=false)
+    it("renders public and hidden testcase rows with verdict and runtime after successful fetch", async () => {
+      // given: mockSubmissionDetail has 2 public testcaseResults and 1 hidden testcaseResult
       const user = userEvent.setup();
       mockGetSessionResult.mockResolvedValue(mockSessionResult);
       mockGetSubmissionDetail.mockResolvedValue(mockSubmissionDetail);
@@ -494,10 +494,10 @@ describe("ExamResultPage()", () => {
       // when
       await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
 
-      // expect: only the hidden testcase (orderIndex 3, runtimeMs 45) is rendered
-      await screen.findByText("測資 3");
-      expect(screen.queryByText("測資 1")).toBeFalsy();
-      expect(screen.queryByText("測資 2")).toBeFalsy();
+      // expect: public and hidden testcase verdicts are all visible
+      await screen.findByText("公開測資 1");
+      expect(screen.getByText("公開測資 2")).toBeInTheDocument();
+      expect(screen.getByText("隱藏測資 3")).toBeInTheDocument();
       expect(screen.getByText("45 ms")).toBeTruthy();
     });
 
@@ -509,13 +509,13 @@ describe("ExamResultPage()", () => {
       renderPage();
       await screen.findByText(/Two Sum/);
       await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
-      await screen.findByText("測資 3");
+      await screen.findByText("隱藏測資 3");
 
       // when
       await user.click(screen.getByRole("button", { name: "收合 ▲" }));
 
       // expect
-      expect(screen.queryByText("測資 3")).toBeFalsy();
+      expect(screen.queryByText("隱藏測資 3")).toBeFalsy();
     });
 
     it("re-expanding an already fetched problem does not call getSubmissionDetail again", async () => {
@@ -526,7 +526,7 @@ describe("ExamResultPage()", () => {
       renderPage();
       await screen.findByText(/Two Sum/);
       await user.click(screen.getByRole("button", { name: "查看詳情 ▶" }));
-      await screen.findByText("測資 3");
+      await screen.findByText("隱藏測資 3");
       await user.click(screen.getByRole("button", { name: "收合 ▲" }));
 
       // when
@@ -534,7 +534,7 @@ describe("ExamResultPage()", () => {
 
       // expect: fetched only once; results re-render from cache
       expect(mockGetSubmissionDetail).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("測資 3")).toBeTruthy();
+      expect(screen.getByText("隱藏測資 3")).toBeTruthy();
     });
 
     it("feat: supports expanding multiple problem details simultaneously without closing others", async () => {
