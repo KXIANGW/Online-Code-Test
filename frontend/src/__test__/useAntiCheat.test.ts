@@ -262,6 +262,61 @@ describe("useAntiCheat — copy", () => {
   });
 });
 
+describe("useAntiCheat — handleMonacoPaste", () => {
+  it("calls undo and reports violation when paste is external", async () => {
+    // given
+    const { result } = renderHook(() => useAntiCheat({ sessionId: 9, enabled: true }));
+    const mockUndo = vi.fn();
+
+    // when: external paste (nothing was copied from editor)
+    await act(async () => {
+      result.current.handleMonacoPaste("external code", mockUndo);
+    });
+
+    // expect: undo called, violation reported, toast shown
+    expect(mockUndo).toHaveBeenCalledTimes(1);
+    expect(mockReportViolation).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({ type: "paste", detail: "length:13" }),
+    );
+    expect(mockToastError).toHaveBeenCalled();
+  });
+
+  it("does NOT call undo when paste matches last internal copy", async () => {
+    // given
+    const { result } = renderHook(() => useAntiCheat({ sessionId: 9, enabled: true }));
+    act(() => {
+      result.current.markEditorCopy("my own code");
+    });
+    const mockUndo = vi.fn();
+
+    // when: paste same text as was copied from editor
+    await act(async () => {
+      result.current.handleMonacoPaste("my own code", mockUndo);
+    });
+
+    // expect: allowed — no undo, no violation
+    expect(mockUndo).not.toHaveBeenCalled();
+    expect(mockReportViolation).not.toHaveBeenCalled();
+    expect(mockToastError).not.toHaveBeenCalled();
+  });
+
+  it("does NOT call undo when disabled (exam not in_progress)", async () => {
+    // given
+    const { result } = renderHook(() => useAntiCheat({ sessionId: 9, enabled: false }));
+    const mockUndo = vi.fn();
+
+    // when
+    await act(async () => {
+      result.current.handleMonacoPaste("external code", mockUndo);
+    });
+
+    // expect: disabled → allow all pastes
+    expect(mockUndo).not.toHaveBeenCalled();
+    expect(mockReportViolation).not.toHaveBeenCalled();
+  });
+});
+
 describe("useAntiCheat — markEditorCopy / isInternalPaste", () => {
   it("isInternalPaste returns true for empty string before any copy (pasting nothing is a no-op)", () => {
     // given

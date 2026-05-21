@@ -12,6 +12,12 @@ interface UseAntiCheatOptions {
 interface UseAntiCheatReturn {
   /** 偵測到外部貼上時呼叫：記錄違規並顯示警告 */
   handleEditorPaste: (pastedText: string) => void;
+  /**
+   * 傳給 Monaco onDidPaste 的包裝器：
+   * 若貼入內容為外部來源，立即呼叫 undo() 還原，並記錄違規。
+   * 內部 copy-paste 則直接放行。
+   */
+  handleMonacoPaste: (pastedText: string, undo: () => void) => void;
   /** Editor 內部 copy/cut 時呼叫，記錄允許貼回的內容 */
   markEditorCopy: (text: string) => void;
   /**
@@ -126,14 +132,22 @@ export function useAntiCheat({ sessionId, enabled }: UseAntiCheatOptions): UseAn
     internalCopyRef.current = text;
   }, []);
 
-  const isInternalPaste = useCallback(
-    (text: string): boolean => {
-      // 未啟用時不阻擋任何貼上（考試結束後應恢復正常行為）
-      if (!enabledRef.current) return true;
-      return text === internalCopyRef.current;
+  const isInternalPaste = useCallback((text: string): boolean => {
+    // 未啟用時不阻擋任何貼上（考試結束後應恢復正常行為）
+    if (!enabledRef.current) return true;
+    return text === internalCopyRef.current;
+  }, []);
+
+  // ── Monaco onDidPaste 包裝器 ───────────────────────────────────────────────
+  // 外部貼上 → 立即呼叫 undo() 還原內容，再記錄違規
+  const handleMonacoPaste = useCallback(
+    (pastedText: string, undo: () => void) => {
+      if (isInternalPaste(pastedText)) return;
+      undo();
+      handleEditorPaste(pastedText);
     },
-    [],
+    [isInternalPaste, handleEditorPaste],
   );
 
-  return { handleEditorPaste, markEditorCopy, isInternalPaste };
+  return { handleEditorPaste, handleMonacoPaste, markEditorCopy, isInternalPaste };
 }

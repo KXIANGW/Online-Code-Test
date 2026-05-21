@@ -70,7 +70,7 @@ export default function ExamPage() {
   const vertDragState = useRef<{ startY: number; startHeight: number } | null>(null);
   const lsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { handleEditorPaste, markEditorCopy, isInternalPaste } = useAntiCheat({
+  const { handleMonacoPaste, markEditorCopy } = useAntiCheat({
     sessionId,
     enabled: sessionStatus === "in_progress",
   });
@@ -91,21 +91,15 @@ export default function ExamPage() {
       editorDom.addEventListener("copy", captureSelection);
       editorDom.addEventListener("cut", captureSelection);
 
-      // Capture phase 在 Monaco 自身 handler 之前攔截 paste 事件
-      editorDom.addEventListener(
-        "paste",
-        (e) => {
-          const pastedText = e.clipboardData?.getData("text/plain") ?? "";
-          if (!isInternalPaste(pastedText)) {
-            e.preventDefault();
-            e.stopPropagation();
-            handleEditorPaste(pastedText);
-          }
-        },
-        true,
-      );
+      // onDidPaste 在 Monaco 完成貼上後觸發；外部貼上立即 undo 還原
+      monacoEditor.onDidPaste((e) => {
+        const model = monacoEditor.getModel();
+        if (!model) return;
+        const pastedText = model.getValueInRange(e.range);
+        handleMonacoPaste(pastedText, () => monacoEditor.trigger("anti-cheat", "undo", null));
+      });
     },
-    [handleEditorPaste, markEditorCopy, isInternalPaste],
+    [handleMonacoPaste, markEditorCopy],
   );
   const apiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchedEspIds = useRef<Set<number>>(new Set());
