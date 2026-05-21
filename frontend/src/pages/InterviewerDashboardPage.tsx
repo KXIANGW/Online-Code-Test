@@ -15,7 +15,14 @@ import {
   deleteExamTemplate,
   getViolations,
 } from "../api/client";
-import type { ExamSession, ExamStatus, SessionResult, ExamTemplate, UserSummary, ExamViolation } from "../types";
+import type {
+  ExamSession,
+  ExamStatus,
+  SessionResult,
+  ExamTemplate,
+  UserSummary,
+  ExamViolation,
+} from "../types";
 import { STATUS_COLOR, STATUS_LABEL } from "../config/examStatus";
 import { DIFFICULTY_LABEL } from "../config/difficulty";
 import { ROUTES } from "../config/routes";
