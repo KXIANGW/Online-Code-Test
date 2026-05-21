@@ -14,10 +14,15 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./infra/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      # Use -h 127.0.0.1 to force TCP. PostgreSQL only opens TCP *after* all
+      # /docker-entrypoint-initdb.d scripts complete. Without -h, pg_isready
+      # connects via UNIX socket which is available mid-init, causing backend
+      # to start before scenario data is seeded (race condition).
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+      start_period: 30s
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
