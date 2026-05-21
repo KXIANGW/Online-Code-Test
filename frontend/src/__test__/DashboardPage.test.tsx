@@ -378,6 +378,24 @@ describe("DashboardPage()", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/exam/1");
   });
 
+  it("shows error toast and keeps modal open when requestFullscreen is rejected", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[0]!]);
+    mockRequestFullscreen.mockRejectedValue(new Error("Permission denied"));
+    renderDashboard();
+
+    // when: open modal then confirm
+    await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意並開始考試" }));
+
+    // expect: exam not started, modal still visible
+    expect(toast.error).toHaveBeenCalledWith("請允許全螢幕模式才能開始考試。");
+    expect(mockStartExamSession).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
   it("shows error toast and reopens modal when startExamSession API fails (500)", async () => {
     // given
     setupAuthStore();

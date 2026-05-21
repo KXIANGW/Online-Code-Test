@@ -138,7 +138,9 @@ export default function DashboardPage() {
     try {
       await document.documentElement.requestFullscreen();
     } catch {
-      // 使用者拒絕全螢幕仍允許繼續（不強制阻擋）
+      toast.error("請允許全螢幕模式才能開始考試。");
+      setPendingSessionId(id);
+      return;
     }
     try {
       await handleStart(id);
