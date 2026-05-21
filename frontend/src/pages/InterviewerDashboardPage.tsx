@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { NavBar } from "../components/NavBar";
 import { useInterviewerStore } from "../stores/interviewerStore";
+import { toast, Toaster } from "react-hot-toast";
 import {
   getExamSessions,
   getSessionResult,
@@ -95,7 +96,9 @@ export default function InterviewerDashboardPage() {
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignSuccess, setAssignSuccess] = useState<string | null>(null);
-  const [candidatePasswords, setCandidatePasswords] = useState<Map<number, string>>(() => new Map());
+  const [candidatePasswords, setCandidatePasswords] = useState<Map<number, string>>(
+    () => new Map(),
+  );
 
   useEffect(() => {
     loadDashboardData().finally(() => setLoading(false));
@@ -219,10 +222,7 @@ export default function InterviewerDashboardPage() {
                     {candidates.map((c: UserSummary) => {
                       const plainPwd = candidatePasswords.get(c.id);
                       return (
-                        <div
-                          key={c.id}
-                          className="bg-white rounded-xl border border-slate-200 p-4"
-                        >
+                        <div key={c.id} className="bg-white rounded-xl border border-slate-200 p-4">
                           <div className="flex items-center justify-between">
                             <div>
                               <p className="font-medium text-slate-800 text-sm">
@@ -446,6 +446,7 @@ export default function InterviewerDashboardPage() {
           </>
         )}
       </main>
+      <Toaster position="bottom-center" reverseOrder={false} />
     </div>
   );
 }
