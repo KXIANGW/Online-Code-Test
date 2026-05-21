@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
+import type { OnMount } from "@monaco-editor/react";
+import { useAntiCheat } from "../hooks/useAntiCheat";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { NavBar } from "../components/NavBar";
@@ -67,6 +69,23 @@ export default function ExamPage() {
   const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
   const vertDragState = useRef<{ startY: number; startHeight: number } | null>(null);
   const lsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { handleEditorPaste } = useAntiCheat({
+    sessionId,
+    enabled: sessionStatus === "in_progress",
+  });
+
+  const handleMonacoMount: OnMount = useCallback(
+    (monacoEditor) => {
+      monacoEditor.onDidPaste((e) => {
+        const model = monacoEditor.getModel();
+        if (model) {
+          handleEditorPaste(model.getValueInRange(e.range));
+        }
+      });
+    },
+    [handleEditorPaste],
+  );
   const apiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchedEspIds = useRef<Set<number>>(new Set());
 
@@ -577,6 +596,7 @@ export default function ExamPage() {
               language={monacoLang}
               value={currentCode}
               onChange={handleCodeChange}
+              onMount={handleMonacoMount}
               theme="vs-dark"
               options={{
                 minimap: { enabled: false },

@@ -42,20 +42,21 @@ export async function truncateTestTables(): Promise<void> {
   // 1. 執行清空（包含新重構的 exams 與 exam_problems）
   await pool.query(`
     TRUNCATE
+      exam_violations,
       submission_testcase_results,
       submissions,
       exam_session_problems,
       exam_sessions,
-      exam_problems,        -- 👈 納入新架構表
-      exams,                -- 👈 納入新架構表
+      exam_problems,
+      exams,
       problem_testcases,
       problems,
       problem_language_limits,
       user_roles,
       users,
-      role_permissions,     -- 清空權限關聯，確保每次測試都是乾淨的對接
-      roles,                -- 清空角色
-      permissions,           -- 清空權限
+      role_permissions,
+      roles,
+      permissions,
       language_defaults
     RESTART IDENTITY CASCADE
   `);

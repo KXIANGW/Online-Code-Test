@@ -44,6 +44,9 @@ function renderDashboard() {
   );
 }
 
+// jsdom does not implement requestFullscreen; stub it so modal tests can proceed
+const mockRequestFullscreen = vi.fn().mockResolvedValue(undefined);
+
 describe("DashboardPage()", () => {
   beforeEach(() => {
     vi.useRealTimers();
@@ -54,6 +57,11 @@ describe("DashboardPage()", () => {
     mockUseExamStore.mockReset();
     mockGetExamSessions.mockResolvedValue([]);
     mockStartExamSession.mockReset();
+    mockRequestFullscreen.mockReset();
+    Object.defineProperty(document.documentElement, "requestFullscreen", {
+      configurable: true,
+      value: mockRequestFullscreen,
+    });
   });
 
   it("renders 3 section headings", () => {
@@ -196,6 +204,36 @@ describe("DashboardPage()", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/exam/3/result");
   });
 
+  it("clicking 開始考試 shows the fullscreen consent modal", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[0]!]);
+    renderDashboard();
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+
+    // expect: modal rendered with key text
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("進入考試前請確認")).toBeInTheDocument();
+  });
+
+  it("clicking 取消 in the fullscreen modal dismisses it without starting", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[0]!]);
+    renderDashboard();
+    await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    // expect: modal gone, session never started
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockStartExamSession).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it("clicking 開始考試 starts the session before navigating", async () => {
     // given
     setupAuthStore();
@@ -208,8 +246,9 @@ describe("DashboardPage()", () => {
     });
     renderDashboard();
 
-    // when
+    // when: open modal then confirm
     await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意並開始考試" }));
 
     // expect
     expect(mockStartExamSession).toHaveBeenCalledWith(1);
@@ -279,8 +318,9 @@ describe("DashboardPage()", () => {
     localStorage.setItem("oct:lang:1:10", "python3");
     renderDashboard();
 
-    // when
+    // when: open modal then confirm
     await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意並開始考試" }));
 
     // expect
     expect(localStorage.getItem("oct:draft:1:10:python3")).toBeNull();
@@ -303,8 +343,9 @@ describe("DashboardPage()", () => {
     localStorage.setItem("oct:lang:99:10", "python3");
     renderDashboard();
 
-    // when
+    // when: open modal then confirm
     await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意並開始考試" }));
 
     // expect: session 1 keys cleared, session 99 keys untouched
     expect(localStorage.getItem("oct:draft:1:10:python3")).toBeNull();
@@ -324,8 +365,11 @@ describe("DashboardPage()", () => {
     });
     renderDashboard();
 
-    // when / expect: no throw
+    // when: open modal then confirm
     await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意並開始考試" }));
+
+    // expect
     expect(mockNavigate).toHaveBeenCalledWith("/exam/1");
   });
 });

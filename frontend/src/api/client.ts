@@ -297,6 +297,22 @@ export async function getUserPassword(userId: number): Promise<CandidatePassword
   return data;
 }
 
+export async function reportViolation(
+  sessionId: number,
+  req: import("../types").ReportViolationRequest,
+): Promise<void> {
+  await api.post(`/exam-sessions/${sessionId}/violations`, req);
+}
+
+export async function getViolations(
+  sessionId: number,
+): Promise<import("../types").ExamViolation[]> {
+  const { data } = await api.get<import("../types").ExamViolation[]>(
+    `/exam-sessions/${sessionId}/violations`,
+  );
+  return data;
+}
+
 // ── Response error interceptor ────────────────────────────────────────────────
 
 interface RetryConfig extends InternalAxiosRequestConfig {

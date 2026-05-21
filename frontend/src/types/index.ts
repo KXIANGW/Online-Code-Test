@@ -327,3 +327,21 @@ export type JudgeSocketMessage = JudgeResultMessage | SubmissionStatusMessage;
 export interface CandidatePasswordResponse {
   password: string;
 }
+
+// ── Anti-cheat ────────────────────────────────────────────────────────────────
+
+export type ViolationType = "fullscreen_exit" | "tab_switch" | "window_blur" | "paste" | "copy";
+
+export interface ExamViolation {
+  id: number;
+  sessionId: number;
+  type: ViolationType;
+  detail: string | null;
+  occurredAt: string;
+}
+
+export interface ReportViolationRequest {
+  type: ViolationType;
+  detail?: string;
+  occurredAt?: string;
+}

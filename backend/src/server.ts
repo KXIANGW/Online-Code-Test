@@ -14,6 +14,7 @@ import { problemRoutes } from "./routes/problems";
 import { examRoutes } from "./routes/exams";
 import { languageRoutes } from "./routes/languages";
 import { submissionRoutes } from "./routes/submissions";
+import { violationRoutes } from "./routes/violations";
 import { closeMq } from "./mq/client";
 import { startJudgeResultConsumer } from "./mq/consumer";
 import { redis } from "./db/redis";
@@ -55,6 +56,7 @@ export async function buildApp() {
       await api.register(problemRoutes, { prefix: "/problems" });
       await api.register(submissionRoutes, { prefix: "/exam-sessions" });
       await api.register(examRoutes, { prefix: "/exam-sessions" });
+      await api.register(violationRoutes, { prefix: "/exam-sessions" });
       await api.register(languageRoutes, { prefix: "/languages" });
 
       api.get("/ws", { websocket: true }, async (connection, request) => {

@@ -13,8 +13,9 @@ import {
   assignExamToCandidates,
   getUserPassword,
   deleteExamTemplate,
+  getViolations,
 } from "../api/client";
-import type { ExamSession, ExamStatus, SessionResult, ExamTemplate, UserSummary } from "../types";
+import type { ExamSession, ExamStatus, SessionResult, ExamTemplate, UserSummary, ExamViolation } from "../types";
 import { STATUS_COLOR, STATUS_LABEL } from "../config/examStatus";
 import { DIFFICULTY_LABEL } from "../config/difficulty";
 import { ROUTES } from "../config/routes";
@@ -51,34 +52,99 @@ function StatusBadge({ status }: { status: ExamStatus }) {
   );
 }
 
+const VIOLATION_LABEL: Record<string, string> = {
+  fullscreen_exit: "離開全螢幕",
+  tab_switch: "切換分頁",
+  window_blur: "切換視窗",
+  paste: "貼入程式碼",
+  copy: "複製題目",
+};
+
 function SessionCard({ result }: { result: SessionResult }) {
   const navigate = useNavigate();
   const name = result.candidate.displayName ?? result.candidate.username;
+  const [violations, setViolations] = useState<ExamViolation[] | null>(null);
+  const [loadingViolations, setLoadingViolations] = useState(false);
+  const [showViolations, setShowViolations] = useState(false);
+
+  async function toggleViolations() {
+    if (showViolations) {
+      setShowViolations(false);
+      return;
+    }
+    setShowViolations(true);
+    if (violations !== null) return;
+    setLoadingViolations(true);
+    try {
+      const data = await getViolations(result.id);
+      setViolations(data);
+    } catch {
+      setViolations([]);
+    } finally {
+      setLoadingViolations(false);
+    }
+  }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-center justify-between">
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <p className="font-medium text-slate-800">{name}</p>
-          <StatusBadge status={result.status} />
+    <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <div className="flex items-center justify-between">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <p className="font-medium text-slate-800">{name}</p>
+            <StatusBadge status={result.status} />
+          </div>
+          {result.actualStartAt && (
+            <p className="text-xs text-slate-400">
+              測驗日期：{new Date(result.actualStartAt).toLocaleDateString("zh-TW")}
+            </p>
+          )}
+          {(result.status === "submitted" || result.status === "expired") && (
+            <p className="text-xs text-slate-500">
+              {result.totalScore} / {result.maxScore} 分
+            </p>
+          )}
         </div>
-        {result.actualStartAt && (
-          <p className="text-xs text-slate-400">
-            測驗日期：{new Date(result.actualStartAt).toLocaleDateString("zh-TW")}
-          </p>
-        )}
-        {(result.status === "submitted" || result.status === "expired") && (
-          <p className="text-xs text-slate-500">
-            {result.totalScore} / {result.maxScore} 分
-          </p>
-        )}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => void toggleViolations()}
+            className="text-sm text-amber-600 hover:text-amber-800 font-medium transition-colors"
+          >
+            {showViolations ? "收起" : "異常行為"}
+          </button>
+          <button
+            onClick={() => navigate(ROUTES.resultPage(result.id))}
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
+          >
+            查看結果
+          </button>
+        </div>
       </div>
-      <button
-        onClick={() => navigate(ROUTES.resultPage(result.id))}
-        className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
-      >
-        查看結果
-      </button>
+
+      {showViolations && (
+        <div className="mt-3 pt-3 border-t border-slate-100">
+          {loadingViolations ? (
+            <p className="text-xs text-slate-400">載入中…</p>
+          ) : violations === null || violations.length === 0 ? (
+            <p className="text-xs text-slate-400">無異常行為紀錄</p>
+          ) : (
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-slate-500 mb-1">
+                共 {violations.length} 筆異常行為
+              </p>
+              {violations.map((v) => (
+                <div key={v.id} className="flex items-start gap-2 text-xs text-slate-600">
+                  <span className="shrink-0 text-amber-500">⚠</span>
+                  <span className="font-medium">{VIOLATION_LABEL[v.type] ?? v.type}</span>
+                  {v.detail && <span className="text-slate-400">（{v.detail}）</span>}
+                  <span className="ml-auto shrink-0 text-slate-400">
+                    {new Date(v.occurredAt).toLocaleTimeString("zh-TW")}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

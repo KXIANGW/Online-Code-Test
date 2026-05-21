@@ -245,6 +245,28 @@ export const submissions = pgTable("submissions", {
   judgedAt: timestamp("judged_at", { withTimezone: true }),
 });
 
+// ── Anti-cheat ────────────────────────────────────────────────────────────────
+
+export const violationTypeEnum = pgEnum("violation_type", [
+  "fullscreen_exit",
+  "tab_switch",
+  "window_blur",
+  "paste",
+  "copy",
+]);
+
+export const examViolations = pgTable("exam_violations", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  sessionId: bigint("session_id", { mode: "number" })
+    .notNull()
+    .references((): AnyPgColumn => examSessions.id, { onDelete: "cascade" }),
+  type: violationTypeEnum("type").notNull(),
+  detail: text("detail"),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Submission ────────────────────────────────────────────────────────────────
+
 export const submissionTestcaseResults = pgTable("submission_testcase_results", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   submissionId: bigint("submission_id", { mode: "number" }).notNull(),
