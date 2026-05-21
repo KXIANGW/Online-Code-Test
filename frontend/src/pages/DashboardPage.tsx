@@ -43,10 +43,12 @@ function ExamSessionCard({
   session,
   onResume,
   onRequestStart,
+  onViewResult,
 }: {
   session: ExamSession;
   onResume: (sessionId: number) => void;
   onRequestStart: (sessionId: number) => void;
+  onViewResult: (sessionId: number) => void;
 }) {
   const timeLeft = useExamTimer(session.expiresAt);
   const title = session.examTitle || `考試 #${session.id}`;
@@ -86,7 +88,7 @@ function ExamSessionCard({
       )}
       {(session.status === "submitted" || session.status === "expired") && (
         <button
-          onClick={() => navigate(ROUTES.candidateResultPage(session.id))}
+          onClick={() => onViewResult(session.id)}
           className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
         >
           查看結果
@@ -175,6 +177,7 @@ export default function DashboardPage() {
                 session={s}
                 onResume={handleResume}
                 onRequestStart={setPendingSessionId}
+                onViewResult={(id) => navigate(ROUTES.candidateResultPage(id))}
               />
             ))
           )}
@@ -190,6 +193,7 @@ export default function DashboardPage() {
                 session={s}
                 onResume={handleResume}
                 onRequestStart={setPendingSessionId}
+                onViewResult={(id) => navigate(ROUTES.candidateResultPage(id))}
               />
             ))
           )}
@@ -205,6 +209,7 @@ export default function DashboardPage() {
                 session={s}
                 onResume={handleResume}
                 onRequestStart={setPendingSessionId}
+                onViewResult={(id) => navigate(ROUTES.candidateResultPage(id))}
               />
             ))
           )}
