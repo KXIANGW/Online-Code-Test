@@ -14,11 +14,14 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./infra/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      # Use -h 127.0.0.1 to force TCP. PostgreSQL only opens TCP *after* all
-      # /docker-entrypoint-initdb.d scripts complete. Without -h, pg_isready
-      # connects via UNIX socket which is available mid-init, causing backend
-      # to start before scenario data is seeded (race condition).
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      # Two-stage gate:
+      # 1. pg_isready -h 127.0.0.1: forces TCP (only open after ALL
+      #    docker-entrypoint-initdb.d scripts finish; UNIX socket is available
+      #    mid-init and would pass too early).
+      # 2. SELECT 1 FROM users LIMIT 1: confirms scenario seed data exists.
+      #    If the volume has leftover partial data (e.g. from a crashed init),
+      #    this gate stays unhealthy and backend never starts with bad state.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB} && psql -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB} -tc 'SELECT 1 FROM users LIMIT 1' 2>/dev/null | grep -q 1"]
       interval: 5s
       timeout: 5s
       retries: 20
