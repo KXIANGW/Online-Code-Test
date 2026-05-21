@@ -13,6 +13,10 @@ const LanguageSpecSchema = z.object({
   // Optional override for the Node-local rootfs directory. Defaults to
   // `${RootfsResolver.baseDir}/${id}` if omitted.
   rootfsPath: z.string().optional(),
+  // Optional override for the host directory that contains the language's
+  // Dockerfile. Defaults to `id` — i.e. `worker/sandbox/<id>/Dockerfile`.
+  // Set explicitly when several language versions share one Dockerfile.
+  dockerfileContext: z.string().optional(),
   source: z.object({ filename: z.string().min(1) }),
   compile: z
     .object({

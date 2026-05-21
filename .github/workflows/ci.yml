@@ -150,9 +150,9 @@ jobs:
       matrix:
         include:
           - lang: cpp
-            context: ./worker/sandbox/cpp
+            context: ./worker/sandbox/cpp17
           - lang: python
-            context: ./worker/sandbox/python
+            context: ./worker/sandbox/python3
 
     steps:
       - uses: actions/checkout@v4

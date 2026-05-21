@@ -5,6 +5,16 @@ import { describe, expect, it } from "vitest";
 
 describe("sandbox image build contract", () => {
   it("builds the same sandbox image tags that the worker loads at runtime", () => {
+    // After the Makefile became data-driven (reads languages.yaml via
+    // scripts/list-languages.mjs), there are no per-language hardcoded
+    // `docker build` lines. The contract we still want to enforce:
+    //   1. languages.yaml's image tags match the legacy expected values
+    //      (so anything else still consuming those tags keeps working).
+    //   2. The root Makefile delegates to the worker's build target.
+    //   3. The worker Makefile's data-driven target exists and uses the
+    //      list-languages.mjs helper to enumerate images.
+    //   4. The legacy alias `build-sandbox-images` still resolves so the
+    //      root Makefile / CI workflow / docs that reference it work.
     const repoRoot = path.resolve(__dirname, "../../..");
     const rootMakefile = fs.readFileSync(path.join(repoRoot, "Makefile"), "utf8");
     const workerMakefile = fs.readFileSync(path.join(repoRoot, "worker/Makefile"), "utf8");
@@ -20,9 +30,10 @@ describe("sandbox image build contract", () => {
     expect(runtimeImages).toEqual(["oct-sandbox-cpp:12", "oct-sandbox-python:3.11"]);
     expect(rootMakefile).toContain("$(MAKE) -C worker build-sandbox-images");
     expect(rootMakefile).toContain("up: bootstrap sandbox-images");
-    for (const image of runtimeImages) {
-      expect(workerMakefile).toContain(`docker build -t ${image}`);
-    }
+    expect(workerMakefile).toMatch(/^build-language-images:/m);
+    expect(workerMakefile).toContain("scripts/list-languages.mjs");
+    // Legacy alias still resolves so existing callers don't break.
+    expect(workerMakefile).toMatch(/^build-sandbox-images:\s+build-language-images$/m);
   });
 
   it("waits for the DaemonSet-managed language rootfs before the Kubernetes worker starts", () => {
