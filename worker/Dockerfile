@@ -1,5 +1,5 @@
 # --- Stage 1: build TypeScript ---
-FROM node:20-bookworm-slim AS node-build
+FROM --platform=$BUILDPLATFORM node:20-bookworm-slim AS node-build
 
 WORKDIR /app
 COPY package*.json ./
