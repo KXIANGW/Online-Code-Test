@@ -82,19 +82,29 @@ async function listUsers(token: string): Promise<CandidateLookup[]> {
   return rows;
 }
 
-interface SessionCreated {
+interface TemplateCreated {
   id: number;
 }
 
-async function createSession(
-  token: string,
-  candidateId: number
-): Promise<SessionCreated> {
-  return http<SessionCreated>("POST", "/exam-sessions", {
-    candidateId,
+interface SessionCreated {
+  id: number;
+  candidateId: number;
+}
+
+async function createTemplate(token: string): Promise<TemplateCreated> {
+  return http<TemplateCreated>("POST", "/exam-sessions/templates/manual", {
+    title: `Load Test ${Date.now()}`,
     durationMinutes: DURATION_MINUTES,
     problems: [{ problemId: PROBLEM_ID, scoreWeight: 100, orderIndex: 1 }],
   }, token);
+}
+
+async function assignTemplate(
+  token: string,
+  templateId: number,
+  candidateIds: number[]
+): Promise<SessionCreated[]> {
+  return http<SessionCreated[]>("POST", `/exam-sessions/templates/${templateId}/assign`, { candidateIds }, token);
 }
 
 interface SessionProblem {
@@ -130,6 +140,20 @@ async function main(): Promise<void> {
   const userIndex = await listUsers(aliceToken);
   const byUsername = new Map(userIndex.map((u) => [u.username, u.id]));
 
+  // Stage 1: create one template for all candidates
+  const template = await createTemplate(aliceToken);
+  console.log(`[seed] created exam template id=${template.id}`);
+
+  // Stage 2: assign template to all candidates in one call
+  const candidateIds = candidates.map((c) => {
+    const id = byUsername.get(c.username);
+    if (!id) throw new Error(`Candidate ${c.username} not in users list`);
+    return id;
+  });
+  const sessions = await assignTemplate(aliceToken, template.id, candidateIds);
+  const sessionByCandidateId = new Map(sessions.map((s) => [s.candidateId, s.id]));
+  console.log(`[seed] assigned template to ${sessions.length} candidates`);
+
   type Row = {
     token: string;
     sessionId: number;
@@ -139,15 +163,15 @@ async function main(): Promise<void> {
   const out: Row[] = [];
 
   for (const [i, c] of candidates.entries()) {
-    const candidateId = byUsername.get(c.username);
-    if (!candidateId) throw new Error(`Candidate ${c.username} not in users list`);
+    const candidateId = byUsername.get(c.username)!;
+    const sessionId = sessionByCandidateId.get(candidateId);
+    if (!sessionId) throw new Error(`No session found for candidate ${c.username}`);
 
-    const session = await createSession(aliceToken, candidateId);
     const candidateToken = await login(c.username, c.password);
-    const espId = await startSessionAndGetEsp(candidateToken, session.id);
+    const espId = await startSessionAndGetEsp(candidateToken, sessionId);
     out.push({
       token: candidateToken,
-      sessionId: session.id,
+      sessionId,
       examSessionProblemId: espId,
       candidateUsername: c.username,
     });

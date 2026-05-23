@@ -22,14 +22,31 @@ NTHU 1142 雲原生 HW2 / Team 12。M1 → M5 累進疊加：非同步判題（M
 - Docker Compose v2
 - cgroup v2 unified hierarchy（Ubuntu 22.04+ / Debian 12+ 預設都有）。
   Sandbox engine 走 `sio2project/isolate`，需要 host 把 cgroup v2 委派給 worker
-  container；`docker-compose.yml` 已用 `cap_add: SYS_ADMIN` + `cgroup: host`
-  解掉這個限制。K8s/k3s 透過 kubelet 自動處理，不需要這兩條設定。
+  container；`docker-compose.yml` 已用 `privileged: true` 解掉這個限制。
+  K8s/k3s 透過 kubelet 自動處理，不需要這條設定。
 
 ```bash
+# 1. 產生 .env（僅首次）
 cp .env.example .env
+
+# 2. Build sandbox image 並解壓語言 rootfs 到 /tmp/oct-rootfs/
+#    （make up 只 build image，不會自動解壓；worker 啟動時需要 rootfs 存在）
+make -C worker build-isolate-rootfs
+
+# 3. 啟動所有服務
 make up
+
+# 4. 確認所有服務健康
 make ps
 ```
+
+> **為什麼需要 `build-isolate-rootfs`？**
+> `make up` 會 build `oct-sandbox-cpp` / `oct-sandbox-python` 等 Docker image，
+> 但 isolate sandbox 不直接跑 Docker container，而是把 image 解壓成 rootfs 目錄
+> 後透過 bind mount 帶入 sandbox。`build-isolate-rootfs` 負責執行這個解壓步驟，
+> 將結果放到 `/tmp/oct-rootfs/<lang>/`，worker container 再以唯讀方式掛入。
+> 若跳過此步驟，worker 的 `/var/lib/oct/rootfs/` 將為空目錄，healthcheck 失敗，
+> 所有提交都無法正常判題。
 
 啟動後服務入口：
 
@@ -65,7 +82,7 @@ make ps
 # 基本操作
 make bootstrap       # 產生 .env
 make sandbox-images  # 重建所有 enabled 語言的 sandbox image（data-driven，讀 languages.yaml）
-make up              # docker compose up -d --build（含 prometheus / grafana / cadvisor）
+make up              # build sandbox image + docker compose up -d --build（不含 rootfs 解壓，需先跑 build-isolate-rootfs）
 make ps              # 查看所有服務健康狀態
 make logs            # 追蹤所有服務 log
 make down            # 停止服務
