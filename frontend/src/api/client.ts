@@ -27,7 +27,14 @@ import type {
   CandidatePasswordResponse,
 } from "../types";
 
-const baseURL = import.meta.env.VITE_API_BASE ?? "/api";
+const configuredApiBaseURL = import.meta.env.VITE_API_BASE?.trim();
+const appBaseURL = import.meta.env.BASE_URL.endsWith("/")
+  ? import.meta.env.BASE_URL
+  : import.meta.env.BASE_URL + "/";
+
+export const apiBaseURL = configuredApiBaseURL || appBaseURL + "api";
+
+const baseURL = apiBaseURL;
 
 export const api = axios.create({
   baseURL,

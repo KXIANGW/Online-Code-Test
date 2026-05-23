@@ -4,7 +4,7 @@
 FROM --platform=$BUILDPLATFORM node:20-alpine AS builder
 WORKDIR /app
 
-ARG VITE_API_BASE=/api
+ARG VITE_API_BASE=
 ENV VITE_API_BASE=${VITE_API_BASE}
 
 COPY package.json package-lock.json* ./

@@ -25,7 +25,7 @@ jobs:
             context: ./worker
           - service: frontend
             context: ./frontend
-            build-args: VITE_API_BASE=/api
+            build-args: VITE_API_BASE=
 
     steps:
       - uses: actions/checkout@v4

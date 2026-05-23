@@ -105,7 +105,7 @@ jobs:
             context: ./worker
           - service: frontend
             context: ./frontend
-            build-args: VITE_API_BASE=/api
+            build-args: VITE_API_BASE=
           - service: language-rootfs-puller
             context: ./worker/puller
 

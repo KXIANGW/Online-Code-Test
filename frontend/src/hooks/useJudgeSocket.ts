@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { apiBaseURL } from "../api/client";
 import type { JudgeSocketMessage } from "../types";
 
 export function useJudgeSocket(
@@ -16,10 +17,13 @@ export function useJudgeSocket(
     let hasConnected = false;
 
     const connect = () => {
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      socket = new WebSocket(
-        `${protocol}//${window.location.host}/api/ws?token=${encodeURIComponent(token)}`,
-      );
+      const normalizedApiBaseURL = apiBaseURL.endsWith("/")
+        ? apiBaseURL.slice(0, -1)
+        : apiBaseURL;
+      const socketURL = new URL(normalizedApiBaseURL + "/ws", window.location.origin);
+      socketURL.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      socketURL.searchParams.set("token", token);
+      socket = new WebSocket(socketURL.toString());
 
       socket.addEventListener("open", () => {
         socket?.send(JSON.stringify({ type: "subscribe", sessionId }));

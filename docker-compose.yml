@@ -134,7 +134,7 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_BASE: /api
+        VITE_API_BASE: ""
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-5173}:80"
