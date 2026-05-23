@@ -15,6 +15,11 @@ import CandidateResultPage from "./pages/CandidateResultPage";
 import { useAuthStore } from "./stores/authStore";
 import { PERMISSIONS, type Permission } from "./config/permissions";
 
+const configuredBasePath = import.meta.env.BASE_URL;
+const routerBasePath = window.location.pathname.startsWith(configuredBasePath)
+  ? configuredBasePath
+  : "/";
+
 /**
  * 嚴格權限路由守衛
  */
@@ -102,7 +107,7 @@ export default function App() {
   const token = useAuthStore((s) => s.token);
 
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={routerBasePath}>
       <Routes>
         {/* 公共路徑 */}
         <Route path="/login" element={token ? <RoleRedirect /> : <LoginPage />} />

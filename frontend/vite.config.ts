@@ -3,6 +3,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
+  base: "/online_code_test/",
   plugins: [react()],
   test: {
     environment: "jsdom",
