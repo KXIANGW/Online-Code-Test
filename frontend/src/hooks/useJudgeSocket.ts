@@ -17,9 +17,7 @@ export function useJudgeSocket(
     let hasConnected = false;
 
     const connect = () => {
-      const normalizedApiBaseURL = apiBaseURL.endsWith("/")
-        ? apiBaseURL.slice(0, -1)
-        : apiBaseURL;
+      const normalizedApiBaseURL = apiBaseURL.endsWith("/") ? apiBaseURL.slice(0, -1) : apiBaseURL;
       const socketURL = new URL(normalizedApiBaseURL + "/ws", window.location.origin);
       socketURL.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       socketURL.searchParams.set("token", token);
