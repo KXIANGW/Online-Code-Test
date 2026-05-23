@@ -9,6 +9,7 @@ resources:
   - 05-rabbitmq.yaml
   - 06-redis.yaml
   - 07-backend.yaml
+  - 08a-language-puller.yaml
   - 08-worker.yaml
   - 09-frontend.yaml
   - 10-prometheus.yaml

@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import { encryptPassword, decryptPassword } from "./crypto.service";
 import { db } from "../db/client";
 import { users, userRoles, roles } from "../db/schema";
 import { and, eq, isNull, inArray, sql } from "drizzle-orm";
@@ -70,6 +71,7 @@ export async function createUser(
     data.roleNames && data.roleNames.length > 0 ? data.roleNames : ["candidate"];
 
   const passwordHash = await bcrypt.hash(data.password, 10);
+  const encryptedPwd = encryptPassword(data.password);
 
   return db
     .transaction(async (tx) => {
@@ -87,6 +89,7 @@ export async function createUser(
         .values({
           username: data.username,
           passwordHash,
+          encryptedPassword: encryptedPwd,
           displayName: data.displayName,
           isSuperuser: false,
           createdBy: currentUser.isSuperuser ? undefined : currentUser.id,
@@ -133,6 +136,7 @@ export async function batchCreateCandidates(
     const username = `candidate_${dateStr}_${num}`;
     const password = generatePassword(12);
     const passwordHash = await bcrypt.hash(password, 10);
+    const encryptedPwd = encryptPassword(password);
 
     const candidateRole = await db
       .select({ id: roles.id })
@@ -145,6 +149,7 @@ export async function batchCreateCandidates(
         .values({
           username,
           passwordHash,
+          encryptedPassword: encryptedPwd,
           displayName: username,
           isSuperuser: false,
           createdBy: currentUser.isSuperuser ? undefined : currentUser.id,
@@ -219,7 +224,10 @@ export async function updateUser(
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (data.displayName !== undefined) updates.displayName = data.displayName;
-  if (data.password !== undefined) updates.passwordHash = await bcrypt.hash(data.password, 10);
+  if (data.password !== undefined) {
+    updates.passwordHash = await bcrypt.hash(data.password, 10);
+    updates.encryptedPassword = encryptPassword(data.password);
+  }
 
   await db.update(users).set(updates).where(eq(users.id, targetId));
   cacheDel(`user:${targetId}`).catch(() => {});
@@ -295,6 +303,29 @@ export async function deleteUser(currentUser: CurrentUser, targetId: number) {
     .where(eq(users.id, targetId));
 
   cacheDel(`user:${targetId}`).catch(() => {});
+}
+
+export async function getUserPassword(
+  currentUser: CurrentUser,
+  targetId: number,
+): Promise<{ password: string }> {
+  const canAccess = currentUser.isSuperuser || currentUser.permissions.includes("exam:manage");
+  if (!canAccess) throw ForbiddenError();
+
+  const [user] = await db
+    .select({
+      encryptedPassword: users.encryptedPassword,
+      createdBy: users.createdBy,
+      deletedAt: users.deletedAt,
+    })
+    .from(users)
+    .where(eq(users.id, targetId));
+
+  if (!user || user.deletedAt !== null) throw NotFoundError("user");
+  if (!currentUser.isSuperuser && user.createdBy !== currentUser.id) throw ForbiddenError();
+  if (!user.encryptedPassword) throw NotFoundError("password");
+
+  return { password: decryptPassword(user.encryptedPassword) };
 }
 
 function generatePassword(length: number): string {

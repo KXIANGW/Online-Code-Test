@@ -174,8 +174,7 @@ docker compose up -d --build
 
 ## 剩餘工作
 
-| 項目                                 | 說明                                                    |
-| ------------------------------------ | ------------------------------------------------------- |
-| **Judge Worker**                     | 後端 Worker 尚未實作，WebSocket judge_result 尚無法觸發 |
-| **DisplayProblem in ExamresultPage** | interviewer 在查看面試者考試結果時可以看題目預覽        |
-| **Interviewer Account Management**   | interviewer 在要有他所建立的 candidate 的帳號密碼總覽   |
+| 項目                           | 說明                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| **繼續考試**                   | 點擊繼續考試應該要回到全螢幕                                                   |
+| **interviewer 看到異常的細節** | interviewer 在查看面試者考試異常情形時可以看他做了什麼(查詢什麼、貼上什麼內容) |

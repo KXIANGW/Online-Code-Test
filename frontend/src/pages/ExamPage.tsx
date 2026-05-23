@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
+import type { OnMount } from "@monaco-editor/react";
+import { useAntiCheat } from "../hooks/useAntiCheat";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { NavBar } from "../components/NavBar";
@@ -27,6 +29,9 @@ import {
 } from "../api/client";
 import { formatTimeLeft, useExamTimer } from "../hooks/useExamTimer";
 import { useJudgeSocket } from "../hooks/useJudgeSocket";
+import { STORAGE_KEYS } from "../config/storage";
+import { ROUTES } from "../config/routes";
+import { SUBMISSION_TYPE_LABEL } from "../config/submission";
 
 const MONACO_LANG: Record<string, string> = {
   python3: "python",
@@ -64,6 +69,38 @@ export default function ExamPage() {
   const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
   const vertDragState = useRef<{ startY: number; startHeight: number } | null>(null);
   const lsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { handleMonacoPaste, markEditorCopy } = useAntiCheat({
+    sessionId,
+    enabled: sessionStatus === "in_progress",
+  });
+
+  const handleMonacoMount: OnMount = useCallback(
+    (monacoEditor) => {
+      const editorDom = monacoEditor.getDomNode();
+      if (!editorDom) return;
+
+      // 記錄從 Editor 內部複製/剪切的文字，允許貼回
+      const captureSelection = () => {
+        const selection = monacoEditor.getSelection();
+        const model = monacoEditor.getModel();
+        if (selection && model) {
+          markEditorCopy(model.getValueInRange(selection));
+        }
+      };
+      editorDom.addEventListener("copy", captureSelection);
+      editorDom.addEventListener("cut", captureSelection);
+
+      // onDidPaste 在 Monaco 完成貼上後觸發；外部貼上立即 undo 還原
+      monacoEditor.onDidPaste((e) => {
+        const model = monacoEditor.getModel();
+        if (!model) return;
+        const pastedText = model.getValueInRange(e.range);
+        handleMonacoPaste(pastedText, () => monacoEditor.trigger("anti-cheat", "undo", null));
+      });
+    },
+    [handleMonacoPaste, markEditorCopy],
+  );
   const apiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchedEspIds = useRef<Set<number>>(new Set());
 
@@ -80,29 +117,30 @@ export default function ExamPage() {
 
         const enabledLangs = langs.filter((l) => l.isEnabled !== false);
         const enabledLanguageIds = new Set(enabledLangs.map((lang) => lang.language));
-        setProblems(sessionProblems);
+        const orderedProblems = [...sessionProblems].sort((a, b) => a.orderIndex - b.orderIndex);
+        setProblems(orderedProblems);
         setLanguages(enabledLangs);
         setSessionStatus(session.status);
         setSubmissions(history.filter((s) => s.submissionType === "formal"));
         if (session.expiresAt) setExpiresAt(session.expiresAt);
-        if (sessionProblems.length > 0) setActiveProblemId(sessionProblems[0].problemId);
+        if (orderedProblems.length > 0) setActiveProblemId(orderedProblems[0].problemId);
 
         const defaultLang = enabledLangs[0]?.language ?? "";
         // codes keyed by "${problemId}:${language}"
         const initialCodes: Record<string, string> = {};
         const initialLangs: Record<number, string> = {};
 
-        for (const p of sessionProblems) {
+        for (const p of orderedProblems) {
           // Restore code for each enabled language from per-language localStorage keys
           for (const lang of enabledLangs) {
-            const lsKey = `oct:draft:${sessionId}:${p.problemId}:${lang.language}`;
+            const lsKey = STORAGE_KEYS.draftKey(sessionId, p.problemId, lang.language);
             const code = localStorage.getItem(lsKey);
             if (code !== null) {
               initialCodes[`${p.problemId}:${lang.language}`] = code;
             }
           }
           // Restore the last-used language from a separate key
-          const lastLang = localStorage.getItem(`oct:lang:${sessionId}:${p.problemId}`);
+          const lastLang = localStorage.getItem(STORAGE_KEYS.langKey(sessionId, p.problemId));
           initialLangs[p.problemId] =
             lastLang && enabledLanguageIds.has(lastLang) ? lastLang : defaultLang;
         }
@@ -111,7 +149,7 @@ export default function ExamPage() {
         setSelectedLangs(initialLangs);
 
         // Restore from Redis for problems with no localStorage data for any language
-        const missingIds = sessionProblems
+        const missingIds = orderedProblems
           .filter((p) =>
             enabledLangs.every(
               (lang) => initialCodes[`${p.problemId}:${lang.language}`] === undefined,
@@ -130,7 +168,7 @@ export default function ExamPage() {
               if (!missingIds.includes(pid)) continue;
               if (!enabledLanguageIds.has(lang)) continue;
               setCodes((prev) => ({ ...prev, [`${pid}:${lang}`]: code }));
-              localStorage.setItem(`oct:draft:${sessionId}:${pid}:${lang}`, code);
+              localStorage.setItem(STORAGE_KEYS.draftKey(sessionId, pid, lang), code);
             }
           } catch {
             // Redis restore failed — draft code may be missing, editor will be empty
@@ -200,7 +238,7 @@ export default function ExamPage() {
     const lang = selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
     setCodes((prev) => ({ ...prev, [`${activeProblemId}:${lang}`]: code }));
 
-    const lsKey = `oct:draft:${sessionId}:${activeProblemId}:${lang}`;
+    const lsKey = STORAGE_KEYS.draftKey(sessionId, activeProblemId, lang);
 
     if (lsDebounceRef.current) clearTimeout(lsDebounceRef.current);
     lsDebounceRef.current = setTimeout(() => {
@@ -220,7 +258,7 @@ export default function ExamPage() {
     // Flush active language's draft to localStorage immediately before switching problems
     const lang = selectedLangs[activeProblemId] ?? languages[0]?.language ?? "";
     localStorage.setItem(
-      `oct:draft:${sessionId}:${activeProblemId}:${lang}`,
+      STORAGE_KEYS.draftKey(sessionId, activeProblemId, lang),
       codes[`${activeProblemId}:${lang}`] ?? "",
     );
     setActiveProblemId(problemId);
@@ -358,7 +396,7 @@ export default function ExamPage() {
                 memoryKb: message.memoryKb,
                 judgedAt: message.judgedAt,
                 score: message.score,
-                isFinalSubmission: message.score > 0,
+                isFinalSubmission: true,
               }
             : s,
         ),
@@ -396,7 +434,7 @@ export default function ExamPage() {
   if (Number.isNaN(sessionId)) {
     return (
       <div className="h-screen flex flex-col overflow-hidden bg-slate-50">
-        <NavBar homeHref="/candidate" />
+        <NavBar homeHref={ROUTES.CANDIDATE} />
         <div className="flex-1 flex items-center justify-center">
           <span className="text-sm text-red-500">無效的考試連結。</span>
         </div>
@@ -407,7 +445,7 @@ export default function ExamPage() {
   if (loading) {
     return (
       <div className="h-screen flex flex-col overflow-hidden bg-slate-50">
-        <NavBar homeHref="/candidate" />
+        <NavBar homeHref={ROUTES.CANDIDATE} />
         <div className="flex-1 flex items-center justify-center">
           <span className="text-sm text-slate-400">載入中...</span>
         </div>
@@ -418,7 +456,7 @@ export default function ExamPage() {
   if (loadError) {
     return (
       <div className="h-screen flex flex-col overflow-hidden bg-slate-50">
-        <NavBar homeHref="/candidate" />
+        <NavBar homeHref={ROUTES.CANDIDATE} />
         <div className="flex-1 flex items-center justify-center">
           <span className="text-sm text-red-500">{loadError}</span>
         </div>
@@ -428,7 +466,7 @@ export default function ExamPage() {
 
   return (
     <div className="relative h-screen flex flex-col overflow-hidden bg-slate-50">
-      <NavBar homeHref="/candidate" />
+      <NavBar homeHref={ROUTES.CANDIDATE} />
 
       {/* Problem tabs + Timer */}
       <div
@@ -526,21 +564,22 @@ export default function ExamPage() {
 
                 // Flush current language's code to localStorage before switching
                 localStorage.setItem(
-                  `oct:draft:${sessionId}:${activeProblemId}:${currentLang}`,
+                  STORAGE_KEYS.draftKey(sessionId, activeProblemId, currentLang),
                   currentCode,
                 );
 
                 // Load new language's code from localStorage (or empty)
                 const newCode =
-                  localStorage.getItem(`oct:draft:${sessionId}:${activeProblemId}:${newLang}`) ??
-                  "";
+                  localStorage.getItem(
+                    STORAGE_KEYS.draftKey(sessionId, activeProblemId, newLang),
+                  ) ?? "";
                 setCodes((prev) => ({
                   ...prev,
                   [`${activeProblemId}:${newLang}`]: newCode,
                 }));
 
                 // Persist last-used language for this problem
-                localStorage.setItem(`oct:lang:${sessionId}:${activeProblemId}`, newLang);
+                localStorage.setItem(STORAGE_KEYS.langKey(sessionId, activeProblemId), newLang);
 
                 setSelectedLangs((prev) => ({
                   ...prev,
@@ -572,6 +611,7 @@ export default function ExamPage() {
               language={monacoLang}
               value={currentCode}
               onChange={handleCodeChange}
+              onMount={handleMonacoMount}
               theme="vs-dark"
               options={{
                 minimap: { enabled: false },
@@ -743,7 +783,14 @@ export default function ExamPage() {
                           <span>
                             {submission.orderIndex}. {submission.problemTitle}
                           </span>
-                          <span>{submission.submissionType === "simple" ? "一般" : "正式"}</span>
+                          <span className="flex items-center gap-2">
+                            <span>{SUBMISSION_TYPE_LABEL[submission.submissionType]}</span>
+                            {submission.isFinalSubmission && (
+                              <span className="rounded-full bg-green-50 px-2 py-0.5 text-green-600">
+                                最終提交
+                              </span>
+                            )}
+                          </span>
                           <span>{submission.verdict ?? submission.status}</span>
                           <span>{submission.language}</span>
                         </div>

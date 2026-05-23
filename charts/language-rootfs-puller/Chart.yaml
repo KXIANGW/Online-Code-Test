@@ -1,0 +1,21 @@
+apiVersion: v2
+name: language-rootfs-puller
+description: |
+  Per-Node DaemonSet that pulls language OCI images and unpacks them as
+  flat rootfs trees under hostPath /var/lib/oct/rootfs. Worker Pods on
+  the same Node mount this hostPath read-only and invoke `isolate
+  --chroot=<rootfs>` against it.
+
+  Triggers: eager pull at start, configurable polling (default 5 min),
+  and POST /reload for CI webhook integration.
+type: application
+version: 0.1.0
+appVersion: "0.0.1"
+keywords:
+  - online-code-test
+  - sandbox
+  - isolate
+  - rootfs
+home: https://github.com/KXIANGW/Online-Code-Test
+maintainers:
+  - name: Team 12

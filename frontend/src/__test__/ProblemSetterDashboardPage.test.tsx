@@ -117,8 +117,8 @@ describe("ProblemSetterDashboardPage()", () => {
 
     // expect
     expect(await screen.findByText("Two Sum")).toBeInTheDocument();
-    // "easy" appears as both a filter button and a badge — at least 2 matches
-    expect(screen.getAllByText("easy").length).toBeGreaterThanOrEqual(2);
+    // "簡單" appears as both a filter button and a badge — at least 2 matches
+    expect(screen.getAllByText("簡單").length).toBeGreaterThanOrEqual(2);
     // time/memory text is split across React children; match with regex
     expect(screen.getByText(/1000\s*ms\s*·\s*256\s*MB/)).toBeInTheDocument();
   });
@@ -181,7 +181,7 @@ describe("ProblemSetterDashboardPage()", () => {
     await screen.findByText("Two Sum");
 
     // when
-    await user.click(screen.getByRole("button", { name: "easy" }));
+    await user.click(screen.getByRole("button", { name: "簡單" }));
 
     // expect
     expect(screen.getByText("Two Sum")).toBeInTheDocument();
@@ -196,7 +196,7 @@ describe("ProblemSetterDashboardPage()", () => {
     mockGetProblems.mockResolvedValue(mockProblemSummaries);
     renderPage();
     await screen.findByText("Two Sum");
-    await user.click(screen.getByRole("button", { name: "hard" }));
+    await user.click(screen.getByRole("button", { name: "困難" }));
 
     // when
     await user.click(screen.getByRole("button", { name: "全部" }));
@@ -238,35 +238,39 @@ describe("ProblemSetterDashboardPage()", () => {
   });
 
   // ── Delete ──────────────────────────────────────────────────────────────────
-  it("clicking 刪除 → confirm → calls deleteProblem and removes problem from list", async () => {
+  it("clicking 刪除 → confirm dialog opens → confirm → calls deleteProblem and removes problem from list", async () => {
     // given
     const user = userEvent.setup();
     setupAuthStore();
     mockGetProblems.mockResolvedValue([mockProblemSummaries[0]!]);
     mockDeleteProblem.mockResolvedValue(undefined);
-    vi.spyOn(window, "confirm").mockReturnValueOnce(true);
     renderPage();
     await screen.findByText("Two Sum");
 
-    // when
+    // when: click 刪除 to open confirm dialog
     await user.click(screen.getByRole("button", { name: "刪除" }));
+    // confirm dialog should appear
+    expect(screen.getByText("確定要刪除這道題目嗎？此操作無法復原。")).toBeInTheDocument();
+    // click confirm in dialog
+    await user.click(screen.getByRole("button", { name: "確定" }));
 
     // expect
     await waitFor(() => expect(screen.queryByText("Two Sum")).not.toBeInTheDocument());
     expect(mockDeleteProblem).toHaveBeenCalledWith(1);
   });
 
-  it("clicking 刪除 → cancel → does not call deleteProblem", async () => {
+  it("clicking 刪除 → confirm dialog opens → cancel → does not call deleteProblem", async () => {
     // given
     const user = userEvent.setup();
     setupAuthStore();
     mockGetProblems.mockResolvedValue([mockProblemSummaries[0]!]);
-    vi.spyOn(window, "confirm").mockReturnValueOnce(false);
     renderPage();
     await screen.findByText("Two Sum");
 
-    // when
+    // when: click 刪除 to open confirm dialog, then cancel
     await user.click(screen.getByRole("button", { name: "刪除" }));
+    expect(screen.getByText("確定要刪除這道題目嗎？此操作無法復原。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "取消" }));
 
     // expect
     expect(mockDeleteProblem).not.toHaveBeenCalled();

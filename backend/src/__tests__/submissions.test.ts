@@ -169,33 +169,53 @@ beforeEach(async () => {
   ]);
 });
 
-async function createSession(
-  token: string,
-  candidateId: number,
-  problemIds: number[] = [easyProblemId],
-): Promise<{ sessionId: number; espIds: number[] }> {
-  const res = await app.inject({
+// 💡 將 submissions.test.ts 內的 createSession 修正為新版兩段式架構
+async function createSession(token: string, candidateId: number, problemIds: number[] = [1]) {
+  // 1. 先為這個測試場次手動建立一個基礎考卷模板（假定題目 ID 為 1，你在 db.ts 有 seed）
+  const examRes = await app.inject({
     method: "POST",
-    url: "/api/exam-sessions",
+    url: "/api/exam-sessions/templates/manual",
     headers: { authorization: `Bearer ${token}` },
     payload: {
-      candidateId,
+      title: "Submission Test Exam Template",
       durationMinutes: 60,
       problems: problemIds.map((problemId, index) => ({
         problemId,
-        scoreWeight: index === 0 ? 30 : 70,
+        scoreWeight: index === 0 ? 30 : 70, // 💡 完美對齊舊版：第一題 30 分，其餘 70 分
         orderIndex: index + 1,
       })),
     },
   });
 
-  const sessionId = res.json<{ id: number }>().id;
-  const esps = await db
-    .select({ id: examSessionProblems.id })
-    .from(examSessionProblems)
-    .where(eq(examSessionProblems.examSessionId, sessionId));
+  const { id: examId } = examRes.json<{ id: number }>();
 
-  return { sessionId, espIds: esps.map((esp) => esp.id) };
+  // 2. 指派給指定的候選人（產生真正的 Exam Session）
+  const assignRes = await app.inject({
+    method: "POST",
+    url: `/api/exam-sessions/templates/${examId}/assign`,
+    headers: { authorization: `Bearer ${token}` },
+    payload: {
+      candidateIds: [candidateId], // 👈 批次指派
+    },
+  });
+
+  // 3. 取得指派後產生的場次資料
+  // 根據 assignExamToCandidates 服務，這通常會回傳一個場次陣列 [ { id, ... } ]
+  const sessions = assignRes.json<{ id: number }[]>();
+  const sessionId = sessions[0]!.id;
+
+  // 4. 撈取該場次的題目清單（對接舊版測試需要的 espIds）
+  const probRes = await app.inject({
+    method: "GET",
+    url: `/api/exam-sessions/${sessionId}/problems`,
+    headers: { authorization: `Bearer ${token}` },
+  });
+
+  // 假設回傳格式包含題目關聯 ID 的陣列
+  const problemsList = probRes.json<{ id: number }[]>();
+  const espIds = problemsList.map((p) => p.id);
+
+  return { sessionId, espIds };
 }
 
 async function startSession(sessionId: number, token = candToken) {
@@ -316,10 +336,15 @@ async function writeWorkerResult(
 
 describe("Submission API async judge", () => {
   it("creates pending submissions, persists submissionType, and publishes judge tasks", async () => {
+    // 1. 建立並開始考試場次
     const { sessionId, espIds } = await createSession(aliceToken, davidId);
+
     await startSession(sessionId);
 
+    // 2. 進行第一次提交（正式提交 - formal）
     const formal = await submitCode(sessionId, espIds[0]!);
+
+    // 3. 進行第二次提交（範例/簡易測試 - simple）
     const simple = await submitCode(sessionId, espIds[0]!, "simple");
 
     expect(formal.submissionType).toBe("formal");
@@ -333,9 +358,11 @@ describe("Submission API async judge", () => {
       type: "simple",
     });
 
+    // 4. 直接撈取資料庫實體表，看寫入的欄位現況
     const rows = await db
       .select({ id: submissions.id, submissionType: submissions.submissionType })
       .from(submissions);
+
     expect(rows.map((row) => [row.id, row.submissionType])).toEqual([
       [formal.id, "formal"],
       [simple.id, "simple"],
@@ -405,11 +432,14 @@ describe("Submission API async judge", () => {
       url: `/api/exam-sessions/${sessionId}/submissions/${id}`,
       headers: { authorization: `Bearer ${candToken}` },
     });
+
     const body = detail.json<{
       score: number;
       isFinalSubmission: boolean;
       testcaseResults: { isPublic: boolean; actualOutput?: string }[];
     }>();
+
+    expect(detail.statusCode).toBe(200);
     expect(body.score).toBe(30);
     expect(body.isFinalSubmission).toBe(true);
     expect(body.testcaseResults).toHaveLength(2);
@@ -421,6 +451,8 @@ describe("Submission API async judge", () => {
       url: `/api/exam-sessions/${sessionId}/result`,
       headers: { authorization: `Bearer ${candToken}` },
     });
+
+    expect(result.statusCode).toBe(200);
     expect(result.json<{ totalScore: number }>().totalScore).toBe(30);
   });
 
@@ -669,6 +701,13 @@ describe("Submission API state guards", () => {
       },
     });
     expect(submitted.statusCode).toBe(409);
+
+    // Reset submittedId to "cancelled" so the service allows creating a new session for David.
+    // The service blocks reassignment when a candidate has a "submitted" or "expired" session.
+    await db
+      .update(examSessions)
+      .set({ status: "cancelled" })
+      .where(eq(examSessions.id, submittedId));
 
     const { sessionId: expiredId, espIds: expiredEspIds } = await createSession(
       aliceToken,

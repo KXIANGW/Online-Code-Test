@@ -46,6 +46,8 @@ DECLARE
   v_p13_id BIGINT;  -- N-Queens (hard)
 
   -- Exam session IDs
+  v_e1_id BIGINT; v_e2_id BIGINT; v_e3_id BIGINT;
+  v_e4_id BIGINT; v_e5_id BIGINT; v_e6_id BIGINT;
   v_s1_id BIGINT; v_s2_id BIGINT; v_s3_id BIGINT;
   v_s4_id BIGINT; v_s5_id BIGINT; v_s6_id BIGINT;
 
@@ -72,21 +74,27 @@ BEGIN
   SELECT id INTO v_role_candidate   FROM roles WHERE name = 'candidate';
 
   -- root: superuser, created_by = NULL
-  INSERT INTO users (username, password_hash, display_name, is_superuser)
-  VALUES ('root', crypt('Root@1234', gen_salt('bf', 10)), 'System Root', TRUE)
+  -- encrypted_password: AES-256-GCM of 'Root@1234' with default ENCRYPTION_SECRET
+  INSERT INTO users (username, password_hash, display_name, is_superuser, encrypted_password)
+  VALUES ('root', crypt('Root@1234', gen_salt('bf', 10)), 'System Root', TRUE,
+          'Z7EfmwvmRirC1Sqx:UiHInBs+lP31ZfV37tIQQg==:TRmLlaS+5kNp')
   RETURNING id INTO v_root_id;
 
   -- staff: created by root
-  INSERT INTO users (username, password_hash, display_name, created_by)
-  VALUES ('alice', crypt('Test@1234', gen_salt('bf', 10)), 'Alice Chen', v_root_id)
+  -- encrypted_password: AES-256-GCM of 'Test@1234' with default ENCRYPTION_SECRET
+  INSERT INTO users (username, password_hash, display_name, created_by, encrypted_password)
+  VALUES ('alice', crypt('Test@1234', gen_salt('bf', 10)), 'Alice Chen', v_root_id,
+          'R67XlADftYeFaAkW:0iPLHq+j1bR3CsrURsmazg==:7q7jR6LKfw+A')
   RETURNING id INTO v_alice_id;
 
-  INSERT INTO users (username, password_hash, display_name, created_by)
-  VALUES ('bob', crypt('Test@1234', gen_salt('bf', 10)), 'Bob Wang', v_root_id)
+  INSERT INTO users (username, password_hash, display_name, created_by, encrypted_password)
+  VALUES ('bob', crypt('Test@1234', gen_salt('bf', 10)), 'Bob Wang', v_root_id,
+          'R67XlADftYeFaAkW:0iPLHq+j1bR3CsrURsmazg==:7q7jR6LKfw+A')
   RETURNING id INTO v_bob_id;
 
-  INSERT INTO users (username, password_hash, display_name, created_by)
-  VALUES ('carol', crypt('Test@1234', gen_salt('bf', 10)), 'Carol Liu', v_root_id)
+  INSERT INTO users (username, password_hash, display_name, created_by, encrypted_password)
+  VALUES ('carol', crypt('Test@1234', gen_salt('bf', 10)), 'Carol Liu', v_root_id,
+          'R67XlADftYeFaAkW:0iPLHq+j1bR3CsrURsmazg==:7q7jR6LKfw+A')
   RETURNING id INTO v_carol_id;
 
   INSERT INTO user_roles (user_id, role_id) VALUES
@@ -96,24 +104,30 @@ BEGIN
     (v_carol_id, v_role_setter);
 
   -- candidates: distributed between alice and bob
-  INSERT INTO users (username, password_hash, display_name, created_by)
-  VALUES ('candidate_20260509_001', crypt('Cand@1234', gen_salt('bf', 10)), 'David Chang', v_alice_id)
+  -- encrypted_password: AES-256-GCM of 'Cand@1234' with default ENCRYPTION_SECRET
+  INSERT INTO users (username, password_hash, display_name, created_by, encrypted_password)
+  VALUES ('candidate_20260509_001', crypt('Cand@1234', gen_salt('bf', 10)), 'David Chang', v_alice_id,
+          'pkGRJj83jkSgKnd0:XPHrP1lTsERlqjureEIfrg==:UZpm9WI/NbZH')
   RETURNING id INTO v_c1_id;
 
-  INSERT INTO users (username, password_hash, display_name, created_by)
-  VALUES ('candidate_20260509_002', crypt('Cand@1234', gen_salt('bf', 10)), 'Emma Lin', v_alice_id)
+  INSERT INTO users (username, password_hash, display_name, created_by, encrypted_password)
+  VALUES ('candidate_20260509_002', crypt('Cand@1234', gen_salt('bf', 10)), 'Emma Lin', v_alice_id,
+          'pkGRJj83jkSgKnd0:XPHrP1lTsERlqjureEIfrg==:UZpm9WI/NbZH')
   RETURNING id INTO v_c2_id;
 
-  INSERT INTO users (username, password_hash, display_name, created_by)
-  VALUES ('candidate_20260509_003', crypt('Cand@1234', gen_salt('bf', 10)), 'Frank Wu', v_bob_id)
+  INSERT INTO users (username, password_hash, display_name, created_by, encrypted_password)
+  VALUES ('candidate_20260509_003', crypt('Cand@1234', gen_salt('bf', 10)), 'Frank Wu', v_bob_id,
+          'pkGRJj83jkSgKnd0:XPHrP1lTsERlqjureEIfrg==:UZpm9WI/NbZH')
   RETURNING id INTO v_c3_id;
 
-  INSERT INTO users (username, password_hash, display_name, created_by)
-  VALUES ('candidate_20260509_004', crypt('Cand@1234', gen_salt('bf', 10)), 'Grace Lee', v_alice_id)
+  INSERT INTO users (username, password_hash, display_name, created_by, encrypted_password)
+  VALUES ('candidate_20260509_004', crypt('Cand@1234', gen_salt('bf', 10)), 'Grace Lee', v_alice_id,
+          'pkGRJj83jkSgKnd0:XPHrP1lTsERlqjureEIfrg==:UZpm9WI/NbZH')
   RETURNING id INTO v_c4_id;
 
-  INSERT INTO users (username, password_hash, display_name, created_by)
-  VALUES ('candidate_20260509_005', crypt('Cand@1234', gen_salt('bf', 10)), 'Henry Huang', v_bob_id)
+  INSERT INTO users (username, password_hash, display_name, created_by, encrypted_password)
+  VALUES ('candidate_20260509_005', crypt('Cand@1234', gen_salt('bf', 10)), 'Henry Huang', v_bob_id,
+          'pkGRJj83jkSgKnd0:XPHrP1lTsERlqjureEIfrg==:UZpm9WI/NbZH')
   RETURNING id INTO v_c5_id;
 
   INSERT INTO user_roles (user_id, role_id) VALUES
@@ -392,8 +406,17 @@ BEGIN
   -- ================================================================
 
   -- Session 1: David — not_started
-  INSERT INTO exam_sessions (candidate_id, created_by, status, duration_minutes, max_score)
-  VALUES (v_c1_id, v_alice_id, 'not_started', 90, 100)
+  INSERT INTO exams (title, duration_minutes, created_by)
+  VALUES ('Backend Screening - David', 90, v_alice_id)
+  RETURNING id INTO v_e1_id;
+
+  INSERT INTO exam_problems (exam_id, problem_id, order_index, score_weight) VALUES
+    (v_e1_id, v_p1_id, 1, 30),
+    (v_e1_id, v_p4_id, 2, 40),
+    (v_e1_id, v_p7_id, 3, 30);
+
+  INSERT INTO exam_sessions (exam_id, candidate_id, created_by, status, max_score)
+  VALUES (v_e1_id, v_c1_id, v_alice_id, 'not_started', 100)
   RETURNING id INTO v_s1_id;
 
   INSERT INTO exam_session_problems (exam_session_id, problem_id, order_index, score_weight) VALUES
@@ -402,11 +425,20 @@ BEGIN
     (v_s1_id, v_p7_id, 3, 30);
 
   -- Session 2: Emma — in_progress (started 40 min ago, 90 min limit → 50 min left)
+  INSERT INTO exams (title, duration_minutes, created_by)
+  VALUES ('Backend Screening - Emma', 90, v_alice_id)
+  RETURNING id INTO v_e2_id;
+
+  INSERT INTO exam_problems (exam_id, problem_id, order_index, score_weight) VALUES
+    (v_e2_id, v_p2_id, 1, 30),
+    (v_e2_id, v_p5_id, 2, 30),
+    (v_e2_id, v_p8_id, 3, 30);
+
   INSERT INTO exam_sessions (
-    candidate_id, created_by, status, duration_minutes,
+    exam_id, candidate_id, created_by, status,
     actual_start_at, expires_at, max_score
   ) VALUES (
-    v_c2_id, v_alice_id, 'in_progress', 90,
+    v_e2_id, v_c2_id, v_alice_id, 'in_progress',
     NOW() - INTERVAL '40 minutes',
     NOW() - INTERVAL '40 minutes' + INTERVAL '90 minutes',
     90
@@ -418,11 +450,20 @@ BEGIN
     (v_s2_id, v_p8_id, 3, 30);
 
   -- Session 3: Frank — submitted (3h ago), total=30/100
+  INSERT INTO exams (title, duration_minutes, created_by)
+  VALUES ('Senior Backend Screening - Frank', 120, v_bob_id)
+  RETURNING id INTO v_e3_id;
+
+  INSERT INTO exam_problems (exam_id, problem_id, order_index, score_weight) VALUES
+    (v_e3_id, v_p1_id, 1, 30),
+    (v_e3_id, v_p4_id, 2, 40),
+    (v_e3_id, v_p7_id, 3, 30);
+
   INSERT INTO exam_sessions (
-    candidate_id, created_by, status, duration_minutes,
+    exam_id, candidate_id, created_by, status,
     actual_start_at, expires_at, max_score, created_at, updated_at
   ) VALUES (
-    v_c3_id, v_bob_id, 'submitted', 120,
+    v_e3_id, v_c3_id, v_bob_id, 'submitted',
     NOW() - INTERVAL '3 hours',
     NOW() - INTERVAL '1 hour',
     100,
@@ -440,8 +481,17 @@ BEGIN
   VALUES (v_s3_id, v_p7_id, 3, 30) RETURNING id INTO v_s3_esp3;
 
   -- Session 4: Grace — cancelled by alice
-  INSERT INTO exam_sessions (candidate_id, created_by, status, duration_minutes, max_score)
-  VALUES (v_c4_id, v_alice_id, 'cancelled', 60, 90)
+  INSERT INTO exams (title, duration_minutes, created_by)
+  VALUES ('Frontend Fundamentals - Grace', 60, v_alice_id)
+  RETURNING id INTO v_e4_id;
+
+  INSERT INTO exam_problems (exam_id, problem_id, order_index, score_weight) VALUES
+    (v_e4_id, v_p3_id, 1, 30),
+    (v_e4_id, v_p6_id, 2, 30),
+    (v_e4_id, v_p8_id, 3, 30);
+
+  INSERT INTO exam_sessions (exam_id, candidate_id, created_by, status, max_score)
+  VALUES (v_e4_id, v_c4_id, v_alice_id, 'cancelled', 90)
   RETURNING id INTO v_s4_id;
 
   INSERT INTO exam_session_problems (exam_session_id, problem_id, order_index, score_weight) VALUES
@@ -450,11 +500,20 @@ BEGIN
     (v_s4_id, v_p8_id, 3, 30);
 
   -- Session 5: Henry first exam — P2(AC,30)+P5(WA,0)+P6(AC,30) = 60/90
+  INSERT INTO exams (title, duration_minutes, created_by)
+  VALUES ('Backend Retake Pool A - Henry', 90, v_bob_id)
+  RETURNING id INTO v_e5_id;
+
+  INSERT INTO exam_problems (exam_id, problem_id, order_index, score_weight) VALUES
+    (v_e5_id, v_p2_id, 1, 30),
+    (v_e5_id, v_p5_id, 2, 30),
+    (v_e5_id, v_p6_id, 3, 30);
+
   INSERT INTO exam_sessions (
-    candidate_id, created_by, status, duration_minutes,
+    exam_id, candidate_id, created_by, status,
     actual_start_at, expires_at, max_score, created_at, updated_at
   ) VALUES (
-    v_c5_id, v_bob_id, 'submitted', 90,
+    v_e5_id, v_c5_id, v_bob_id, 'submitted',
     NOW() - INTERVAL '5 hours',
     NOW() - INTERVAL '3 hours 30 minutes',
     90,
@@ -473,11 +532,20 @@ BEGIN
 
   -- Session 6: Henry retake — P1(TLE,0)+P4(AC,40)+P7(AC,30) = 70/100
   -- Note: P1/P4/P7 don't overlap with session 5's P2/P5/P6
+  INSERT INTO exams (title, duration_minutes, created_by)
+  VALUES ('Backend Retake Pool B - Henry', 90, v_bob_id)
+  RETURNING id INTO v_e6_id;
+
+  INSERT INTO exam_problems (exam_id, problem_id, order_index, score_weight) VALUES
+    (v_e6_id, v_p1_id, 1, 30),
+    (v_e6_id, v_p4_id, 2, 40),
+    (v_e6_id, v_p7_id, 3, 30);
+
   INSERT INTO exam_sessions (
-    candidate_id, created_by, status, duration_minutes,
+    exam_id, candidate_id, created_by, status,
     actual_start_at, expires_at, max_score, created_at, updated_at
   ) VALUES (
-    v_c5_id, v_bob_id, 'submitted', 90,
+    v_e6_id, v_c5_id, v_bob_id, 'submitted',
     NOW() - INTERVAL '1 hour',
     NOW() + INTERVAL '30 minutes',
     100,

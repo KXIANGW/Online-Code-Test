@@ -7,7 +7,7 @@ import { defineConfig } from "vitest/config";
 process.env["JWT_SECRET"] = process.env["JWT_SECRET"] ?? "test-secret-minimum-32-chars-for-jwt-signing";
 process.env["DATABASE_URL"] =
   process.env["TEST_DATABASE_URL"] ??
-  "postgres://oct:oct_dev_password_change_me@localhost:5432/oct";
+  "postgres://oct:oct_dev_password_change_me@localhost:5432/oct_test";
 process.env["RABBITMQ_URL"] =
   process.env["TEST_RABBITMQ_URL"] ?? "amqp://oct:oct_dev_password@localhost:5672";
 
@@ -19,6 +19,12 @@ export default defineConfig({
     pool: "forks",
     poolOptions: { forks: { singleFork: true } },
     fileParallelism: false,
-    testTimeout: 15000,
+    testTimeout: 20000,
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      exclude: ["src/__tests__/**", "src/db/migrate.ts", "node_modules/**"],
+      reporter: ["text", "lcov"],
+    },
   },
 });

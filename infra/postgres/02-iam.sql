@@ -5,6 +5,7 @@ CREATE TABLE users (
   password_hash VARCHAR(255) NOT NULL,
   display_name  VARCHAR(128),
   is_superuser  BOOLEAN      NOT NULL DEFAULT FALSE,
+  encrypted_password TEXT,
   created_by    BIGINT       REFERENCES users(id),
   created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),

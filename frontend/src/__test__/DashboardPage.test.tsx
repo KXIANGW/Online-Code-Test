@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { toast } from "react-hot-toast";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -24,6 +25,10 @@ vi.mock("../api/client", () => ({
   getExamSessions: mockGetExamSessions,
   startExamSession: mockStartExamSession,
 }));
+vi.mock("react-hot-toast", () => ({
+  toast: { error: vi.fn() },
+  Toaster: () => null,
+}));
 
 function setupAuthStore(username = "candidate01") {
   mockUseAuthStore.mockImplementation((sel: any) =>
@@ -44,6 +49,9 @@ function renderDashboard() {
   );
 }
 
+// jsdom does not implement requestFullscreen; stub it so modal tests can proceed
+const mockRequestFullscreen = vi.fn().mockResolvedValue(undefined);
+
 describe("DashboardPage()", () => {
   beforeEach(() => {
     vi.useRealTimers();
@@ -54,6 +62,11 @@ describe("DashboardPage()", () => {
     mockUseExamStore.mockReset();
     mockGetExamSessions.mockResolvedValue([]);
     mockStartExamSession.mockReset();
+    mockRequestFullscreen.mockReset();
+    Object.defineProperty(document.documentElement, "requestFullscreen", {
+      configurable: true,
+      value: mockRequestFullscreen,
+    });
   });
 
   it("renders 3 section headings", () => {
@@ -150,6 +163,7 @@ describe("DashboardPage()", () => {
     // expect
     expect(screen.getByText("考試 #3")).toBeInTheDocument();
     expect(screen.getByText("50 / 100 分")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看結果" })).toBeInTheDocument();
     expect(screen.queryByText("尚無歷史紀錄")).not.toBeInTheDocument();
   });
 
@@ -169,8 +183,9 @@ describe("DashboardPage()", () => {
     expect(oneBadges.length).toBeGreaterThanOrEqual(2); // 進行中=1, 待考=1
   });
 
-  it("clicking 繼續考試 navigates to /exam/2", async () => {
+  it("clicking 繼續考試 requests fullscreen then navigates to /exam/2", async () => {
     // given
+    mockRequestFullscreen.mockResolvedValue(undefined);
     setupAuthStore();
     setupExamStore([mockExamSessions[1]!]);
     renderDashboard();
@@ -179,7 +194,66 @@ describe("DashboardPage()", () => {
     await userEvent.click(screen.getByRole("button", { name: "繼續考試" }));
 
     // expect
+    expect(mockRequestFullscreen).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith("/exam/2");
+  });
+
+  it("clicking 查看結果 navigates to the candidate result page", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[2]!]);
+    renderDashboard();
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "查看結果" }));
+
+    // expect
+    expect(mockNavigate).toHaveBeenCalledWith("/exam/3/result");
+  });
+
+  it("clicking 繼續考試 shows error toast and does not navigate when fullscreen is rejected", async () => {
+    // given
+    mockRequestFullscreen.mockRejectedValue(new Error("Permission denied"));
+    setupAuthStore();
+    setupExamStore([mockExamSessions[1]!]);
+    renderDashboard();
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "繼續考試" }));
+
+    // expect
+    expect(toast.error).toHaveBeenCalledWith("請允許全螢幕模式才能繼續考試。");
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("clicking 開始考試 shows the fullscreen consent modal", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[0]!]);
+    renderDashboard();
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+
+    // expect: modal rendered with key text
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("進入考試前請確認")).toBeInTheDocument();
+  });
+
+  it("clicking 取消 in the fullscreen modal dismisses it without starting", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[0]!]);
+    renderDashboard();
+    await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    // expect: modal gone, session never started
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockStartExamSession).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it("clicking 開始考試 starts the session before navigating", async () => {
@@ -194,8 +268,9 @@ describe("DashboardPage()", () => {
     });
     renderDashboard();
 
-    // when
+    // when: open modal then confirm
     await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意並開始考試" }));
 
     // expect
     expect(mockStartExamSession).toHaveBeenCalledWith(1);
@@ -265,8 +340,9 @@ describe("DashboardPage()", () => {
     localStorage.setItem("oct:lang:1:10", "python3");
     renderDashboard();
 
-    // when
+    // when: open modal then confirm
     await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意並開始考試" }));
 
     // expect
     expect(localStorage.getItem("oct:draft:1:10:python3")).toBeNull();
@@ -289,8 +365,9 @@ describe("DashboardPage()", () => {
     localStorage.setItem("oct:lang:99:10", "python3");
     renderDashboard();
 
-    // when
+    // when: open modal then confirm
     await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意並開始考試" }));
 
     // expect: session 1 keys cleared, session 99 keys untouched
     expect(localStorage.getItem("oct:draft:1:10:python3")).toBeNull();
@@ -310,8 +387,46 @@ describe("DashboardPage()", () => {
     });
     renderDashboard();
 
-    // when / expect: no throw
+    // when: open modal then confirm
     await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意並開始考試" }));
+
+    // expect
     expect(mockNavigate).toHaveBeenCalledWith("/exam/1");
+  });
+
+  it("shows error toast and keeps modal open when requestFullscreen is rejected", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[0]!]);
+    mockRequestFullscreen.mockRejectedValue(new Error("Permission denied"));
+    renderDashboard();
+
+    // when: open modal then confirm
+    await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意並開始考試" }));
+
+    // expect: exam not started, modal still visible
+    expect(toast.error).toHaveBeenCalledWith("請允許全螢幕模式才能開始考試。");
+    expect(mockStartExamSession).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("shows error toast and reopens modal when startExamSession API fails (500)", async () => {
+    // given
+    setupAuthStore();
+    setupExamStore([mockExamSessions[0]!]);
+    mockStartExamSession.mockRejectedValue(new Error("Internal Server Error"));
+    renderDashboard();
+
+    // when: open modal then confirm
+    await userEvent.click(screen.getByRole("button", { name: "開始考試" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意並開始考試" }));
+
+    // expect: toast shown, modal restored, navigation skipped
+    expect(toast.error).toHaveBeenCalledWith("開始考試失敗，請重試。");
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });

@@ -28,12 +28,24 @@ resources:
 # Set to "" if your cluster does not have RuntimeClass=gvisor.
 runtimeClassName: ""
 
+# --- Sandbox engine selection -----------------------------------------------
+# "isolate" (default): per-testcase sandbox runs via sio2project/isolate.
+#                       Requires the language-rootfs-puller DaemonSet (chart
+#                       `language-rootfs-puller`) to be deployed so per-language
+#                       rootfs is unpacked under hostPath /var/lib/oct/rootfs.
+# "docker" (legacy):    per-testcase sandbox runs as a Docker container via
+#                       the host Docker socket. Requires Docker on the Node.
+sandboxEngine: isolate
+
+# When sandboxEngine=isolate, the readonly hostPath the puller writes to.
+rootfsHostPath: /var/lib/oct/rootfs
+
 # Backend env wiring. Override via --set or values file.
 env:
   RABBITMQ_URL: "amqp://oct:oct_dev_password@rabbitmq:5672"
   DATABASE_URL: "postgres://oct:oct_dev_password_change_me@postgres:5432/oct"
   HOST_WORK_DIR: "/tmp/judge"
-  SANDBOX_RUNTIME: "runc"    # set to "runsc" when host has gVisor installed
+  SANDBOX_RUNTIME: "runc"    # set to "runsc" when sandboxEngine=docker AND host has gVisor
   NODE_ENV: "production"
   LOG_LEVEL: "info"
 
@@ -51,13 +63,12 @@ probe:
   port: 8080
   path: /healthz
 
-# Mount the host's Docker socket into the worker. Required: the worker
-# launches per-testcase sandbox containers via dockerode -> dockerd.
-# In multi-node clusters with a real container runtime API (CRI), this
-# should be replaced with a sidecar pattern or dind. For single-node
-# k3s + Docker shim this works.
+# Mount the host's Docker socket into the worker. Required ONLY when
+# sandboxEngine=docker — the legacy engine launches per-testcase sandbox
+# containers via dockerode -> dockerd. When sandboxEngine=isolate this
+# mount is unused (and arguably a security regression), so default off.
 dockerSocket:
-  enabled: true
+  enabled: false
   hostPath: /var/run/docker.sock
 
 # Bind-mount the host's work dir so per-submission /tmp/judge/<id> is
@@ -76,10 +87,17 @@ podSecurityContext:
   fsGroup: 0
 
 securityContext:
-  privileged: false
-  allowPrivilegeEscalation: false
-  capabilities:
-    drop: [ALL]
+  # privileged: true is required for sandboxEngine=isolate because the cgroup
+  # FS at /sys/fs/cgroup is delivered read-only to non-privileged containers,
+  # which makes isolate's `--cg` fail to create the box cgroup. The
+  # candidate code's safety still relies on (a) the oct-seccomp-wrapper
+  # syscall blacklist, (b) isolate's own user/pid/net/mnt namespaces, and
+  # (c) the readonly rootfs bind mounts.
+  #
+  # When sandboxEngine=docker, override `privileged: false` and add
+  # `capabilities.drop: [ALL]` — the legacy DockerEngine path does not
+  # need cgroup write access on the Worker itself.
+  privileged: true
 
 service:
   type: ClusterIP

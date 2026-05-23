@@ -1,0 +1,16 @@
+export const ROUTES = {
+  ADMIN: "/admin",
+  INTERVIEWER: "/interviewer",
+  INTERVIEWER_CANDIDATES_NEW: "/interviewer/candidates/new",
+  INTERVIEWER_TEMPLATES_NEW: "/interviewer/templates/new",
+  CANDIDATE: "/candidate",
+  DASHBOARD: "/dashboard",
+  PROBLEM_SETTER: "/problem-setter",
+  PROBLEM_SETTER_NEW: "/problem-setter/new",
+  examPage: (sessionId: number) => `/exam/${sessionId}`,
+  candidateResultPage: (sessionId: number) => `/exam/${sessionId}/result`,
+  resultPage: (sessionId: number) => `/result/${sessionId}`,
+  templateAssign: (templateId: number) => `/interviewer/templates/${templateId}/assign`,
+  templateEdit: (templateId: number) => `/interviewer/templates/${templateId}/edit`,
+  problemEdit: (problemId: number) => `/problem-setter/${problemId}/edit`,
+} as const;

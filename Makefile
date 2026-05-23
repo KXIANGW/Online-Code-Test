@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images dev test help \
+.PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images dev test coverage help \
         demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls
 
 help:
@@ -17,6 +17,7 @@ help:
 	@echo "  make psql           Open psql shell inside the postgres container"
 	@echo "  make sandbox-images Build judge sandbox images"
 	@echo "  make test           Run lint + test + build (mirrors CI)"
+	@echo "  make coverage       Run tests with coverage report (text + lcov)"
 	@echo ""
 	@echo "  Demo (Phase A+B+C — 100 concurrent observability):"
 	@echo "  make demo-up        Build sandbox images, bring full stack + prom/grafana/cadvisor"
@@ -61,6 +62,10 @@ test:
 	cd backend && npm run format:check && npm run lint && npm test
 	cd frontend && npm run format:check && npm run lint && npm test && npm run build
 
+coverage:
+	cd backend && npm test -- --coverage
+	cd frontend && npm test -- --coverage
+
 sandbox-images:
 	$(MAKE) -C worker build-sandbox-images
 
@@ -80,11 +85,21 @@ DEMO_VUS ?= 100
 DEMO_N ?= 100
 DEMO_BASE_URL ?= http://localhost:3000/api
 DEMO_FIXTURE ?= ac.py
+# Baseline replica count brought up by `make demo-up`. The autoscale demo
+# starts at 1 worker and lets scale-watcher fan out to MAX (default 5).
+WORKER_REPLICAS ?= 1
 
 demo-up: bootstrap sandbox-images
-	docker compose up -d --build
+	WORKER_REPLICAS=$(WORKER_REPLICAS) docker compose up -d --build --wait \
+	  --scale worker=$(WORKER_REPLICAS)
 
 demo-seed:
+	@v=$$(node -e 'console.log(parseInt(process.versions.node.split(".")[0]))' 2>/dev/null); \
+	  if [ -z "$$v" ] || [ "$$v" -lt 16 ]; then \
+	    echo "ERROR: seed.ts needs Node 16+ (tsx). Found: $$(node --version 2>/dev/null || echo none)." >&2; \
+	    echo "       Fix: 'nvm use' (the repo ships an .nvmrc) before running 'make demo-100'." >&2; \
+	    exit 1; \
+	  fi
 	cd loadtest && N=$(DEMO_N) BASE_URL=$(DEMO_BASE_URL) npx --yes tsx seed.ts
 
 demo-load:
@@ -99,8 +114,7 @@ demo-watch:
 	./loadtest/scale-watcher.sh
 
 demo-100: demo-up
-	@echo "[demo-100] waiting for backend healthy..."
-	@until docker compose ps backend --format '{{.Status}}' | grep -q healthy; do sleep 2; done
+	@echo "[demo-100] worker replicas: $(WORKER_REPLICAS) (scale-watcher will fan out to MAX=5)"
 	@$(MAKE) demo-seed
 	@echo "[demo-100] starting scale-watcher in background (logs -> /tmp/oct-scale-watcher.log)"
 	@nohup ./loadtest/scale-watcher.sh > /tmp/oct-scale-watcher.log 2>&1 &

@@ -9,6 +9,7 @@ import {
   updateUser,
   updateUserRoles,
   deleteUser,
+  getUserPassword,
 } from "../services/user.service";
 import { BadRequestError } from "../errors";
 import { parsePositiveIntParam } from "./params";
@@ -55,6 +56,11 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   app.get("/:id", { preHandler: [authenticate] }, async (request) => {
     const { id } = request.params as { id: string };
     return getUser(request.user, parsePositiveIntParam(id, "id"));
+  });
+
+  app.get("/:id/password", { preHandler: [authenticate] }, async (request) => {
+    const { id } = request.params as { id: string };
+    return getUserPassword(request.user, parsePositiveIntParam(id, "id"));
   });
 
   app.put("/:id/roles", { preHandler: [authenticate] }, async (request) => {

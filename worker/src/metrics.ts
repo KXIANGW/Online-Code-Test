@@ -79,3 +79,19 @@ export const judgeWorkerInfo = new Gauge({
 });
 
 judgeWorkerInfo.labels(process.env["npm_package_version"] ?? "dev", os.hostname()).set(1);
+
+// Pre-register every (language, verdict) so rate(judge_verdicts_total[1m])
+// resolves to non-zero on the first burst (prom-client doesn't emit a
+// counter time-series until the first .inc(), which means rate has only
+// one sample within the burst window and reports 0).
+const LANGUAGES = ["cpp17", "python3"];
+const VERDICTS = ["AC", "WA", "TLE", "MLE", "RE", "CE"];
+const ERROR_KINDS = ["system_error", "compile_timeout"];
+for (const language of LANGUAGES) {
+  for (const verdict of VERDICTS) {
+    judgeVerdictsTotal.labels(language, verdict).inc(0);
+  }
+}
+for (const kind of ERROR_KINDS) {
+  judgeErrorsTotal.labels(kind).inc(0);
+}

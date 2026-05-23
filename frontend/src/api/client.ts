@@ -1,8 +1,9 @@
-import axios from "axios";
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 import type {
   LoginRequest,
   LoginResponse,
   ExamSession,
+  ExamTemplate,
   ExamSessionProblem,
   Language,
   PublicTestcase,
@@ -19,8 +20,11 @@ import type {
   UpdateProblemRequest,
   Testcase,
   CreateTestcaseRequest,
-  CreateExamSessionRequest,
+  CreateExamTemplateManualRequest,
+  CreateExamTemplateRandomRequest,
+  UpdateExamTemplateRequest,
   CreateSubmissionRequest,
+  CandidatePasswordResponse,
 } from "../types";
 
 const baseURL = import.meta.env.VITE_API_BASE ?? "/api";
@@ -97,12 +101,30 @@ export async function createUser(req: CreateUserRequest): Promise<CreateUserResp
   return data;
 }
 
+export async function createUsersBatch(
+  count: number,
+): Promise<{ username: string; password: string }[]> {
+  const { data } = await api.post<{ username: string; password: string }[]>("/users/batch", {
+    count,
+  });
+  return data;
+}
+
 export async function deleteUser(id: number): Promise<void> {
   await api.delete(`/users/${id}`);
 }
 
 export async function updateUserRoles(id: number, roleNames: string[]): Promise<void> {
   await api.put(`/users/${id}/roles`, { roleNames });
+}
+
+export interface UpdateUserRequest {
+  displayName?: string;
+  password?: string;
+}
+
+export async function updateUser(id: number, req: UpdateUserRequest): Promise<void> {
+  await api.put(`/users/${id}`, req);
 }
 
 export async function getProblems(): Promise<ProblemSummary[]> {
@@ -150,8 +172,44 @@ export async function deleteTestcase(problemId: number, tcId: number): Promise<v
   await api.delete(`/problems/${problemId}/testcases/${tcId}`);
 }
 
-export async function createExamSession(req: CreateExamSessionRequest): Promise<ExamSession> {
-  const { data } = await api.post<ExamSession>("/exam-sessions", req);
+export async function createExamTemplateManual(
+  req: CreateExamTemplateManualRequest,
+): Promise<ExamTemplate> {
+  const { data } = await api.post<ExamTemplate>("/exam-sessions/templates/manual", req);
+  return data;
+}
+
+export async function createExamTemplateRandom(
+  req: CreateExamTemplateRandomRequest,
+): Promise<ExamTemplate> {
+  const { data } = await api.post<ExamTemplate>("/exam-sessions/templates/random", req);
+  return data;
+}
+
+export async function updateExamTemplate(
+  id: number,
+  req: UpdateExamTemplateRequest,
+): Promise<ExamTemplate> {
+  const { data } = await api.put<ExamTemplate>(`/exam-sessions/templates/${id}`, req);
+  return data;
+}
+
+export async function deleteExamTemplate(id: number): Promise<void> {
+  await api.delete(`/exam-sessions/templates/${id}`);
+}
+
+export async function listExamTemplates(): Promise<ExamTemplate[]> {
+  const { data } = await api.get<ExamTemplate[]>("/exam-sessions/templates");
+  return data;
+}
+
+export async function assignExamToCandidates(
+  templateId: number,
+  candidateIds: number[],
+): Promise<ExamSession[]> {
+  const { data } = await api.post<ExamSession[]>(`/exam-sessions/templates/${templateId}/assign`, {
+    candidateIds,
+  });
   return data;
 }
 
@@ -226,3 +284,85 @@ export async function getExamDrafts(sessionId: number): Promise<Record<string, s
   const { data } = await api.get<Record<string, string>>(`/exam-sessions/${sessionId}/drafts`);
   return data;
 }
+
+export async function getCandidatePassword(sessionId: number): Promise<CandidatePasswordResponse> {
+  const { data } = await api.get<CandidatePasswordResponse>(
+    `/exam-sessions/${sessionId}/candidate-password`,
+  );
+  return data;
+}
+
+export async function getUserPassword(userId: number): Promise<CandidatePasswordResponse> {
+  const { data } = await api.get<CandidatePasswordResponse>(`/users/${userId}/password`);
+  return data;
+}
+
+export async function reportViolation(
+  sessionId: number,
+  req: import("../types").ReportViolationRequest,
+): Promise<void> {
+  await api.post(`/exam-sessions/${sessionId}/violations`, req);
+}
+
+export async function getViolations(
+  sessionId: number,
+): Promise<import("../types").ExamViolation[]> {
+  const { data } = await api.get<import("../types").ExamViolation[]>(
+    `/exam-sessions/${sessionId}/violations`,
+  );
+  return data;
+}
+
+// ── Response error interceptor ────────────────────────────────────────────────
+
+interface RetryConfig extends InternalAxiosRequestConfig {
+  _retryCount?: number;
+}
+
+export interface ApiErrorData {
+  message?: string;
+}
+
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
+
+export function isRetryableError(error: AxiosError): boolean {
+  if (!error.response) return true; // network / timeout — no HTTP response received
+  return error.response.status === 429 || error.response.status === 503;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function logApiError(error: AxiosError<ApiErrorData>): void {
+  const method = (error.config?.method ?? "UNKNOWN").toUpperCase();
+  const url = error.config?.url ?? "UNKNOWN";
+  const status = error.response?.status ?? "NETWORK_ERROR";
+  const message = error.response?.data?.message ?? error.message;
+  const requestId = error.response?.headers?.["x-request-id"] as string | undefined;
+
+  const lines = [`[API Error] ${method} ${url} → ${status}`, `message: ${message}`];
+  if (requestId) lines.push(`request-id: ${requestId}`);
+  console.error(lines.join("\n"));
+}
+
+api.interceptors.response.use(undefined, async (rawError: unknown) => {
+  if (!axios.isAxiosError(rawError)) {
+    console.error("[API Error] Unexpected non-Axios error:", rawError);
+    return Promise.reject(rawError as Error);
+  }
+
+  const error = rawError as AxiosError<ApiErrorData>;
+  const config = error.config as RetryConfig | undefined;
+
+  if (config && isRetryableError(error) && (config._retryCount ?? 0) < MAX_RETRIES) {
+    config._retryCount = (config._retryCount ?? 0) + 1;
+    const delay = BASE_DELAY_MS * Math.pow(2, config._retryCount - 1);
+    await sleep(delay);
+    return api(config);
+  }
+
+  logApiError(error);
+  return Promise.reject(error);
+});

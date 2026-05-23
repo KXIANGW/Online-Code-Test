@@ -7,7 +7,9 @@ NTHU 1142 雲原生 HW2 / Team 12。M1 → M5 累進疊加：非同步判題（M
 - [Testing_README.md](./Testing_README.md) — 完整測試指南（環境建置、各 component 自動/手動測試）
 - [backend/README.md](./backend/README.md) — Backend API 設計、endpoints 規格、測試覆蓋
 - [frontend/README.md](./frontend/README.md) — Frontend 架構與開發環境設定
-- [worker/README.md](./worker/README.md) — Judge worker 架構、RabbitMQ 協定、gVisor sandbox 設計、Prometheus metrics
+- [worker/README.md](./worker/README.md) — Judge worker 架構、RabbitMQ 協定、Isolate sandbox 設計、Prometheus metrics
+- [NEW_LANGUAGE.md](./NEW_LANGUAGE.md) — 新增 sandbox 語言環境 SOP（Dockerfile + smoke fixture + `make verify-language`）
+- [K8S_SETUP.md](./K8S_SETUP.md) / [K8S_SETUP_Ubuntu.md](./K8S_SETUP_Ubuntu.md) — k3s + Argo CD（macOS）/ k3s 原生（Ubuntu）部署
 - [infra/postgres/README.md](./infra/postgres/README.md) — Database schema、init scripts、RBAC 設計
 - [infra/redis/README.md](./infra/redis/README.md) — Redis cache key 規格、TTL、降級行為
 - [loadtest/README.md](./loadtest/README.md) — 100 並發 demo 操作手冊（seed / k6 / scale-watcher）
@@ -18,13 +20,33 @@ NTHU 1142 雲原生 HW2 / Team 12。M1 → M5 累進疊加：非同步判題（M
 
 - Docker Engine >= 24
 - Docker Compose v2
-- 正式沙箱隔離需在 host 安裝並設定 gVisor `runsc` runtime
+- cgroup v2 unified hierarchy（Ubuntu 22.04+ / Debian 12+ 預設都有）。
+  Sandbox engine 走 `sio2project/isolate`，需要 host 把 cgroup v2 委派給 worker
+  container；`docker-compose.yml` 已用 `privileged: true` 解掉這個限制。
+  K8s/k3s 透過 kubelet 自動處理，不需要這條設定。
 
 ```bash
+# 1. 產生 .env（僅首次）
 cp .env.example .env
+
+# 2. Build sandbox image 並解壓語言 rootfs 到 /tmp/oct-rootfs/
+#    （make up 只 build image，不會自動解壓；worker 啟動時需要 rootfs 存在）
+make -C worker build-isolate-rootfs
+
+# 3. 啟動所有服務
 make up
+
+# 4. 確認所有服務健康
 make ps
 ```
+
+> **為什麼需要 `build-isolate-rootfs`？**
+> `make up` 會 build `oct-sandbox-cpp` / `oct-sandbox-python` 等 Docker image，
+> 但 isolate sandbox 不直接跑 Docker container，而是把 image 解壓成 rootfs 目錄
+> 後透過 bind mount 帶入 sandbox。`build-isolate-rootfs` 負責執行這個解壓步驟，
+> 將結果放到 `/tmp/oct-rootfs/<lang>/`，worker container 再以唯讀方式掛入。
+> 若跳過此步驟，worker 的 `/var/lib/oct/rootfs/` 將為空目錄，healthcheck 失敗，
+> 所有提交都無法正常判題。
 
 啟動後服務入口：
 
@@ -54,27 +76,25 @@ make ps
 
 > 密碼以 `.env` 中的 `POSTGRES_PASSWORD` 為準。
 
-如果本機尚未安裝 gVisor，可在 `.env` 暫時改用普通 Docker runtime：
-
-```bash
-SANDBOX_RUNTIME=runc
-```
-
-`runc` 只適合本機開發驗證，不提供 gVisor 的隔離效果。
-
 ## 常用 Makefile 指令
 
 ```bash
 # 基本操作
 make bootstrap       # 產生 .env
-make sandbox-images  # 重建 oct-sandbox-cpp:12 / oct-sandbox-python:3.11
-make up              # docker compose up -d --build（含 prometheus / grafana / cadvisor）
+make sandbox-images  # 重建所有 enabled 語言的 sandbox image（data-driven，讀 languages.yaml）
+make up              # build sandbox image + docker compose up -d --build（不含 rootfs 解壓，需先跑 build-isolate-rootfs）
 make ps              # 查看所有服務健康狀態
 make logs            # 追蹤所有服務 log
 make down            # 停止服務
 make clean           # 停止服務並刪除 volumes
 make rebuild         # clean + up
 make psql            # 進入 psql shell
+
+# Sandbox 開發 / 測試
+make -C worker build-isolate-rootfs               # 把所有 enabled 語言的 image 解成 rootfs
+make -C worker verify-language LANG=cpp17         # 單一語言 smoke test（pre-push 驗證）
+make -C worker test-integration-isolate           # 完整 12-case e2e（4 verdict + 7 security + 1 seccomp）
+make -C worker list-languages                     # 列出當前 enabled 語言清單
 
 # 100 並發 demo（需先 make up）
 make demo-seed       # 建立 100 個 candidate 帳號 + session（需要 Node.js 20+）
@@ -93,7 +113,7 @@ make demo-urls       # 列出 Grafana / Prometheus / RabbitMQ 等入口
 | `rabbitmq` | RabbitMQ + Management UI + Prometheus exporter | 5672 / 15672 / 15692 |
 | `redis` | 快取（語言/題目/使用者）+ 考試草稿儲存 | 6379 |
 | `backend` | Fastify API、WebSocket、RabbitMQ consumer、`/api/metrics` | 3000 |
-| `worker` | Judge worker（Docker/gVisor sandbox）、`/metrics`、`/healthz` | internal (8080) |
+| `worker` | Judge worker（sio2project/isolate sandbox + oct-seccomp-wrapper）、`/metrics`、`/healthz` | internal (8080) |
 | `frontend` | Vite build，由 nginx 提供靜態檔 | 5173 |
 | `prometheus` | 抓取 backend / worker / cadvisor / rabbitmq metrics | 9090 |
 | `grafana` | 自動載入「OCT Demo — 100 concurrent」13-panel dashboard | 3001 |
@@ -106,7 +126,7 @@ make demo-urls       # 列出 Grafana / Prometheus / RabbitMQ 等入口
 2. Backend 建立 `submissions` row，初始狀態為 `pending`，並寫入 `submission_type`。
 3. Backend 發布任務到 RabbitMQ `judge.tasks` queue。
 4. Worker 一次消費一個任務：`simple` 只跑公開測資，`formal` 跑公開 + hidden 測資。
-5. Worker 使用 Docker/gVisor 執行程式，將 testcase results 與 submission verdict 寫回 PostgreSQL。
+5. Worker 用 IsolateEngine 評測：`child_process.spawn` 起 `oct-seccomp-wrapper`（裝載 seccomp 黑名單）→ `execve` 候選人程式於 isolate sandbox（namespace + cgroup + chroot + uid 60000+）內。Testcase results 與 submission verdict 寫回 PostgreSQL。
 6. Worker 發布 `judge.results`，backend 收到後透過 `/api/ws` 推送 `judge_result`。
 7. 只有 `formal` 且 verdict 為 `AC` 時，才會更新 `exam_session_problems.score` 與 `exam_sessions.total_score`。
 
@@ -122,8 +142,9 @@ make demo-urls       # 列出 Grafana / Prometheus / RabbitMQ 等入口
 | `RABBITMQ_USER` / `RABBITMQ_PASS` | `oct` / `oct_dev_password` | RabbitMQ 帳號與密碼 |
 | `RABBITMQ_URL` | `amqp://oct:oct_dev_password@rabbitmq:5672` | Backend / worker 使用的 RabbitMQ 連線字串 |
 | `REDIS_URL` | `redis://redis:6379` | Backend Redis 連線字串（cache + draft）|
-| `HOST_WORK_DIR` | `/tmp/judge` | Worker 與 host Docker 共用的工作目錄 |
-| `SANDBOX_RUNTIME` | `runsc` | 沙箱 runtime；本機無 gVisor 時可暫改 `runc` |
+| `HOST_WORK_DIR` | `/tmp/judge` | Worker 評測時的暫存工作目錄（bind-mount 進 isolate sandbox 的 `/code`）|
+| `ROOTFS_BASE_DIR` | `/var/lib/oct/rootfs` | 各語言 rootfs 在 host 的位置（`make build-isolate-rootfs` 解出，或 K8s 由 DaemonSet 解出）|
+| `SECCOMP_BUNDLE_DIR` | `/etc/oct` | worker container 內的 oct-seccomp-wrapper + seccomp.policy 路徑 |
 | `HOST_PROMETHEUS_PORT` | `9090` | Prometheus host port |
 | `HOST_GRAFANA_PORT` | `3001` | Grafana host port |
 | `HOST_CADVISOR_PORT` | `8081` | cAdvisor host port |

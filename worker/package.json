@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "amqplib": "^0.10.4",
-    "dockerode": "^4.0.2",
     "dotenv": "^16.4.5",
     "fs-extra": "^11.2.0",
     "js-yaml": "^4.1.1",
@@ -24,7 +23,6 @@
   },
   "devDependencies": {
     "@types/amqplib": "^0.10.5",
-    "@types/dockerode": "^3.3.29",
     "@types/fs-extra": "^11.0.4",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.14.10",

@@ -14,10 +14,18 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./infra/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      # Two-stage gate:
+      # 1. pg_isready -h 127.0.0.1: forces TCP (only open after ALL
+      #    docker-entrypoint-initdb.d scripts finish; UNIX socket is available
+      #    mid-init and would pass too early).
+      # 2. SELECT 1 FROM users LIMIT 1: confirms scenario seed data exists.
+      #    If the volume has leftover partial data (e.g. from a crashed init),
+      #    this gate stays unhealthy and backend never starts with bad state.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB} && psql -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB} -tc 'SELECT 1 FROM users LIMIT 1' 2>/dev/null | grep -q 1"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+      start_period: 30s
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
@@ -32,10 +40,11 @@ services:
     volumes:
       - ./infra/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 10s
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5672 || exit 1"] # test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 3s         # 從 10s 縮短到 3s，反應更快
       timeout: 5s
       retries: 10
+      start_period: 15s    # 給它 15 秒暖身時間，這期間不計入失敗
 
   redis:
     image: redis:7-alpine
@@ -61,6 +70,7 @@ services:
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://oct:oct_dev_password@rabbitmq:5672}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET:-oct_dev_jwt_secret_change_me_32_chars}
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:-000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f}
       PORT: ${BACKEND_PORT:-3000}
       NODE_ENV: ${NODE_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -75,10 +85,10 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${BACKEND_PORT:-3000}/api/health || exit 1"]
-      interval: 10s
+      interval: 3s
       timeout: 5s
-      retries: 6
-      start_period: 15s
+      retries: 30
+      start_period: 60s
 
   worker:
     build:
@@ -88,11 +98,26 @@ services:
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://oct:oct_dev_password@rabbitmq:5672}
       DATABASE_URL: ${DATABASE_URL:-postgres://oct:oct_dev_password_change_me@postgres:5432/oct}
       HOST_WORK_DIR: ${HOST_WORK_DIR:-/tmp/judge}
-      SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-runc}
+      # IsolateEngine is now the only sandbox engine (Phase 4 / Step B).
+      # `make build-isolate-rootfs` populates HOST_ROOTFS_DIR before
+      # `docker compose up worker`.
+      ROOTFS_BASE_DIR: /var/lib/oct/rootfs
+      SECCOMP_BUNDLE_DIR: /etc/oct
       NODE_ENV: ${NODE_ENV:-development}
+    # privileged: required by isolate v2.0 `--cg --init` to write under
+    # /sys/fs/cgroup (Docker mounts it read-only without privileged, even
+    # with cap_add: SYS_ADMIN). Matches k8s/08-worker.yaml.
+    privileged: true
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - ${HOST_WORK_DIR:-/tmp/judge}:${HOST_WORK_DIR:-/tmp/judge}
+      # Local Isolate rootfs cache, populated by `make build-isolate-rootfs`.
+      # type=bind so docker doesn't auto-create an empty named volume.
+      - type: bind
+        source: ${HOST_ROOTFS_DIR:-/tmp/oct-rootfs}
+        target: /var/lib/oct/rootfs
+        read_only: true
+        bind:
+          create_host_path: true
     depends_on:
       postgres:
         condition: service_healthy
@@ -100,10 +125,10 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/healthz"]
-      interval: 10s
+      interval: 5s         # 縮短間隔
       timeout: 5s
-      retries: 6
-      start_period: 20s
+      retries: 10
+      start_period: 30s
 
   frontend:
     build:

@@ -1,10 +1,34 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { setupServer } from "msw/node";
 import { http, HttpResponse } from "msw";
-import { api, updateUserRoles } from "../api/client";
+import { api, updateUserRoles, isRetryableError, logApiError } from "../api/client";
+import type { ApiErrorData } from "../api/client";
 
 let capturedAuthHeader: string | null | undefined = undefined;
 let capturedRolesRequest: { url: string; method: string; body: unknown } | null = null;
+
+// ── Test helper ───────────────────────────────────────────────────────────────
+function makeAxiosError(
+  status: number | null,
+  data: ApiErrorData = {},
+  method = "get",
+  url = "/test",
+  responseHeaders: Record<string, string> = {},
+): AxiosError<ApiErrorData> {
+  const config = { method, url } as InternalAxiosRequestConfig;
+  const response =
+    status !== null
+      ? { status, statusText: "Error", data, headers: responseHeaders, config }
+      : undefined;
+  return {
+    isAxiosError: true,
+    config,
+    response,
+    message: "Request failed",
+    name: "AxiosError",
+  } as unknown as AxiosError<ApiErrorData>;
+}
 
 const server = setupServer(
   http.get("*/api/ping", ({ request }) => {
@@ -143,5 +167,249 @@ describe("api request interceptor", () => {
 
     // expect
     expect(capturedAuthHeader).toBe("Bearer new-token");
+  });
+});
+
+// ── isRetryableError() ────────────────────────────────────────────────────────
+
+describe("isRetryableError()", () => {
+  it("returns true for 429 Too Many Requests", () => {
+    // given / when / expect
+    expect(isRetryableError(makeAxiosError(429))).toBe(true);
+  });
+
+  it("returns true for 503 Service Unavailable", () => {
+    expect(isRetryableError(makeAxiosError(503))).toBe(true);
+  });
+
+  it("returns true for network error (no response object)", () => {
+    // given: no response means request never reached the server
+    expect(isRetryableError(makeAxiosError(null))).toBe(true);
+  });
+
+  it("returns false for 400 Bad Request", () => {
+    expect(isRetryableError(makeAxiosError(400))).toBe(false);
+  });
+
+  it("returns false for 401 Unauthorized", () => {
+    expect(isRetryableError(makeAxiosError(401))).toBe(false);
+  });
+
+  it("returns false for 404 Not Found", () => {
+    expect(isRetryableError(makeAxiosError(404))).toBe(false);
+  });
+
+  it("returns false for 500 Internal Server Error", () => {
+    expect(isRetryableError(makeAxiosError(500))).toBe(false);
+  });
+});
+
+// ── logApiError() ─────────────────────────────────────────────────────────────
+
+describe("logApiError()", () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    consoleSpy.mockRestore();
+  });
+
+  it("logs METHOD URL → STATUS and message on a 4xx error", () => {
+    // given
+    const err = makeAxiosError(
+      422,
+      { message: "validation failed" },
+      "post",
+      "/exam-sessions/5/submissions",
+    );
+
+    // when
+    logApiError(err);
+
+    // expect
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "[API Error] POST /exam-sessions/5/submissions → 422\nmessage: validation failed",
+    );
+  });
+
+  it("includes x-request-id line when response header is present", () => {
+    // given
+    const err = makeAxiosError(500, { message: "internal error" }, "get", "/ping", {
+      "x-request-id": "req-abc-123",
+    });
+
+    // when
+    logApiError(err);
+
+    // expect
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "[API Error] GET /ping → 500\nmessage: internal error\nrequest-id: req-abc-123",
+    );
+  });
+
+  it("omits request-id line when header is absent", () => {
+    // given
+    const err = makeAxiosError(403, { message: "forbidden" }, "delete", "/users/9");
+
+    // when
+    logApiError(err);
+
+    // expect: no third line
+    const logged = (consoleSpy.mock.calls[0] as string[])[0];
+    expect(logged).not.toContain("request-id");
+  });
+
+  it("shows NETWORK_ERROR as status when there is no response", () => {
+    // given: network / timeout error — response is undefined
+    const err = makeAxiosError(null);
+
+    // when
+    logApiError(err);
+
+    // expect
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("NETWORK_ERROR"));
+  });
+
+  it("falls back to error.message when response data has no message field", () => {
+    // given
+    const err = makeAxiosError(503, {}, "get", "/health");
+    (err as AxiosError<ApiErrorData>).message = "socket hang up";
+
+    // when
+    logApiError(err);
+
+    // expect: uses axios error message as fallback
+    const logged = (consoleSpy.mock.calls[0] as string[])[0];
+    expect(logged).toContain("socket hang up");
+  });
+});
+
+// ── Response error interceptor (integration via MSW) ─────────────────────────
+
+describe("response error interceptor", () => {
+  const retryServer = setupServer();
+
+  beforeAll(() => retryServer.listen({ onUnhandledRequest: "bypass" }));
+  afterEach(() => retryServer.resetHandlers());
+  afterAll(() => retryServer.close());
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("retries on 429 and succeeds when a later attempt returns 200", async () => {
+    // given: first two calls return 429, third returns 200
+    let callCount = 0;
+    retryServer.use(
+      http.get("*/retry-429", () => {
+        callCount++;
+        if (callCount < 3) return HttpResponse.json({}, { status: 429 });
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+
+    // when
+    const promise = api.get("/retry-429");
+    await vi.advanceTimersByTimeAsync(1000); // retry 1 delay
+    await vi.advanceTimersByTimeAsync(2000); // retry 2 delay
+    const result = await promise;
+
+    // expect
+    expect(result.data).toEqual({ ok: true });
+    expect(callCount).toBe(3);
+  });
+
+  it("retries on 503 and succeeds on the second attempt", async () => {
+    // given
+    let callCount = 0;
+    retryServer.use(
+      http.get("*/retry-503", () => {
+        callCount++;
+        if (callCount === 1) return HttpResponse.json({}, { status: 503 });
+        return HttpResponse.json({ healthy: true });
+      }),
+    );
+
+    const promise = api.get("/retry-503");
+    await vi.advanceTimersByTimeAsync(1000);
+    const result = await promise;
+
+    expect(result.data).toEqual({ healthy: true });
+    expect(callCount).toBe(2);
+  });
+
+  it("exhausts 3 retries on persistent 429, logs the error, and rejects", async () => {
+    // given: always 429
+    let callCount = 0;
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    retryServer.use(
+      http.get("*/always-429", () => {
+        callCount++;
+        return HttpResponse.json({ message: "rate limited" }, { status: 429 });
+      }),
+    );
+
+    // Attach rejection handler immediately so the promise is never "unhandled"
+    const promise = api.get("/always-429");
+    const assertion = expect(promise).rejects.toMatchObject({ response: { status: 429 } });
+
+    await vi.advanceTimersByTimeAsync(1000); // retry 1 delay
+    await vi.advanceTimersByTimeAsync(2000); // retry 2 delay
+    await vi.advanceTimersByTimeAsync(4000); // retry 3 delay — exhausted
+
+    // expect: rejected after 4 total attempts (1 original + 3 retries)
+    await assertion;
+    expect(callCount).toBe(4);
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("[API Error]"));
+    consoleSpy.mockRestore();
+  });
+
+  it("does NOT retry on 400 Bad Request — logs immediately and rejects", async () => {
+    // given
+    let callCount = 0;
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    retryServer.use(
+      http.post("*/bad-request", () => {
+        callCount++;
+        return HttpResponse.json({ message: "invalid input" }, { status: 400 });
+      }),
+    );
+
+    // Attach rejection handler immediately to avoid unhandled rejection window
+    const promise = api.post("/bad-request", {});
+    const assertion = expect(promise).rejects.toMatchObject({ response: { status: 400 } });
+    await vi.runAllTimersAsync();
+
+    // expect: exactly one call, immediate log, reject
+    await assertion;
+    expect(callCount).toBe(1);
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("→ 400"));
+    consoleSpy.mockRestore();
+  });
+
+  it("does NOT retry on 401 Unauthorized", async () => {
+    // given
+    let callCount = 0;
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    retryServer.use(
+      http.get("*/protected", () => {
+        callCount++;
+        return HttpResponse.json({ message: "unauthorized" }, { status: 401 });
+      }),
+    );
+
+    // Attach rejection handler immediately to avoid unhandled rejection window
+    const promise = api.get("/protected");
+    const assertion = expect(promise).rejects.toMatchObject({ response: { status: 401 } });
+    await vi.runAllTimersAsync();
+
+    await assertion;
+    expect(callCount).toBe(1);
+    consoleSpy.mockRestore();
   });
 });

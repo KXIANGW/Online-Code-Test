@@ -2,26 +2,17 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getProblems, deleteProblem } from "../api/client";
 import { NavBar } from "../components/NavBar";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import type { Difficulty, ProblemSummary } from "../types";
-
-const DIFFICULTY_LABEL: Record<Difficulty, string> = {
-  easy: "easy",
-  medium: "medium",
-  hard: "hard",
-};
-
-const DIFFICULTY_COLOR: Record<Difficulty, string> = {
-  easy: "bg-green-50 text-green-700",
-  medium: "bg-amber-50 text-amber-700",
-  hard: "bg-red-50 text-red-700",
-};
+import { DIFFICULTY_LABEL, DIFFICULTY_BADGE_COLOR } from "../config/difficulty";
+import { ROUTES } from "../config/routes";
 
 type DifficultyFilter = Difficulty | "all";
 
 function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
   return (
     <span
-      className={`text-xs font-medium px-2 py-0.5 rounded-full ${DIFFICULTY_COLOR[difficulty]}`}
+      className={`text-xs font-medium px-2 py-0.5 rounded-full ${DIFFICULTY_BADGE_COLOR[difficulty]}`}
     >
       {DIFFICULTY_LABEL[difficulty]}
     </span>
@@ -35,6 +26,7 @@ export default function ProblemSetterDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [difficultyFilter, setDifficultyFilter] = useState<DifficultyFilter>("all");
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -53,15 +45,22 @@ export default function ProblemSetterDashboardPage() {
   });
 
   function handleDelete(id: number) {
-    if (!confirm("確定要刪除這道題目嗎？此操作無法復原。")) return;
-    deleteProblem(id)
-      .then(() => setProblems((prev) => prev.filter((p) => p.id !== id)))
-      .catch(() => alert("刪除失敗，請稍後再試。"));
+    setDeleteTarget(id);
+  }
+
+  async function handleConfirmDelete() {
+    if (deleteTarget === null) return;
+    try {
+      await deleteProblem(deleteTarget);
+      setProblems((prev) => prev.filter((p) => p.id !== deleteTarget));
+    } finally {
+      setDeleteTarget(null);
+    }
   }
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <NavBar homeHref="/problem-setter" />
+      <NavBar homeHref={ROUTES.PROBLEM_SETTER} />
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -70,7 +69,7 @@ export default function ProblemSetterDashboardPage() {
           </div>
           <button
             type="button"
-            onClick={() => navigate("/problem-setter/new")}
+            onClick={() => navigate(ROUTES.PROBLEM_SETTER_NEW)}
             className="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition"
           >
             + 新增題目
@@ -102,9 +101,9 @@ export default function ProblemSetterDashboardPage() {
                 {(
                   [
                     { key: "all", label: "全部" },
-                    { key: "easy", label: "easy" },
-                    { key: "medium", label: "medium" },
-                    { key: "hard", label: "hard" },
+                    { key: "easy", label: DIFFICULTY_LABEL.easy },
+                    { key: "medium", label: DIFFICULTY_LABEL.medium },
+                    { key: "hard", label: DIFFICULTY_LABEL.hard },
                   ] as { key: DifficultyFilter; label: string }[]
                 ).map((f) => (
                   <button
@@ -158,7 +157,7 @@ export default function ProblemSetterDashboardPage() {
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => navigate(`/problem-setter/${problem.id}/edit`)}
+                        onClick={() => navigate(ROUTES.problemEdit(problem.id))}
                         className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap"
                       >
                         編輯
@@ -178,6 +177,13 @@ export default function ProblemSetterDashboardPage() {
           </div>
         </section>
       </main>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="刪除題目"
+        message="確定要刪除這道題目嗎？此操作無法復原。"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

@@ -1,11 +1,14 @@
 version: 1
+# IsolateEngine resolves commands via execve(), which needs absolute paths.
+# DockerEngine wraps cmd in `sh -c "<cmd> < input"` so the shell does PATH
+# lookup for it. Absolute paths work for both, so always use absolute paths.
 languages:
   - id: cpp17
     image: oct-sandbox-cpp:12
     source:
       filename: solution.cpp
     compile:
-      cmd: ["g++", "solution.cpp", "-O2", "-std=c++17", "-o", "solution", "-lm"]
+      cmd: ["/usr/local/bin/g++", "solution.cpp", "-O2", "-std=c++17", "-o", "solution", "-lm"]
     run:
       cmd: ["/code/solution"]
     enabled: true
@@ -15,7 +18,7 @@ languages:
     source:
       filename: solution.py
     run:
-      cmd: ["python3", "/code/solution.py"]
+      cmd: ["/usr/local/bin/python3", "/code/solution.py"]
       env:
         PYTHONUNBUFFERED: "1"
         PYTHONDONTWRITEBYTECODE: "1"

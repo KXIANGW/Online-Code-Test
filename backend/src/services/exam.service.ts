@@ -1,5 +1,8 @@
 import { db } from "../db/client";
+import { decryptPassword } from "./crypto.service";
 import {
+  exams,
+  examProblems,
   examSessions,
   examSessionProblems,
   problems,
@@ -7,7 +10,7 @@ import {
   problemTestcases,
   users,
 } from "../db/schema";
-import { and, eq, sql, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, sql, inArray, isNull } from "drizzle-orm";
 import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 import { clearSessionDrafts } from "./draft.service";
@@ -19,6 +22,7 @@ import {
 
 type CurrentUser = FastifyJWT["user"];
 type Difficulty = "easy" | "medium" | "hard";
+type ExamStatus = "not_started" | "in_progress" | "submitted" | "expired" | "cancelled";
 
 function canManageExam(user: CurrentUser): boolean {
   return user.isSuperuser || user.permissions.includes("exam:manage");
@@ -28,11 +32,97 @@ function canTakeExam(user: CurrentUser): boolean {
   return user.isSuperuser || user.permissions.includes("exam:take");
 }
 
-// Manual problem assignment
-export async function createExamSession(
+function mapSessionDto(row: {
+  id: number;
+  examId: number;
+  examTitle: string;
+  candidateId: number;
+  candidateUsername: string;
+  candidateDisplayName: string | null;
+  createdBy: number;
+  status: ExamStatus;
+  durationMinutes: number;
+  actualStartAt: Date | null;
+  expiresAt: Date | null;
+  submittedAt: Date | null;
+  totalScore: number;
+  maxScore: number;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    id: row.id,
+    examId: row.examId,
+    examTitle: row.examTitle,
+    candidateId: row.candidateId,
+    candidate: {
+      id: row.candidateId,
+      username: row.candidateUsername,
+      displayName: row.candidateDisplayName,
+    },
+    createdBy: row.createdBy,
+    status: row.status,
+    durationMinutes: row.durationMinutes,
+    actualStartAt: row.actualStartAt,
+    expiresAt: row.expiresAt,
+    submittedAt: row.submittedAt,
+    totalScore: row.totalScore,
+    maxScore: row.maxScore,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+async function getSessionDtosByIds(sessionIds: number[]) {
+  if (sessionIds.length === 0) return [];
+
+  const rows = await db
+    .select({
+      id: examSessions.id,
+      examId: examSessions.examId,
+      examTitle: exams.title,
+      candidateId: examSessions.candidateId,
+      candidateUsername: users.username,
+      candidateDisplayName: users.displayName,
+      createdBy: examSessions.createdBy,
+      status: examSessions.status,
+      durationMinutes: exams.durationMinutes,
+      actualStartAt: examSessions.actualStartAt,
+      expiresAt: examSessions.expiresAt,
+      submittedAt: examSessions.submittedAt,
+      totalScore: examSessions.totalScore,
+      maxScore: examSessions.maxScore,
+      createdAt: examSessions.createdAt,
+      updatedAt: examSessions.updatedAt,
+    })
+    .from(examSessions)
+    .innerJoin(exams, eq(examSessions.examId, exams.id))
+    .innerJoin(users, eq(examSessions.candidateId, users.id))
+    .where(inArray(examSessions.id, sessionIds));
+
+  const byId = new Map(rows.map((row) => [row.id, mapSessionDto(row)]));
+  return sessionIds
+    .map((id) => byId.get(id))
+    .filter((row): row is NonNullable<typeof row> => !!row);
+}
+
+async function getSessionDtoById(sessionId: number) {
+  const [session] = await getSessionDtosByIds([sessionId]);
+  if (!session) throw NotFoundError("exam session");
+  return session;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 部分 1：建立與管理考試模板 (Exam Templates)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 做法 1：手動建立考試模板（主管自己挑題）
+ */
+export async function createExamTemplate(
   currentUser: CurrentUser,
   data: {
-    candidateId: number;
+    title: string;
     durationMinutes: number;
     problems: { problemId: number; scoreWeight: number; orderIndex: number }[];
   },
@@ -46,50 +136,47 @@ export async function createExamSession(
     data.problems.map((p) => p.orderIndex),
     "Duplicate problem orderIndex",
   );
-
-  const { createdBy: candidateCreatedBy } = await assertCandidateExists(data.candidateId);
-  if (!currentUser.isSuperuser && candidateCreatedBy !== currentUser.id) throw ForbiddenError();
   await assertProblemsAreActive(data.problems.map((p) => p.problemId));
 
   return db.transaction(async (tx) => {
-    const rows = await tx
-      .insert(examSessions)
+    const examRows = await tx
+      .insert(exams)
       .values({
-        candidateId: data.candidateId,
-        createdBy: currentUser.id,
+        title: data.title,
         durationMinutes: data.durationMinutes,
-        maxScore: data.problems.reduce((sum, p) => sum + p.scoreWeight, 0),
+        createdBy: currentUser.id,
       })
       .returning();
 
-    const session = rows[0]!;
+    const newExam = examRows[0]!;
 
-    await tx.insert(examSessionProblems).values(
+    await tx.insert(examProblems).values(
       data.problems.map((p) => ({
-        examSessionId: session.id,
+        examId: newExam.id,
         problemId: p.problemId,
         orderIndex: p.orderIndex,
         scoreWeight: p.scoreWeight,
       })),
     );
 
-    return session;
+    return newExam;
   });
 }
 
-// Random problem assignment using §10.3 CTE
-export async function createExamSessionRandom(
+/**
+ * 做法 2：隨機建立考試模板（方案 A：系統依難度拉題，組裝成標準考卷）
+ * 使用原本高效的 §10.3 CTE 隨機選題 SQL 語法
+ */
+export async function createExamTemplateRandom(
   currentUser: CurrentUser,
   data: {
-    candidateId: number;
+    title: string;
     durationMinutes: number;
     distribution: { easy?: number; medium?: number; hard?: number };
-    scoreWeight: number;
+    scoreWeight: number; // 隨機抽出的題目，每題的固定配分
   },
 ) {
   if (!canManageExam(currentUser)) throw ForbiddenError();
-  const { createdBy: candidateCreatedBy } = await assertCandidateExists(data.candidateId);
-  if (!currentUser.isSuperuser && candidateCreatedBy !== currentUser.id) throw ForbiddenError();
 
   const difficulties: { level: Difficulty; count: number }[] = (
     [
@@ -105,19 +192,13 @@ export async function createExamSessionRandom(
 
   const pickedIds: number[] = [];
 
+  // 利用原本的隨機拉題邏輯，從未刪除的題庫中盲抽，並防止同一次建卷抽到重複題目
   for (const { level, count } of difficulties) {
     for (let i = 0; i < count; i++) {
       const rows = await db.execute<{ id: number }>(sql`
-        WITH used AS (
-          SELECT DISTINCT esp.problem_id
-          FROM exam_session_problems esp
-          JOIN exam_sessions es ON es.id = esp.exam_session_id
-          WHERE es.candidate_id = ${data.candidateId}
-        )
         SELECT p.id FROM problems p
         WHERE p.difficulty = ${level}::difficulty_level
           AND p.deleted_at IS NULL
-          AND p.id NOT IN (SELECT problem_id FROM used)
           ${
             pickedIds.length > 0
               ? sql`AND p.id NOT IN (${sql.join(
@@ -132,48 +213,334 @@ export async function createExamSessionRandom(
 
       if (rows.rows.length === 0) {
         throw ConflictError(
-          `Not enough ${level} problems available for this candidate. Please add more problems.`,
+          `Not enough ${level} problems available in full pool. Please add more problems to database.`,
         );
       }
       pickedIds.push(rows.rows[0]!.id);
     }
   }
 
-  const maxScore = pickedIds.length * data.scoreWeight;
-
+  // 封裝成考卷模板儲存
   return db.transaction(async (tx) => {
-    const sessionRows = await tx
-      .insert(examSessions)
+    // 1. 建立 Exam 模板
+    const examRows = await tx
+      .insert(exams)
       .values({
-        candidateId: data.candidateId,
-        createdBy: currentUser.id,
+        title: data.title,
         durationMinutes: data.durationMinutes,
-        maxScore,
+        createdBy: currentUser.id,
       })
       .returning();
 
-    const session = sessionRows[0]!;
+    const newExam = examRows[0]!;
 
-    await tx.insert(examSessionProblems).values(
+    // 2. 批次將隨機抽到的題目寫入模板關聯
+    await tx.insert(examProblems).values(
       pickedIds.map((problemId, idx) => ({
-        examSessionId: session.id,
+        examId: newExam.id,
         problemId,
         orderIndex: idx + 1,
         scoreWeight: data.scoreWeight,
       })),
     );
 
-    return session;
+    return newExam;
   });
 }
 
+export async function updateExamTemplate(
+  currentUser: CurrentUser,
+  examId: number,
+  data: {
+    title: string;
+    durationMinutes: number;
+    problems: { problemId: number; scoreWeight: number; orderIndex: number }[];
+  },
+) {
+  if (!canManageExam(currentUser)) throw ForbiddenError();
+  assertNoDuplicates(
+    data.problems.map((p) => p.problemId),
+    "Duplicate problem assignment",
+  );
+  assertNoDuplicates(
+    data.problems.map((p) => p.orderIndex),
+    "Duplicate problem orderIndex",
+  );
+  await assertProblemsAreActive(data.problems.map((p) => p.problemId));
+
+  const [existing] = await db.select().from(exams).where(eq(exams.id, examId));
+  if (!existing || existing.deletedAt !== null) throw NotFoundError("exam template");
+  if (!currentUser.isSuperuser && existing.createdBy !== currentUser.id) throw ForbiddenError();
+
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(exams)
+      .set({
+        title: data.title,
+        durationMinutes: data.durationMinutes,
+        updatedAt: new Date(),
+      })
+      .where(eq(exams.id, examId))
+      .returning();
+
+    await tx.delete(examProblems).where(eq(examProblems.examId, examId));
+    await tx.insert(examProblems).values(
+      data.problems.map((p) => ({
+        examId,
+        problemId: p.problemId,
+        orderIndex: p.orderIndex,
+        scoreWeight: p.scoreWeight,
+      })),
+    );
+
+    return updated!;
+  });
+}
+
+export async function deleteExamTemplate(currentUser: CurrentUser, examId: number) {
+  if (!canManageExam(currentUser)) throw ForbiddenError();
+
+  const [existing] = await db.select().from(exams).where(eq(exams.id, examId));
+  if (!existing || existing.deletedAt !== null) throw NotFoundError("exam template");
+  if (!currentUser.isSuperuser && existing.createdBy !== currentUser.id) throw ForbiddenError();
+
+  await db
+    .update(exams)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(eq(exams.id, examId));
+}
+
+/**
+ * 查詢現有的考卷模板列表
+ */
+export async function listExamTemplates(currentUser: CurrentUser) {
+  if (!canManageExam(currentUser)) throw ForbiddenError();
+
+  const templateRows = currentUser.isSuperuser
+    ? await db.select().from(exams).where(isNull(exams.deletedAt))
+    : await db
+        .select()
+        .from(exams)
+        .where(and(eq(exams.createdBy, currentUser.id), isNull(exams.deletedAt)));
+
+  if (templateRows.length === 0) {
+    return [];
+  }
+
+  const templateIds = templateRows.map((template) => template.id);
+  const templateProblemRows = await db
+    .select({
+      examId: examProblems.examId,
+      problemId: examProblems.problemId,
+      title: problems.title,
+      difficulty: problems.difficulty,
+      orderIndex: examProblems.orderIndex,
+      scoreWeight: examProblems.scoreWeight,
+    })
+    .from(examProblems)
+    .innerJoin(problems, eq(examProblems.problemId, problems.id))
+    .where(inArray(examProblems.examId, templateIds));
+
+  const problemsByExamId = new Map<number, typeof templateProblemRows>();
+  for (const row of templateProblemRows) {
+    const rows = problemsByExamId.get(row.examId) ?? [];
+    rows.push(row);
+    problemsByExamId.set(row.examId, rows);
+  }
+
+  return templateRows.map((template) => ({
+    ...template,
+    problems: (problemsByExamId.get(template.id) ?? [])
+      .sort((a, b) => a.orderIndex - b.orderIndex)
+      .map(({ examId: _examId, ...problem }) => problem),
+  }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 部分 3：分配考試給多位面試者 (Batch Assignment)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 核心重構：把指定考卷批次分派給多個面試者帳號（Junction 批次寫入）
+ */
+export async function assignExamToCandidates(
+  currentUser: CurrentUser,
+  examId: number,
+  data: { candidateIds: number[] },
+) {
+  if (!canManageExam(currentUser)) throw ForbiddenError();
+  if (!data.candidateIds || data.candidateIds.length === 0) {
+    throw BadRequestError("candidateIds list cannot be empty");
+  }
+  assertNoDuplicates(data.candidateIds, "Duplicate candidate assignment");
+
+  // 1. 校驗考卷模板是否存在
+  const [examTemplate] = await db.select().from(exams).where(eq(exams.id, examId));
+  if (!examTemplate || examTemplate.deletedAt !== null) throw NotFoundError("exam template");
+  if (!currentUser.isSuperuser && examTemplate.createdBy !== currentUser.id) throw ForbiddenError();
+
+  // 2. 撈取該考卷的所有題目配分快照
+  const templateProblems = await db
+    .select()
+    .from(examProblems)
+    .where(eq(examProblems.examId, examId))
+    .orderBy(asc(examProblems.orderIndex), asc(examProblems.id));
+  const maxScore = templateProblems.reduce((sum, p) => sum + p.scoreWeight, 0);
+
+  // 3. 校驗所有面試者帳號狀態
+  for (const candidateId of data.candidateIds) {
+    const { createdBy: candidateCreatedBy } = await assertCandidateExists(candidateId);
+    if (!currentUser.isSuperuser && candidateCreatedBy !== currentUser.id) throw ForbiddenError();
+  }
+
+  const existingSessions = await db
+    .select({
+      id: examSessions.id,
+      candidateId: examSessions.candidateId,
+      status: examSessions.status,
+    })
+    .from(examSessions)
+    .where(
+      and(
+        inArray(examSessions.candidateId, data.candidateIds),
+        inArray(examSessions.status, ["not_started", "in_progress", "submitted", "expired"]),
+      ),
+    );
+
+  const sessionsByCandidateId = new Map<number, typeof existingSessions>();
+  for (const session of existingSessions) {
+    const sessions = sessionsByCandidateId.get(session.candidateId) ?? [];
+    sessions.push(session);
+    sessionsByCandidateId.set(session.candidateId, sessions);
+  }
+
+  const pendingSessionByCandidateId = new Map<number, number>();
+  for (const candidateId of data.candidateIds) {
+    const sessions = sessionsByCandidateId.get(candidateId) ?? [];
+    if (sessions.some((session) => session.status === "in_progress")) {
+      throw ConflictError("考生正在考試中，不能更換模板");
+    }
+    if (
+      sessions.some((session) => session.status === "submitted" || session.status === "expired")
+    ) {
+      throw ConflictError("考生已完成考試，不能再分發模板");
+    }
+
+    const pendingSession = sessions.find((session) => session.status === "not_started");
+    if (pendingSession) {
+      pendingSessionByCandidateId.set(candidateId, pendingSession.id);
+    }
+  }
+
+  // 4. 利用 Transaction 執行全成功或全失敗的批次指派
+  const changedSessionIds = await db.transaction(async (tx) => {
+    const sessionIds: number[] = [];
+
+    for (const candidateId of data.candidateIds) {
+      const pendingSessionId = pendingSessionByCandidateId.get(candidateId);
+      if (pendingSessionId !== undefined) {
+        await tx
+          .update(examSessions)
+          .set({
+            examId: examTemplate.id,
+            maxScore,
+            totalScore: 0,
+            actualStartAt: null,
+            expiresAt: null,
+            submittedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(examSessions.id, pendingSessionId));
+
+        await tx
+          .delete(examSessionProblems)
+          .where(eq(examSessionProblems.examSessionId, pendingSessionId));
+
+        await tx.insert(examSessionProblems).values(
+          templateProblems.map((p) => ({
+            examSessionId: pendingSessionId,
+            problemId: p.problemId,
+            orderIndex: p.orderIndex,
+            scoreWeight: p.scoreWeight,
+            score: 0,
+          })),
+        );
+
+        sessionIds.push(pendingSessionId);
+        continue;
+      }
+
+      // 插入 Exam Session
+      const sessionRows = await tx
+        .insert(examSessions)
+        .values({
+          examId: examTemplate.id,
+          candidateId: candidateId,
+          createdBy: currentUser.id,
+          maxScore,
+          totalScore: 0,
+        })
+        .returning();
+
+      const session = sessionRows[0]!;
+
+      // 將考卷題目快照實體化到該面試者的 session problems 中
+      await tx.insert(examSessionProblems).values(
+        templateProblems.map((p) => ({
+          examSessionId: session.id,
+          problemId: p.problemId,
+          orderIndex: p.orderIndex,
+          scoreWeight: p.scoreWeight,
+          score: 0,
+        })),
+      );
+
+      sessionIds.push(session.id);
+    }
+
+    return sessionIds;
+  });
+
+  return getSessionDtosByIds(changedSessionIds);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 既有功能調整：場次管理與面試者生命週期
+// ──────────────────────────────────────────────────────────────────────────────
+
+// export async function listExamSessions(currentUser: CurrentUser) {
+//   if (!canManageExam(currentUser) && !canTakeExam(currentUser)) throw ForbiddenError();
+
+//   let sessions;
+//   if (currentUser.isSuperuser) {
+//     sessions = await db.select().from(examSessions);
+//   } else if (canManageExam(currentUser)) {
+//     sessions = await db
+//       .select()
+//       .from(examSessions)
+//       .where(eq(examSessions.createdBy, currentUser.id));
+//   } else {
+//     sessions = await db
+//       .select()
+//       .from(examSessions)
+//       .where(eq(examSessions.candidateId, currentUser.id));
+//   }
+
+//   return Promise.all(sessions.map(expireIfNeeded));
+// }
+
 export async function listExamSessions(currentUser: CurrentUser) {
-  if (!canManageExam(currentUser) && !canTakeExam(currentUser)) throw ForbiddenError();
+  const isManager = canManageExam(currentUser);
+  const isCandidate = canTakeExam(currentUser);
+
+  if (!isManager && !isCandidate) {
+    throw ForbiddenError();
+  }
 
   let sessions;
   if (currentUser.isSuperuser) {
     sessions = await db.select().from(examSessions);
-  } else if (canManageExam(currentUser)) {
+  } else if (isManager) {
     sessions = await db
       .select()
       .from(examSessions)
@@ -185,36 +552,42 @@ export async function listExamSessions(currentUser: CurrentUser) {
       .where(eq(examSessions.candidateId, currentUser.id));
   }
 
-  return Promise.all(sessions.map(expireIfNeeded));
+  const freshSessions = await Promise.all(sessions.map(expireIfNeeded));
+  return getSessionDtosByIds(freshSessions.map((session) => session.id));
 }
 
 export async function getExamSession(currentUser: CurrentUser, id: number) {
   const session = await getFreshSessionOrThrow(id);
 
-  if (currentUser.isSuperuser) return session;
-
+  if (currentUser.isSuperuser) return getSessionDtoById(session.id);
   if (canManageExam(currentUser)) {
     if (session.createdBy !== currentUser.id) throw ForbiddenError();
-    return session;
+    return getSessionDtoById(session.id);
   }
 
   if (session.candidateId !== currentUser.id) throw ForbiddenError();
-  return session;
+  return getSessionDtoById(session.id);
 }
 
+/**
+ * 調整：面試者領題自由進場，改由 JOIN exams 撈取時長並動態計算寫入死線 (INTERVAL)
+ */
 export async function startExamSession(currentUser: CurrentUser, id: number) {
   if (!canTakeExam(currentUser)) throw ForbiddenError();
 
+  // 透過原生 SQL 聯表 JOIN exams 表來動態獲取考卷的 duration_minutes
   const result = await db.execute<{ id: number }>(sql`
-    UPDATE exam_sessions
+    UPDATE exam_sessions es
     SET status = 'in_progress',
         actual_start_at = NOW(),
-        expires_at = NOW() + (duration_minutes || ' minutes')::INTERVAL,
+        expires_at = NOW() + (e.duration_minutes || ' minutes')::INTERVAL,
         updated_at = NOW()
-    WHERE id = ${id}
-      AND candidate_id = ${currentUser.id}
-      AND status = 'not_started'
-    RETURNING id
+    FROM exams e
+    WHERE es.id = ${id}
+      AND es.exam_id = e.id
+      AND es.candidate_id = ${currentUser.id}
+      AND es.status = 'not_started'
+    RETURNING es.id
   `);
 
   if (result.rows.length === 0) {
@@ -228,12 +601,9 @@ export async function startExamSession(currentUser: CurrentUser, id: number) {
     throw ConflictError(`Cannot start exam session: current status is '${session.status}'`);
   }
 
-  const updated = await db.select().from(examSessions).where(eq(examSessions.id, id));
-
-  // Clear stale drafts from previous attempts (fire-and-forget, non-fatal)
   clearSessionDrafts(id).catch(() => {});
 
-  return updated[0]!;
+  return getExamSession(currentUser, id);
 }
 
 export async function submitExamSession(currentUser: CurrentUser, id: number) {
@@ -255,7 +625,7 @@ export async function submitExamSession(currentUser: CurrentUser, id: number) {
     .where(eq(examSessions.id, id))
     .returning();
 
-  return updated!;
+  return getExamSession(currentUser, updated!.id);
 }
 
 export async function cancelExamSession(currentUser: CurrentUser, id: number) {
@@ -277,14 +647,9 @@ export async function cancelExamSession(currentUser: CurrentUser, id: number) {
     .where(eq(examSessions.id, id))
     .returning();
 
-  // Clear Redis drafts for this session (fire-and-forget, non-fatal)
-  db.select({ problemId: examSessionProblems.problemId })
-    .from(examSessionProblems)
-    .where(eq(examSessionProblems.examSessionId, id))
-    .then(() => clearSessionDrafts(id))
-    .catch(() => {});
+  clearSessionDrafts(id).catch(() => {});
 
-  return updated[0]!;
+  return getExamSession(currentUser, updated[0]!.id);
 }
 
 export async function getExamSessionProblems(currentUser: CurrentUser, sessionId: number) {
@@ -324,7 +689,8 @@ export async function getExamSessionProblems(currentUser: CurrentUser, sessionId
     })
     .from(examSessionProblems)
     .innerJoin(problems, eq(examSessionProblems.problemId, problems.id))
-    .where(eq(examSessionProblems.examSessionId, sessionId));
+    .where(eq(examSessionProblems.examSessionId, sessionId))
+    .orderBy(asc(examSessionProblems.orderIndex), asc(examSessionProblems.id));
 
   if (sessionProblems.length === 0) return [];
 
@@ -413,6 +779,31 @@ async function assertCandidateExists(candidateId: number): Promise<{ createdBy: 
     throw NotFoundError("candidate");
   }
   return { createdBy: candidate.createdBy };
+}
+
+export async function getCandidatePassword(
+  currentUser: CurrentUser,
+  sessionId: number,
+): Promise<{ password: string }> {
+  const canAccess = currentUser.isSuperuser || currentUser.permissions.includes("exam:manage");
+  if (!canAccess) throw ForbiddenError();
+
+  const [session] = await db
+    .select({ createdBy: examSessions.createdBy, candidateId: examSessions.candidateId })
+    .from(examSessions)
+    .where(eq(examSessions.id, sessionId));
+
+  if (!session) throw NotFoundError("session");
+  if (!currentUser.isSuperuser && session.createdBy !== currentUser.id) throw ForbiddenError();
+
+  const [candidate] = await db
+    .select({ encryptedPassword: users.encryptedPassword })
+    .from(users)
+    .where(eq(users.id, session.candidateId));
+
+  if (!candidate?.encryptedPassword) throw NotFoundError("password");
+
+  return { password: decryptPassword(candidate.encryptedPassword) };
 }
 
 async function assertProblemsAreActive(problemIds: number[]): Promise<void> {

@@ -11,6 +11,10 @@ CREATE INDEX idx_problems_created_by     ON problems(created_by);
 CREATE INDEX idx_problem_testcases_prob  ON problem_testcases(problem_id, order_index);
 
 -- Exam
+CREATE INDEX idx_exams_created_by        ON exams(created_by) WHERE deleted_at IS NULL;
+CREATE INDEX idx_exam_problems_exam      ON exam_problems(exam_id, order_index);
+CREATE INDEX idx_exam_problems_problem   ON exam_problems(problem_id);
+CREATE INDEX idx_exam_sessions_exam      ON exam_sessions(exam_id);
 CREATE INDEX idx_exam_sessions_candidate  ON exam_sessions(candidate_id, created_at DESC);
 CREATE INDEX idx_exam_sessions_created_by ON exam_sessions(created_by);
 CREATE INDEX idx_exam_sessions_status     ON exam_sessions(status);

@@ -49,6 +49,18 @@ export const handlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
 
+  http.post(`${BASE}/users/batch`, async ({ request }) => {
+    const body = (await request.json()) as { count?: number };
+    const count = Math.max(1, body.count ?? 1);
+    return HttpResponse.json(
+      Array.from({ length: count }, (_, idx) => ({
+        username: `candidate_20260520_${String(idx + 1).padStart(3, "0")}`,
+        password: `pass${idx + 1}`,
+      })),
+      { status: 201 },
+    );
+  }),
+
   http.put(`${BASE}/users/:id/roles`, async ({ request, params }) => {
     const body = (await request.json()) as { roleNames: string[] };
     return HttpResponse.json({ id: Number(params.id), roles: body.roleNames });

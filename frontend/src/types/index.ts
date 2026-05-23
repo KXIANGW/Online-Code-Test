@@ -119,7 +119,10 @@ export type ExamStatus = "not_started" | "in_progress" | "submitted" | "expired"
 
 export interface ExamSession {
   id: number;
+  examId: number;
+  examTitle: string;
   candidateId: number;
+  candidate: { id: number; username: string; displayName: string | null };
   createdBy: number;
   status: ExamStatus;
   durationMinutes: number;
@@ -222,22 +225,39 @@ export interface RandomDistribution {
   hard?: number;
 }
 
-export interface CreateExamSessionManualRequest {
-  candidateId: number;
+// ── Exam Template (two-stage flow) ───────────────────────────────────────────
+
+export interface ExamTemplate {
+  id: number;
+  title: string;
+  durationMinutes: number;
+  createdBy: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  problems?: {
+    problemId: number;
+    title: string;
+    difficulty: Difficulty;
+    orderIndex: number;
+    scoreWeight: number;
+  }[];
+}
+
+export interface CreateExamTemplateManualRequest {
+  title: string;
   durationMinutes: number;
   problems: ManualProblemEntry[];
 }
 
-export interface CreateExamSessionRandomRequest {
-  candidateId: number;
+export type UpdateExamTemplateRequest = CreateExamTemplateManualRequest;
+
+export interface CreateExamTemplateRandomRequest {
+  title: string;
   durationMinutes: number;
   distribution: RandomDistribution;
   scoreWeight: number;
 }
-
-export type CreateExamSessionRequest =
-  | CreateExamSessionManualRequest
-  | CreateExamSessionRandomRequest;
 
 // ── Submission Request ────────────────────────────────────────────────────────
 export type SubmissionType = "simple" | "formal";
@@ -303,3 +323,25 @@ export interface SubmissionStatusMessage {
 }
 
 export type JudgeSocketMessage = JudgeResultMessage | SubmissionStatusMessage;
+
+export interface CandidatePasswordResponse {
+  password: string;
+}
+
+// ── Anti-cheat ────────────────────────────────────────────────────────────────
+
+export type ViolationType = "fullscreen_exit" | "tab_switch" | "window_blur" | "paste" | "copy";
+
+export interface ExamViolation {
+  id: number;
+  sessionId: number;
+  type: ViolationType;
+  detail: string | null;
+  occurredAt: string;
+}
+
+export interface ReportViolationRequest {
+  type: ViolationType;
+  detail?: string;
+  occurredAt?: string;
+}
