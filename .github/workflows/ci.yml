@@ -106,6 +106,9 @@ jobs:
           - service: frontend
             context: ./frontend
             build-args: VITE_API_BASE=/api
+          - service: language-rootfs-puller
+            context: ./worker/puller
+            push-latest: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -129,7 +132,9 @@ jobs:
           context: ${{ matrix.context }}
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ steps.tag.outputs.owner }}/oct-${{ matrix.service }}:${{ steps.tag.outputs.value }}
+          tags: |
+            ghcr.io/${{ steps.tag.outputs.owner }}/oct-${{ matrix.service }}:${{ steps.tag.outputs.value }}
+            ${{ matrix.push-latest == 'true' && format('ghcr.io/{0}/oct-{1}:latest', steps.tag.outputs.owner, matrix.service) || '' }}
           build-args: ${{ matrix.build-args }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,scope=${{ matrix.service }},mode=max
@@ -150,9 +155,9 @@ jobs:
       matrix:
         include:
           - lang: cpp
-            context: ./worker/sandbox/cpp
+            context: ./worker/sandbox/cpp17
           - lang: python
-            context: ./worker/sandbox/python
+            context: ./worker/sandbox/python3
 
     steps:
       - uses: actions/checkout@v4

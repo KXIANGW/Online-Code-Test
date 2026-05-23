@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "puller.fullname" . }}
+  labels:
+    {{- include "puller.labels" . | nindent 4 }}
+data:
+  languages.yaml: |
+    version: {{ .Values.languages.version }}
+    languages:
+{{- range .Values.languages.entries }}
+      - id: {{ .id | quote }}
+        image: {{ .image | quote }}
+        enabled: {{ .enabled }}
+{{- if .rootfsPath }}
+        rootfsPath: {{ .rootfsPath | quote }}
+{{- end }}
+        source:
+          filename: "solution"
+        run:
+          cmd: ["/bin/true"]
+{{- end }}

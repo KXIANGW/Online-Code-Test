@@ -20,7 +20,8 @@ let submissionId: number;
 beforeEach(async () => {
   await pool.query(`
     TRUNCATE submission_testcase_results, submissions,
-             exam_session_problems, exam_sessions,
+             exam_session_problems, exam_violations, exam_sessions,
+             exam_problems, exams,
              problem_testcases, problems,
              user_roles, users
     RESTART IDENTITY CASCADE
@@ -82,13 +83,23 @@ beforeEach(async () => {
   publicTcId = Number(testcases.rows.find((tc) => tc.is_public)!.id);
   hiddenTcId = Number(testcases.rows.find((tc) => !tc.is_public)!.id);
 
-  const session = await pool.query<{ id: string }>(
+  const exam = await pool.query<{ id: string }>(
     `
-      INSERT INTO exam_sessions (candidate_id, created_by, status, duration_minutes, max_score)
-      VALUES ($1, $2, 'in_progress', 60, 30)
+      INSERT INTO exams (title, duration_minutes, created_by)
+      VALUES ('Test Exam', 60, $1)
       RETURNING id
     `,
-    [candidateId, setterId]
+    [setterId]
+  );
+  const examId = Number(exam.rows[0]!.id);
+
+  const session = await pool.query<{ id: string }>(
+    `
+      INSERT INTO exam_sessions (exam_id, candidate_id, created_by, status, max_score)
+      VALUES ($1, $2, $3, 'in_progress', 30)
+      RETURNING id
+    `,
+    [examId, candidateId, setterId]
   );
   sessionId = Number(session.rows[0]!.id);
 

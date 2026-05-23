@@ -98,18 +98,33 @@ services:
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://oct:oct_dev_password@rabbitmq:5672}
       DATABASE_URL: ${DATABASE_URL:-postgres://oct:oct_dev_password_change_me@postgres:5432/oct}
       HOST_WORK_DIR: ${HOST_WORK_DIR:-/tmp/judge}
-      SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-runc}
+      # IsolateEngine is now the only sandbox engine (Phase 4 / Step B).
+      # `make build-isolate-rootfs` populates HOST_ROOTFS_DIR before
+      # `docker compose up worker`.
+      ROOTFS_BASE_DIR: /var/lib/oct/rootfs
+      SECCOMP_BUNDLE_DIR: /etc/oct
       NODE_ENV: ${NODE_ENV:-development}
+    # privileged: required by isolate v2.0 `--cg --init` to write under
+    # /sys/fs/cgroup (Docker mounts it read-only without privileged, even
+    # with cap_add: SYS_ADMIN). Matches k8s/08-worker.yaml.
+    privileged: true
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - ${HOST_WORK_DIR:-/tmp/judge}:${HOST_WORK_DIR:-/tmp/judge}
+      # Local Isolate rootfs cache, populated by `make build-isolate-rootfs`.
+      # type=bind so docker doesn't auto-create an empty named volume.
+      - type: bind
+        source: ${HOST_ROOTFS_DIR:-/tmp/oct-rootfs}
+        target: /var/lib/oct/rootfs
+        read_only: true
+        bind:
+          create_host_path: true
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1"] # 換成 wget 較安全
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/healthz"]
       interval: 5s         # 縮短間隔
       timeout: 5s
       retries: 10

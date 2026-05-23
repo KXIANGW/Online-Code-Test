@@ -7,6 +7,7 @@ global:
 scrape_configs:
   - job_name: backend
     metrics_path: /api/metrics
+    scrape_interval: 2s
     static_configs:
       - targets:
           - backend:3000
@@ -19,11 +20,16 @@ scrape_configs:
     # `tasks.worker` (swarm) or by repeated A records on `worker`.
     # On `docker compose up --scale worker=N`, the `worker` hostname resolves
     # to all N container IPs; Prometheus picks them up via dns_sd_configs.
+    #
+    # refresh_interval is tight (3s) so a fresh `docker compose up` does not
+    # miss newly-started replicas during a burst — without this, prom can
+    # land on a single-IP snapshot and the Verdict totals piechart shows
+    # only that one worker's share (e.g. AC:25 instead of AC:100).
     dns_sd_configs:
       - names: ['tasks.worker', 'worker']
         type: A
         port: 8080
-        refresh_interval: 10s
+        refresh_interval: 3s
     relabel_configs:
       - source_labels: [__meta_dns_name]
         target_label: dns_name
@@ -37,16 +43,16 @@ scrape_configs:
     scrape_interval: 10s
 
   - job_name: rabbitmq
-    # Default /metrics returns aggregate gauges with no `queue` label, so
-    # rabbitmq_queue_messages{queue="judge.tasks"} would always be empty.
     # /metrics/per-object exposes per-queue series we need for KEDA.
+    # Tight scrape interval so a fast-draining queue spike (the demo-100
+    # 100-VU burst) lands in at least one sample.
     metrics_path: /metrics/per-object
     static_configs:
       - targets:
           - rabbitmq:15692
         labels:
           app: rabbitmq
-    scrape_interval: 10s
+    scrape_interval: 2s
 
   - job_name: prometheus
     static_configs:

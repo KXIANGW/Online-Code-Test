@@ -1,0 +1,49 @@
+# Default values for language-rootfs-puller.
+
+image:
+  repository: ghcr.io/kxiangw/oct-language-rootfs-puller
+  tag: "0.0.1"
+  pullPolicy: IfNotPresent
+
+# Where on the Node the puller writes rootfs trees. Workers mount this path
+# read-only at the same location.
+rootfsHostPath: /var/lib/oct/rootfs
+
+# How often (in milliseconds) the puller polls the registry for digest changes
+# after the initial eager pull. Set to 0 to disable polling (only manual /reload).
+pollIntervalMs: 300000  # 5 min
+
+# Shared secret required on POST /reload via X-Reload-Token header. Leave
+# empty to disable token auth (only safe on cluster-internal ClusterIP).
+reloadToken: ""
+
+# languages.yaml content — mounted via ConfigMap into /config/languages.yaml.
+# By default we ship just the seed languages; CI workflows append to this list
+# as new languages get rolled out (see Phase 3-A in the migration plan).
+languages:
+  version: 1
+  entries:
+    - id: cpp17
+      image: ghcr.io/kxiangw/oct-rootfs-cpp17:latest
+      enabled: true
+    - id: python3
+      image: ghcr.io/kxiangw/oct-rootfs-python3:latest
+      enabled: true
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# nodeSelector / tolerations — applied so this DaemonSet only schedules on the
+# Nodes that also run Workers. Leave empty to deploy on every Node.
+nodeSelector: {}
+tolerations: []
+
+# Service exposing /reload to the webhook-receiver. ClusterIP is sufficient.
+service:
+  type: ClusterIP
+  port: 8081

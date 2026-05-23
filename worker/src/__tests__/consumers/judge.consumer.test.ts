@@ -8,14 +8,6 @@ vi.mock("../../db/queries", () => ({
   writeJudgeResults: vi.fn(),
 }));
 
-vi.mock("../../engine/compiler", () => ({
-  compileInSandbox: vi.fn(),
-}));
-
-vi.mock("../../engine/runner", () => ({
-  runOneTestcase: vi.fn(),
-}));
-
 vi.mock("../../engine/checker", () => ({
   checkOutput: vi.fn(),
 }));
@@ -27,10 +19,9 @@ import {
   updateSubmissionJudging,
   writeJudgeResults,
 } from "../../db/queries";
-import { compileInSandbox } from "../../engine/compiler";
-import { runOneTestcase } from "../../engine/runner";
 import { checkOutput } from "../../engine/checker";
 import { handleJudgeMessage, startJudgeConsumer } from "../../consumers/judge.consumer";
+import type { SandboxEngine } from "../../engine/sandbox-engine";
 
 // Minimal LanguageSpec for python3 used by the mock submission
 const mockLanguages = [
@@ -58,8 +49,25 @@ const submission = {
   scoreWeight: 30,
 };
 
+// Fresh mock engine for each test so call assertions don't leak.
+let engine: SandboxEngine & {
+  compile: ReturnType<typeof vi.fn>;
+  runOne: ReturnType<typeof vi.fn>;
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
+  engine = {
+    name: "mock",
+    compile: vi.fn().mockResolvedValue({ success: true }),
+    runOne: vi.fn().mockResolvedValue({
+      verdict: "AC",
+      stdout: "1\n",
+      stderr: "",
+      runtimeMs: 7,
+      memoryKb: null,
+    }),
+  };
   vi.mocked(getSubmissionById).mockResolvedValue(submission as never);
   vi.mocked(getTestcases).mockResolvedValue([
     {
@@ -70,15 +78,7 @@ beforeEach(() => {
       expectedOutput: "1\n",
     },
   ] as never);
-  vi.mocked(compileInSandbox).mockResolvedValue({ success: true });
   vi.mocked(markSubmissionSystemError).mockResolvedValue(undefined as never);
-  vi.mocked(runOneTestcase).mockResolvedValue({
-    verdict: "AC",
-    stdout: "1\n",
-    stderr: "",
-    runtimeMs: 7,
-    memoryKb: null,
-  });
   vi.mocked(checkOutput).mockReturnValue({ verdict: "AC" });
 });
 
@@ -89,7 +89,7 @@ describe("judge consumer", () => {
       consume: vi.fn().mockResolvedValue(undefined),
     };
 
-    await startJudgeConsumer(channel as never, mockLanguages as never);
+    await startJudgeConsumer(channel as never, mockLanguages as never, engine);
 
     expect(channel.prefetch).toHaveBeenCalledWith(1);
     expect(channel.consume).toHaveBeenCalledWith("judge.tasks", expect.any(Function), { noAck: false });
@@ -102,12 +102,13 @@ describe("judge consumer", () => {
     await handleJudgeMessage(
       { ack, publish },
       { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "simple" })) } as never,
-      mockLanguages as never
+      mockLanguages as never,
+      engine
     );
 
     expect(updateSubmissionJudging).toHaveBeenCalledWith(123);
     expect(getTestcases).toHaveBeenCalledWith(40, true);
-    expect(runOneTestcase).toHaveBeenCalledWith(expect.objectContaining({ outputLimitKb: 64 }));
+    expect(engine.runOne).toHaveBeenCalledWith(expect.objectContaining({ outputLimitKb: 64 }));
     expect(writeJudgeResults).toHaveBeenCalledWith(
       expect.objectContaining({
         submissionId: 123,
@@ -138,7 +139,8 @@ describe("judge consumer", () => {
     await handleJudgeMessage(
       { ack, publish },
       { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "simple" })) } as never,
-      mockLanguages as never
+      mockLanguages as never,
+      engine
     );
 
     const lifecyclePayload = JSON.parse(
@@ -162,7 +164,8 @@ describe("judge consumer", () => {
     await handleJudgeMessage(
       { ack, publish: vi.fn().mockReturnValue(true) },
       { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "formal" })) } as never,
-      mockLanguages as never
+      mockLanguages as never,
+      engine
     );
 
     expect(getTestcases).toHaveBeenCalledWith(40, false);
@@ -186,7 +189,8 @@ describe("judge consumer", () => {
     await handleJudgeMessage(
       { ack, publish: vi.fn().mockReturnValue(true) },
       { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "simple" })) } as never,
-      mockLanguages as never
+      mockLanguages as never,
+      engine
     );
 
     expect(markSubmissionSystemError).toHaveBeenCalledWith(123);

@@ -1,5 +1,11 @@
 # OCT 叢集架設完整教學
 
+> ⚠️ **本文件描述「legacy + Argo CD」流程**（macOS / OrbStack VM + `k3s --docker` + Worker 透過 `docker.sock` 起 sandbox container）。
+>
+> Phase 4 sandbox 重構後，Worker 已**完全不再用 docker.sock**——改用 `sio2project/isolate` + `oct-seccomp-wrapper`，per-language rootfs 由 `language-rootfs-puller` DaemonSet 解到 hostPath。本文件中提到的 `prepare-sandbox-images` initContainer / docker socket mount / SANDBOX_RUNTIME 在新架構下都不存在了。
+>
+> **新流程請看 [K8S_SETUP_Ubuntu.md](./K8S_SETUP_Ubuntu.md)**（Ubuntu / 原生 k3s + containerd + IsolateEngine）。要在新架構上使用 Argo CD GitOps，可參考本文件「二、安裝 Argo CD」與「四、設定 GHCR 存取憑證」章節（這些跟 Phase 4 仍相容），其餘 sandbox 相關設定請對照 Ubuntu 版。
+
 > Online Code Test (OCT) 平台有兩種架設方式：**Docker Compose**（適合本地開發）與 **k3s + Argo CD**（模擬正式 Kubernetes 環境，映像自動更新）。兩種方式均可透過 `http://localhost:5173` 進行真實 End-to-End 測試。
 
 ---

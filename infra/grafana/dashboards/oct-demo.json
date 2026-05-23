@@ -68,7 +68,7 @@
       "id": 6,
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "targets": [
-        { "expr": "sum by (queue) (rabbitmq_queue_messages{queue=~\"judge\\\\..*\"})", "refId": "A", "legendFormat": "{{queue}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+        { "expr": "max_over_time(sum by (queue) (rabbitmq_queue_messages{queue=~\"judge\\\\..*\"})[15s:1s])", "refId": "A", "legendFormat": "{{queue}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
       ],
       "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 20 } } }
     },
@@ -110,7 +110,7 @@
       "id": 10,
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
       "targets": [
-        { "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name=~\"oct-worker.*\"}[30s])) * 100", "refId": "A", "legendFormat": "{{name}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+        { "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name=~\"oct-worker.*\"}[30s])) * 100\n  and on(name) (container_last_seen{name=~\"oct-worker.*\"} > (time() - 30))", "refId": "A", "legendFormat": "{{name}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
       ],
       "fieldConfig": { "defaults": { "unit": "percent", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
     },
@@ -120,7 +120,7 @@
       "id": 11,
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
       "targets": [
-        { "expr": "container_memory_usage_bytes{name=~\"oct-worker.*\"} / 1024 / 1024", "refId": "A", "legendFormat": "{{name}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+        { "expr": "container_memory_usage_bytes{name=~\"oct-worker.*\"} / 1024 / 1024\n  and on(name) (container_last_seen{name=~\"oct-worker.*\"} > (time() - 30))", "refId": "A", "legendFormat": "{{name}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
       ],
       "fieldConfig": { "defaults": { "unit": "decmbytes", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
     },
@@ -130,7 +130,7 @@
       "id": 12,
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 28 },
       "targets": [
-        { "expr": "sum by (verdict) (judge_verdicts_total)", "refId": "A", "legendFormat": "{{verdict}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+        { "expr": "sum by (verdict) (last_over_time(judge_verdicts_total[1h]))", "refId": "A", "legendFormat": "{{verdict}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
       ],
       "options": { "pieType": "donut", "legend": { "displayMode": "table", "values": ["value"] } }
     },
