@@ -107,7 +107,11 @@ export class Puller {
     const cached = this.state[lang.id];
     const currentSymlink = path.join(this.opts.rootfsBaseDir, lang.id);
 
-    if (cached && cached.digest === digest && (await fs.pathExists(currentSymlink))) {
+    // umoci unpacks an OCI image into <versionDir>/rootfs. Worker expects
+    // /var/lib/oct/rootfs/<lang> itself to be the runtime rootfs containing
+    // /bin, /usr, etc., so the public symlink must point one level deeper.
+    const currentRootfsReady = await fs.pathExists(path.join(currentSymlink, "bin"));
+    if (cached && cached.digest === digest && currentRootfsReady) {
       return "skipped";
     }
 
@@ -120,7 +124,12 @@ export class Puller {
       await this.opts.client.pullAndUnpack(lang.image, versionDir);
     }
 
-    await this.atomicSwap(currentSymlink, versionDirName);
+    const unpackedRootfs = path.join(versionDir, "rootfs");
+    if (!(await fs.pathExists(path.join(unpackedRootfs, "bin")))) {
+      throw new Error(`unpacked rootfs missing /bin for ${lang.id}: ${unpackedRootfs}`);
+    }
+
+    await this.atomicSwap(currentSymlink, path.join(versionDirName, "rootfs"));
     this.state[lang.id] = { digest, versionDir };
 
     // Best-effort GC of previously-active version directories. Only delete

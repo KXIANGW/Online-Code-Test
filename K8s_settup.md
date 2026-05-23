@@ -419,15 +419,30 @@ curl -I http://localhost:30173
 
 ## 12. 端到端真實 submission 測試
 
-這段會直接寫入一筆 pending submission，送 RabbitMQ message，確認 worker 評測後更新 DB。
+這段會直接寫入一筆 pending submission，送 RabbitMQ message，確認 worker 評測後更新 DB。seed data 中 `exam_session_problem_id=1` 是 P1「Two Sum」，所以提交程式要輸出兩個 index，不是 a+b。
 
 ```bash
-SID=$(kubectl -n oct exec -i postgres-0 -- psql -U oct -d oct -tAc "
+# 0. 確認 exam_session_problem_id=1 目前對應哪一題
+kubectl -n oct exec postgres-0 -- psql -U oct -d oct -c "
+SELECT esp.id AS esp_id, p.title, tc.order_index, tc.input_data, tc.expected_output
+FROM exam_session_problems esp
+JOIN problems p ON p.id = esp.problem_id
+JOIN problem_testcases tc ON tc.problem_id = p.id
+WHERE esp.id = 1
+ORDER BY tc.order_index;
+"
+
+# 1. Insert a simple Two Sum submission for seed problem P1
+SID=$(kubectl -n oct exec -i postgres-0 -- psql -U oct -d oct -Atqc "
 INSERT INTO submissions(exam_session_problem_id, candidate_id, language, source_code, submission_type, status)
-VALUES (1, 1, 'python3',
-  E'a, b = map(int, input().split())\nprint(a + b)',
-  'simple', 'pending')
-RETURNING id;" | tr -d '[:space:]')
+SELECT esp.id, es.candidate_id, 'python3',
+  E'n = int(input())\nnums = list(map(int, input().split()))\ntarget = int(input())\nfor i in range(n):\n    for j in range(i + 1, n):\n        if nums[i] + nums[j] == target:\n            print(i, j)\n            raise SystemExit',
+  'simple', 'pending'
+FROM exam_session_problems esp
+JOIN exam_sessions es ON es.id = esp.exam_session_id
+WHERE esp.id = 1
+RETURNING submissions.id;
+" | tr -cd '0-9')
 
 echo "submission id: $SID"
 ```
@@ -686,6 +701,33 @@ kubectl -n oct logs -f daemonset/language-rootfs-puller
 | puller 容器內沒有 `/root/.docker/config.json` | 套用新版 `k8s/08a-language-puller.yaml`，或用 live patch 補 mount |
 | sandbox image 不存在或 private | 確認 GHCR package 與 PAT `read:packages` |
 | 離線環境 | 用第 15 章本機 build/import 並手動準備 `/var/lib/oct/rootfs` |
+
+### Worker log 出現 `Cannot mount /var/lib/oct/rootfs/<lang>/bin`
+
+這代表語言 rootfs symlink 指到了 umoci 解包目錄的上一層，而不是實際 rootfs。新版 `language-rootfs-puller` 會把 symlink 指到 `<digest-dir>/rootfs`。
+
+若剛 push puller 修正，等 CI 推出 `ghcr.io/kxiangw/oct-language-rootfs-puller:latest` 後重啟 DaemonSet：
+
+```bash
+kubectl -n oct rollout restart daemonset/language-rootfs-puller
+kubectl -n oct logs -f daemonset/language-rootfs-puller
+```
+
+已經下載舊 rootfs、想先在現有單機環境臨時校正 symlink，可執行：
+
+```bash
+kubectl -n oct exec daemonset/language-rootfs-puller -- sh -c '
+set -eu
+cd /var/lib/oct/rootfs
+for lang in cpp17 python3; do
+  target=$(readlink "$lang")
+  case "$target" in
+    */rootfs) echo "$lang already ok" ;;
+    *) test -d "$target/rootfs/bin" && ln -sfn "$target/rootfs" "$lang.new" && mv -Tf "$lang.new" "$lang" ;;
+  esac
+done
+'
+```
 
 ### Pod `ImagePullBackOff`
 

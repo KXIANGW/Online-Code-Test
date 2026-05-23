@@ -325,13 +325,27 @@ kubectl -n oct exec deploy/prometheus -- wget -qO- \
 驗證從「DB submission → RabbitMQ → Worker → IsolateEngine → 評測 → DB verdict」整條 pipeline：
 
 ```bash
-# 1. Insert a simple a+b submission
-SID=$(kubectl -n oct exec -i postgres-0 -- psql -U oct -d oct -tAc "
+# 0. 確認 exam_session_problem_id=1 目前對應哪一題
+kubectl -n oct exec postgres-0 -- psql -U oct -d oct -c "
+SELECT esp.id AS esp_id, p.title, tc.order_index, tc.input_data, tc.expected_output
+FROM exam_session_problems esp
+JOIN problems p ON p.id = esp.problem_id
+JOIN problem_testcases tc ON tc.problem_id = p.id
+WHERE esp.id = 1
+ORDER BY tc.order_index;
+"
+
+# 1. Insert a simple Two Sum submission for seed problem P1
+SID=$(kubectl -n oct exec -i postgres-0 -- psql -U oct -d oct -Atqc "
 INSERT INTO submissions(exam_session_problem_id, candidate_id, language, source_code, submission_type, status)
-VALUES (1, 1, 'python3',
-  E'a, b = map(int, input().split())\nprint(a + b)',
-  'simple', 'pending')
-RETURNING id;" | tr -d '[:space:]')
+SELECT esp.id, es.candidate_id, 'python3',
+  E'n = int(input())\nnums = list(map(int, input().split()))\ntarget = int(input())\nfor i in range(n):\n    for j in range(i + 1, n):\n        if nums[i] + nums[j] == target:\n            print(i, j)\n            raise SystemExit',
+  'simple', 'pending'
+FROM exam_session_problems esp
+JOIN exam_sessions es ON es.id = esp.exam_session_id
+WHERE esp.id = 1
+RETURNING submissions.id;
+" | tr -cd '0-9')
 echo "submission id: $SID"
 
 # 2. 推 message
@@ -343,11 +357,11 @@ kubectl -n oct exec rabbitmq-0 -- rabbitmqadmin -u oct -p oct_dev_password \
 sleep 3
 kubectl -n oct exec postgres-0 -- psql -U oct -d oct -c "
 SELECT id, status, verdict, runtime_ms, memory_kb FROM submissions WHERE id=$SID;
-SELECT testcase_id, verdict, actual_output FROM submission_testcase_results WHERE submission_id=$SID;
+SELECT testcase_id, verdict, actual_output FROM submission_testcase_results WHERE submission_id=$SID ORDER BY testcase_id;
 "
 ```
 
-預期看到 `status=done verdict=AC` 與 testcase actual_output 為 input 之和。
+預期看到 `status=done verdict=AC`。`simple` submission 只跑公開測資，所以隱藏測資可能顯示 `skipped`。
 
 ```bash
 # 4. 看 Prometheus 統計

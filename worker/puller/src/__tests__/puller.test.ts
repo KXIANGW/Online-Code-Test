@@ -55,8 +55,8 @@ describe("Puller.reconcile", () => {
       image.includes("cpp") ? "sha256:aaa" : "sha256:bbb"
     );
     client.pullAndUnpack.mockImplementation(async (_image: string, destDir: string) => {
-      await fs.ensureDir(destDir);
-      await fs.writeFile(path.join(destDir, "marker"), "");
+      await fs.ensureDir(path.join(destDir, "rootfs", "bin"));
+      await fs.writeFile(path.join(destDir, "rootfs", "marker"), "");
     });
 
     const puller = new Puller({
@@ -75,13 +75,13 @@ describe("Puller.reconcile", () => {
     // Symlinks should resolve to a digest-named directory
     const cppSymlink = path.join(tmpRoot, "cpp17");
     const target = await fs.readlink(cppSymlink);
-    expect(target).toMatch(/^cpp17-sha256_aaa$/);
+    expect(target).toMatch(/^cpp17-sha256_aaa\/rootfs$/);
   });
 
   it("skips when digest unchanged", async () => {
     client.inspectDigest.mockResolvedValue("sha256:aaa");
     client.pullAndUnpack.mockImplementation(async (_image: string, destDir: string) => {
-      await fs.ensureDir(destDir);
+      await fs.ensureDir(path.join(destDir, "rootfs", "bin"));
     });
 
     const puller = new Puller({
@@ -103,7 +103,7 @@ describe("Puller.reconcile", () => {
   it("atomic symlink swap retains old version dir until GC", async () => {
     client.inspectDigest.mockResolvedValue("sha256:v1");
     client.pullAndUnpack.mockImplementation(async (_image: string, destDir: string) => {
-      await fs.ensureDir(destDir);
+      await fs.ensureDir(path.join(destDir, "rootfs", "bin"));
     });
 
     const puller = new Puller({
@@ -115,14 +115,14 @@ describe("Puller.reconcile", () => {
     await puller.reconcile();
 
     const oldTarget = await fs.readlink(path.join(tmpRoot, "cpp17"));
-    expect(oldTarget).toMatch(/^cpp17-sha256_v1$/);
+    expect(oldTarget).toMatch(/^cpp17-sha256_v1\/rootfs$/);
 
     // Simulate a new digest landing
     client.inspectDigest.mockResolvedValueOnce("sha256:v2").mockResolvedValueOnce("sha256:v2");
     await puller.reconcile();
 
     const newTarget = await fs.readlink(path.join(tmpRoot, "cpp17"));
-    expect(newTarget).toMatch(/^cpp17-sha256_v2$/);
+    expect(newTarget).toMatch(/^cpp17-sha256_v2\/rootfs$/);
 
     // GC should have removed the v1 directory (it's no longer the symlink target)
     expect(await fs.pathExists(path.join(tmpRoot, "cpp17-sha256_v1"))).toBe(false);
@@ -134,7 +134,7 @@ describe("Puller.reconcile", () => {
       return "sha256:py";
     });
     client.pullAndUnpack.mockImplementation(async (_image: string, destDir: string) => {
-      await fs.ensureDir(destDir);
+      await fs.ensureDir(path.join(destDir, "rootfs", "bin"));
     });
 
     const puller = new Puller({
@@ -157,7 +157,7 @@ describe("Puller.reconcile", () => {
     ]);
     client.inspectDigest.mockResolvedValue("sha256:any");
     client.pullAndUnpack.mockImplementation(async (_image: string, destDir: string) => {
-      await fs.ensureDir(destDir);
+      await fs.ensureDir(path.join(destDir, "rootfs", "bin"));
     });
 
     const puller = new Puller({
@@ -176,7 +176,7 @@ describe("Puller.reconcile", () => {
   it("persists state across instances (digest skip works after restart)", async () => {
     client.inspectDigest.mockResolvedValue("sha256:aaa");
     client.pullAndUnpack.mockImplementation(async (_image: string, destDir: string) => {
-      await fs.ensureDir(destDir);
+      await fs.ensureDir(path.join(destDir, "rootfs", "bin"));
     });
 
     const first = new Puller({
