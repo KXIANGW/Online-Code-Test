@@ -1,10 +1,31 @@
 /// <reference types="vitest" />
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
+const appBasePath = "/online_code_test/";
+
+function stripDevBasePath(): Plugin {
+  return {
+    name: "strip-dev-base-path",
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        const basePathWithoutTrailingSlash = appBasePath.slice(0, -1);
+
+        if (req.url === basePathWithoutTrailingSlash) {
+          req.url = "/";
+        } else if (req.url?.startsWith(appBasePath)) {
+          req.url = req.url.slice(basePathWithoutTrailingSlash.length) || "/";
+        }
+
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  base: "/online_code_test/",
-  plugins: [react()],
+  base: appBasePath,
+  plugins: [stripDevBasePath(), react()],
   test: {
     environment: "jsdom",
     environmentOptions: {
