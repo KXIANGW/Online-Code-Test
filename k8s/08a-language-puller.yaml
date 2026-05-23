@@ -91,6 +91,10 @@ spec:
             - name: languages
               mountPath: /config
               readOnly: true
+            - name: ghcr-auth
+              mountPath: /root/.docker/config.json
+              subPath: config.json
+              readOnly: true
       volumes:
         - name: rootfs-cache
           hostPath:
@@ -99,6 +103,12 @@ spec:
         - name: languages
           configMap:
             name: language-rootfs-puller
+        - name: ghcr-auth
+          secret:
+            secretName: ghcr-secret
+            items:
+              - key: .dockerconfigjson
+                path: config.json
 ---
 apiVersion: v1
 kind: Service
