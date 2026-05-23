@@ -228,13 +228,14 @@ jobs:
       - name: Promote staging tag
         run: |
           image="ghcr.io/${{ steps.tag.outputs.owner }}/${{ matrix.image }}"
-          docker buildx imagetools create \
-            -t "${image}:${{ steps.tag.outputs.deploy }}" \
-            "${image}:${{ steps.tag.outputs.staging }}"
-
           if [ "${{ matrix.latest }}" = "true" ]; then
             docker buildx imagetools create \
+              -t "${image}:${{ steps.tag.outputs.deploy }}" \
               -t "${image}:latest" \
-              "${image}:${{ steps.tag.outputs.deploy }}"
+              "${image}:${{ steps.tag.outputs.staging }}"
+          else
+            docker buildx imagetools create \
+              -t "${image}:${{ steps.tag.outputs.deploy }}" \
+              "${image}:${{ steps.tag.outputs.staging }}"
           fi
 
