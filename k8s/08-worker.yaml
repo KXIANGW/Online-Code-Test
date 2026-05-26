@@ -17,6 +17,13 @@ spec:
         prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
     spec:
+      nodeSelector:
+        oct-role: judge
+      tolerations:
+        - key: oct-role
+          operator: Equal
+          value: judge
+          effect: NoSchedule
       imagePullSecrets:
         - name: ghcr-secret
       initContainers:

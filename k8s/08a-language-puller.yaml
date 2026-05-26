@@ -41,6 +41,13 @@ spec:
       labels:
         app: language-rootfs-puller
     spec:
+      nodeSelector:
+        oct-role: judge
+      tolerations:
+        - key: oct-role
+          operator: Equal
+          value: judge
+          effect: NoSchedule
       imagePullSecrets:
         - name: ghcr-secret
       containers:

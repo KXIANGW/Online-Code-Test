@@ -24,6 +24,8 @@ spec:
       labels:
         app: prometheus
     spec:
+      nodeSelector:
+        oct-role: data
       containers:
         - name: prometheus
           image: prom/prometheus:v2.55.0

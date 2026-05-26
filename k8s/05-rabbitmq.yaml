@@ -25,6 +25,8 @@ spec:
       labels:
         app: rabbitmq
     spec:
+      nodeSelector:
+        oct-role: data
       containers:
         - name: rabbitmq
           image: rabbitmq:3.13-management-alpine

@@ -13,6 +13,16 @@ spec:
       labels:
         app: backend
     spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: oct-role
+                    operator: In
+                    values:
+                      - app
       imagePullSecrets:
         - name: ghcr-secret
       initContainers:

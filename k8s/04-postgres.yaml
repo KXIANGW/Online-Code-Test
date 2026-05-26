@@ -25,6 +25,8 @@ spec:
       labels:
         app: postgres
     spec:
+      nodeSelector:
+        oct-role: data
       containers:
         - name: postgres
           image: postgres:16-alpine

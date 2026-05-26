@@ -15,6 +15,11 @@ spec:
       automountServiceAccountToken: false
       hostPID: true
       hostIPC: true
+      tolerations:
+        - key: oct-role
+          operator: Equal
+          value: judge
+          effect: NoSchedule
       containers:
         - name: cadvisor
           image: gcr.io/cadvisor/cadvisor:v0.49.1

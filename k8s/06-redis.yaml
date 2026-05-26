@@ -24,6 +24,8 @@ spec:
       labels:
         app: redis
     spec:
+      nodeSelector:
+        oct-role: data
       containers:
         - name: redis
           image: redis:7-alpine
