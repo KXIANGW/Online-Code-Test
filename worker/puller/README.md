@@ -1,70 +1,57 @@
-# language-rootfs-puller
+# Language Rootfs Puller
 
-Per-Node DaemonSet that pulls language OCI images and unpacks them as flat
-rootfs trees under `/var/lib/oct/rootfs/<lang>/`. Worker Pods on the same
-Node mount this hostPath read-only and invoke
-`isolate --chroot=/var/lib/oct/rootfs/<lang>` against it.
+`language-rootfs-puller` 是每節點服務，負責為基於 isolate 的評測 Worker 準備語言 rootfs 目錄樹。在 Kubernetes 中以 DaemonSet 運行，拉取 OCI 映像，將其解包至 `/var/lib/oct/rootfs`，並為每個語言維護穩定的符號連結。
 
-## How it works
+## 運作原理
 
-```
-[GitHub Actions]
-       │ push OCI image
-       ▼
-[ghcr.io/oct-rootfs-<lang>:vX]
-       │ skopeo copy + umoci unpack
-       ▼
-[DaemonSet on every Worker Node]
-   /var/lib/oct/rootfs/cpp17-<digest>/   ← versioned dir
-   /var/lib/oct/rootfs/cpp17     → symlink to current version
-       │ readonly hostPath mount
-       ▼
-[Worker Pod] → isolate --chroot=/var/lib/oct/rootfs/cpp17
+```text
+OCI 映像 Registry
+       |
+       | 以 skopeo/umoci 方式拉取並解包
+       v
+節點 hostPath: /var/lib/oct/rootfs/<lang>-<digest>/
+節點 hostPath: /var/lib/oct/rootfs/<lang> -> <lang>-<digest>
+       |
+       | 唯讀掛載
+       v
+Worker Pod: isolate --chroot=/var/lib/oct/rootfs/<lang>
 ```
 
-The puller reconciles in three modes:
+更新是原子性的：新的 digest 先解包至版本目錄，再交換語言符號連結。進行中的 isolate 執行繼續使用舊的 inode，後續執行則使用新的 rootfs。舊版本目錄在下次調和（reconcile）時清除。
 
-| Mode | Trigger | Latency |
+## 調和模式
+
+| 模式 | 觸發條件 |
+| --- | --- |
+| Eager | 服務啟動時 |
+| Poll | `POLL_INTERVAL_MS` 間隔，預設 5 分鐘 |
+| Reload | `POST /reload`，可選擇以 `X-Reload-Token` 保護 |
+
+## 端點
+
+- `GET /healthz` - 健康探測。
+- `POST /reload` - 觸發立即調和。
+
+## 環境變數
+
+| 變數 | 預設值 | 用途 |
 | --- | --- | --- |
-| **Eager** | DaemonSet Pod start | n/a |
-| **Poll** | every `POLL_INTERVAL_MS` (default 5 min) | ≤ 5 min |
-| **Reload** | `POST /reload` from CI/CD | seconds |
+| `LANGUAGES_FILE` | `/config/languages.yaml` | 從 ConfigMap 掛載的語言規格 |
+| `ROOTFS_BASE_DIR` | `/var/lib/oct/rootfs` | HostPath 目標目錄 |
+| `PORT` | `8081` | HTTP 埠號 |
+| `POLL_INTERVAL_MS` | `300000` | 輪詢間隔；`0` 停用輪詢 |
+| `RELOAD_TOKEN` | 未設定 | 可選的 reload 共享金鑰 |
 
-## Atomic, no-downtime updates
-
-The puller never overwrites the directory a Worker is reading. New rootfs goes
-to `cpp17-<new-digest>/`; a `mv -T` atomically swaps the symlink. Already-open
-file descriptors continue to point at the old inode (Linux ref counting), so
-in-flight isolate processes finish on the old version. Subsequent isolate
-invocations use the new version. GC removes obsolete directories on the next
-reconcile cycle.
-
-## Environment variables
-
-| Var | Default | Notes |
-| --- | --- | --- |
-| `LANGUAGES_FILE` | `/config/languages.yaml` | ConfigMap-mounted |
-| `ROOTFS_BASE_DIR` | `/var/lib/oct/rootfs` | hostPath target |
-| `PORT` | `8081` | HTTP port |
-| `POLL_INTERVAL_MS` | `300000` | 0 disables polling |
-| `RELOAD_TOKEN` | unset | optional `X-Reload-Token` shared secret |
-
-## Endpoints
-
-- `GET  /healthz` — readiness/liveness probe target
-- `POST /reload` — trigger immediate reconcile (requires token if configured)
-
-## Local development
+## 開發
 
 ```bash
-cd worker/puller
 npm install
-npm test           # 10 unit tests (no skopeo/umoci needed — mocked)
 npm run lint
+npm test
+npm run coverage
 npm run build
 ```
 
-## Deployment
+陳述式、分支、函式與行數的測試覆蓋率須維持在 85% 以上。
 
-Via the `charts/language-rootfs-puller` Helm chart. See its `values.yaml` for
-configurable knobs.
+單元測試模擬了 OCI 操作，因此不需要 `skopeo`、`umoci` 或 Registry 存取。部署清單位於 `../../charts/language-rootfs-puller`。
