@@ -40,8 +40,20 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/__test__/**", "src/main.tsx", "node_modules/**"],
+      exclude: [
+        "src/__test__/**",
+        "src/main.tsx",
+        "src/vite-env.d.ts",
+        "src/types/**",
+        "node_modules/**",
+      ],
       reporter: ["text", "lcov"],
+      thresholds: {
+        statements: 85,
+        branches: 85,
+        functions: 85,
+        lines: 85,
+      },
     },
   },
   server: {

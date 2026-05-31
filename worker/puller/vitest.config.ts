@@ -5,5 +5,17 @@ export default defineConfig({
     globals: false,
     testTimeout: 10_000,
     include: ["src/__tests__/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      exclude: ["src/__tests__/**", "src/index.ts", "node_modules/**"],
+      reporter: ["text", "lcov"],
+      thresholds: {
+        statements: 85,
+        branches: 85,
+        functions: 85,
+        lines: 85,
+      },
+    },
   },
 });

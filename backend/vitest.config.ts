@@ -23,8 +23,22 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["src/__tests__/**", "src/db/migrate.ts", "node_modules/**"],
+      exclude: [
+        "src/__tests__/**",
+        "src/__e2e__/**",
+        "src/types.d.ts",
+        "src/db/migrate.ts",
+        "src/env.ts",
+        "src/server.ts",
+        "node_modules/**",
+      ],
       reporter: ["text", "lcov"],
+      thresholds: {
+        statements: 85,
+        branches: 85,
+        functions: 85,
+        lines: 85,
+      },
     },
   },
 });

@@ -17,5 +17,17 @@ export default defineConfig({
     include: isIntegration
       ? ["src/__tests__/**/*.integration.test.ts"]
       : ["src/__tests__/**/*.test.ts", "!src/__tests__/**/*.integration.test.ts"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      exclude: ["src/__tests__/**", "src/index.ts", "src/db/client.ts", "node_modules/**"],
+      reporter: ["text", "lcov"],
+      thresholds: {
+        statements: 85,
+        branches: 85,
+        functions: 85,
+        lines: 85,
+      },
+    },
   },
 });
