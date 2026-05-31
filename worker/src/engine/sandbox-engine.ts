@@ -3,9 +3,8 @@ import { IsolateEngine } from "./engines/isolate-engine";
 import { RootfsResolver } from "./rootfs-resolver";
 
 // ── Engine-agnostic task / result types ─────────────────────────────────────
-// These were originally co-located with the legacy DockerEngine in
-// compiler.ts / runner.ts. After the DockerEngine drop they live here as the
-// single source of truth that every SandboxEngine implementation honours.
+// These live here as the single source of truth that every SandboxEngine
+// implementation honours.
 
 export interface CompileTask {
   spec: LanguageSpec;

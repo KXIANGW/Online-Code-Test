@@ -1,7 +1,7 @@
 import { db } from "../db/client";
 import { languageDefaults } from "../db/schema";
 import { eq } from "drizzle-orm";
-import { cacheGet, cacheSet, cacheDel } from "../db/redis";
+import { cacheGet, cacheSet } from "../db/redis";
 
 const LANG_KEY = "languages:list";
 
@@ -28,9 +28,4 @@ export async function listLanguages() {
 
   cacheSet(LANG_KEY, result, 3600).catch(() => {});
   return result;
-}
-
-export async function clearLanguagesCache(): Promise<void> {
-  // exported for future use when language mutation routes are added
-  await cacheDel(LANG_KEY);
 }

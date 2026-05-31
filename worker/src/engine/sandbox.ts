@@ -8,11 +8,6 @@ import fs from "fs-extra";
 // file synchronously after the candidate exits, and IsolateEngine reads
 // stdout / stderr directly via the --stdout / --stderr file flags.
 
-// Conventional UID:GID used across the codebase for non-root sandboxed code.
-// Surfaces in test assertions / docs even though IsolateEngine itself picks
-// box-id-derived UIDs in the 60000+ range (per /usr/local/etc/isolate).
-export const SANDBOX_USER = "1000:1000";
-
 // Make the per-judge work directory world-writable so isolate (which runs
 // each box under its own UID in the 60000+ range) can write stdout.txt /
 // stderr.txt / the compiled binary back to the host-mounted path.

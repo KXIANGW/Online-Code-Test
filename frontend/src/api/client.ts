@@ -50,28 +50,6 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-export interface HealthResponse {
-  status: "ok" | "degraded";
-  dbLatencyMs?: number;
-  uptimeSec?: number;
-  error?: string;
-}
-
-export interface PingResponse {
-  pong: boolean;
-  ts: string;
-}
-
-export async function getHealth(): Promise<HealthResponse> {
-  const { data } = await api.get<HealthResponse>("/health");
-  return data;
-}
-
-export async function getPing(): Promise<PingResponse> {
-  const { data } = await api.get<PingResponse>("/ping");
-  return data;
-}
-
 export async function login(req: LoginRequest): Promise<LoginResponse> {
   const { data } = await api.post<LoginResponse>("/auth/login", req);
   return data;
