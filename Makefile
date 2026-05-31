@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 .PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images dev test coverage help \
-        demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls
+        demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls EndtoEnd
 
 help:
 	@echo "Online Code Test"
@@ -27,6 +27,7 @@ help:
 	@echo "  make demo-100       demo-up -> demo-seed -> watcher (bg) -> demo-load"
 	@echo "  make demo-down      docker compose down -v + remove session-tokens.json"
 	@echo "  make demo-urls      Print Grafana / Prometheus / RabbitMQ / cAdvisor URLs"
+	@echo "  make EndtoEnd       Run API+Browser E2E tests against real Docker services (make up first)"
 
 bootstrap:
 	@if [ ! -f .env ]; then \
@@ -142,3 +143,15 @@ demo-urls:
 	@echo "Prometheus: http://localhost:$${HOST_PROMETHEUS_PORT:-9090}/targets"
 	@echo "RabbitMQ  : http://localhost:$${HOST_RABBITMQ_MGMT_PORT:-15672}  (oct / oct_dev_password)"
 	@echo "cAdvisor  : http://localhost:$${HOST_CADVISOR_PORT:-8081}"
+
+EndtoEnd: ## Run full E2E suite (API + Browser) against running Docker stack (run make up first)
+	@v=$$(node -e 'console.log(parseInt(process.versions.node.split(".")[0]))' 2>/dev/null); \
+	  if [ -z "$$v" ] || [ "$$v" -lt 16 ]; then \
+	    echo "ERROR: e2e needs Node 16+. Found: $$(node --version 2>/dev/null || echo none)." >&2; \
+	    exit 1; \
+	  fi
+	cd e2e && npm install --silent
+	@echo "==> [1/2] Running API-level E2E tests (Vitest)..."
+	cd e2e && npx vitest run
+	@echo "==> [2/2] Running browser E2E tests (Playwright)..."
+	cd e2e && npx playwright test
