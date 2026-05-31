@@ -150,6 +150,58 @@ describe("Puller.reconcile", () => {
     expect(summary.failed.map((f) => f.id)).toEqual(["cpp17"]);
   });
 
+  it("returns an empty summary when reconcile is already running", async () => {
+    let releaseInspect: (digest: string) => void = () => undefined;
+    client.inspectDigest.mockReturnValue(
+      new Promise<string>((resolve) => {
+        releaseInspect = resolve;
+      })
+    );
+
+    const puller = new Puller({
+      languagesFile: langsFile,
+      rootfsBaseDir: tmpRoot,
+      client,
+      pollIntervalMs: 60 * 60 * 1000,
+    });
+
+    const first = puller.reconcile();
+    const second = await puller.reconcile();
+
+    expect(second).toEqual({ pulled: [], skipped: [], failed: [] });
+
+    client.pullAndUnpack.mockImplementation(async (_image: string, destDir: string) => {
+      await fs.ensureDir(path.join(destDir, "rootfs", "bin"));
+    });
+    releaseInspect("sha256:aaa");
+    await first;
+  });
+
+  it("reports a failed language when unpacked rootfs is missing /bin", async () => {
+    client.inspectDigest.mockResolvedValue("sha256:broken");
+    client.pullAndUnpack.mockImplementation(async (_image: string, destDir: string) => {
+      await fs.ensureDir(path.join(destDir, "rootfs"));
+    });
+
+    const errors: string[] = [];
+    const puller = new Puller({
+      languagesFile: langsFile,
+      rootfsBaseDir: tmpRoot,
+      client,
+      pollIntervalMs: 60 * 60 * 1000,
+      logger: (level, msg) => {
+        if (level === "error") errors.push(msg);
+      },
+    });
+
+    const summary = await puller.reconcile();
+
+    expect(summary.pulled).toEqual([]);
+    expect(summary.failed.map((failure) => failure.id).sort()).toEqual(["cpp17", "python3"]);
+    expect(summary.failed[0]?.error).toContain("unpacked rootfs missing /bin");
+    expect(errors[0]).toContain("unpacked rootfs missing /bin");
+  });
+
   it("ignores disabled languages", async () => {
     langsFile = await writeLangsYaml(tmpRoot, [
       { id: "cpp17", image: "ghcr.io/oct/cpp17:v1", enabled: true },
@@ -202,5 +254,31 @@ describe("Puller.reconcile", () => {
 
     expect(summary.skipped.sort()).toEqual(["cpp17", "python3"]);
     expect(client.pullAndUnpack.mock.calls.length).toBe(callsAfterFirst);
+  });
+
+  it("start creates the root directory, reconciles once, and stop clears the poll timer", async () => {
+    const nestedRoot = path.join(tmpRoot, "nested", "rootfs");
+    const nestedLangsFile = await writeLangsYaml(tmpRoot, [
+      { id: "cpp17", image: "ghcr.io/oct/cpp17:v1", enabled: true },
+    ]);
+    client.inspectDigest.mockResolvedValue("sha256:start");
+    client.pullAndUnpack.mockImplementation(async (_image: string, destDir: string) => {
+      await fs.ensureDir(path.join(destDir, "rootfs", "bin"));
+    });
+
+    const puller = new Puller({
+      languagesFile: nestedLangsFile,
+      rootfsBaseDir: nestedRoot,
+      client,
+      pollIntervalMs: 60 * 60 * 1000,
+      logger: () => undefined,
+    });
+
+    await puller.start();
+    await puller.stop();
+
+    expect(await fs.pathExists(nestedRoot)).toBe(true);
+    expect(client.pullAndUnpack).toHaveBeenCalledTimes(1);
+    expect(await fs.pathExists(path.join(nestedRoot, ".puller-state.json"))).toBe(true);
   });
 });

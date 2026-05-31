@@ -153,6 +153,48 @@ describe("judge consumer", () => {
     });
   });
 
+  it("ACKs invalid task messages without publishing", async () => {
+    const ack = vi.fn();
+    const publish = vi.fn().mockReturnValue(true);
+
+    await handleJudgeMessage(
+      { ack, publish },
+      { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "practice" })) } as never,
+      mockLanguages as never,
+      engine
+    );
+
+    expect(getSubmissionById).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+    expect(ack).toHaveBeenCalledTimes(1);
+  });
+
+  it("records CE without running testcases when compile fails", async () => {
+    engine.compile.mockResolvedValue({ success: false, stderr: "syntax error" });
+    const ack = vi.fn();
+    const publish = vi.fn().mockReturnValue(true);
+
+    await handleJudgeMessage(
+      { ack, publish },
+      { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "formal" })) } as never,
+      mockLanguages as never,
+      engine
+    );
+
+    expect(engine.runOne).not.toHaveBeenCalled();
+    expect(writeJudgeResults).toHaveBeenCalledWith(
+      expect.objectContaining({
+        submissionId: 123,
+        type: "formal",
+        verdict: "CE",
+        runtimeMs: 0,
+        memoryKb: null,
+        testcaseResults: [],
+      })
+    );
+    expect(ack).toHaveBeenCalledTimes(1);
+  });
+
   it("marks skipped testcases after first failure", async () => {
     vi.mocked(getTestcases).mockResolvedValue([
       { id: 1, orderIndex: 1, isPublic: true, inputData: "", expectedOutput: "1\n" },
@@ -179,6 +221,85 @@ describe("judge consumer", () => {
         ],
       })
     );
+    expect(ack).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses engine verdict directly for runtime failures and keeps hidden output private", async () => {
+    vi.mocked(getTestcases).mockResolvedValue([
+      { id: 1, orderIndex: 1, isPublic: false, inputData: "", expectedOutput: "1\n" },
+    ] as never);
+    engine.runOne.mockResolvedValue({
+      verdict: "TLE",
+      stdout: "late output\n",
+      stderr: "",
+      runtimeMs: 1001,
+      memoryKb: 256,
+    });
+    const ack = vi.fn();
+
+    await handleJudgeMessage(
+      { ack, publish: vi.fn().mockReturnValue(true) },
+      { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "formal" })) } as never,
+      mockLanguages as never,
+      engine
+    );
+
+    expect(checkOutput).not.toHaveBeenCalled();
+    expect(writeJudgeResults).toHaveBeenCalledWith(
+      expect.objectContaining({
+        verdict: "TLE",
+        runtimeMs: 1001,
+        memoryKb: 256,
+        testcaseResults: [
+          expect.objectContaining({
+            testcaseId: 1,
+            verdict: "TLE",
+            actualOutput: null,
+          }),
+        ],
+      })
+    );
+    expect(ack).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes an AC result with zero runtime when a problem has no selected testcases", async () => {
+    vi.mocked(getTestcases).mockResolvedValue([] as never);
+    const ack = vi.fn();
+
+    await handleJudgeMessage(
+      { ack, publish: vi.fn().mockReturnValue(true) },
+      { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "simple" })) } as never,
+      mockLanguages as never,
+      engine
+    );
+
+    expect(engine.runOne).not.toHaveBeenCalled();
+    expect(writeJudgeResults).toHaveBeenCalledWith(
+      expect.objectContaining({
+        verdict: "AC",
+        runtimeMs: 0,
+        memoryKb: null,
+        testcaseResults: [],
+      })
+    );
+    expect(ack).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for drain when result publishing applies backpressure", async () => {
+    const ack = vi.fn();
+    const publish = vi.fn().mockReturnValue(false);
+    const once = vi.fn((_event: "drain", cb: () => void) => {
+      queueMicrotask(cb);
+    });
+
+    await handleJudgeMessage(
+      { ack, publish, once } as never,
+      { content: Buffer.from(JSON.stringify({ submissionId: 123, type: "simple" })) } as never,
+      mockLanguages as never,
+      engine
+    );
+
+    expect(once).toHaveBeenCalledWith("drain", expect.any(Function));
     expect(ack).toHaveBeenCalledTimes(1);
   });
 

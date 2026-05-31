@@ -2,7 +2,49 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } 
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { setupServer } from "msw/node";
 import { http, HttpResponse } from "msw";
-import { api, updateUserRoles, isRetryableError, logApiError } from "../api/client";
+import {
+  addTestcase,
+  api,
+  assignExamToCandidates,
+  createExamTemplateManual,
+  createExamTemplateRandom,
+  createProblem,
+  createSubmission,
+  createUser,
+  createUsersBatch,
+  deleteExamTemplate,
+  deleteProblem,
+  deleteTestcase,
+  deleteUser,
+  getCandidatePassword,
+  getExamDrafts,
+  getExamSession,
+  getExamSessionProblems,
+  getExamSessions,
+  getLanguages,
+  getProblemById,
+  getProblems,
+  getPublicTestcases,
+  getSessionResult,
+  getSubmissionDetail,
+  getUserPassword,
+  getUsers,
+  getViolations,
+  isRetryableError,
+  listExamTemplates,
+  listSessionSubmissions,
+  logApiError,
+  login,
+  reportViolation,
+  saveExamDraft,
+  startExamSession,
+  submitExamSession,
+  updateExamTemplate,
+  updateProblem,
+  updateTestcase,
+  updateUser,
+  updateUserRoles,
+} from "../api/client";
 import type { ApiErrorData } from "../api/client";
 
 let capturedAuthHeader: string | null | undefined = undefined;
@@ -411,5 +453,140 @@ describe("response error interceptor", () => {
     await assertion;
     expect(callCount).toBe(1);
     consoleSpy.mockRestore();
+  });
+});
+
+describe("endpoint wrapper contracts", () => {
+  let getSpy: ReturnType<typeof vi.spyOn>;
+  let postSpy: ReturnType<typeof vi.spyOn>;
+  let putSpy: ReturnType<typeof vi.spyOn>;
+  let deleteSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    getSpy = vi.spyOn(api, "get").mockResolvedValue({ data: [] });
+    postSpy = vi.spyOn(api, "post").mockResolvedValue({ data: { ok: true } });
+    putSpy = vi.spyOn(api, "put").mockResolvedValue({ data: { ok: true } });
+    deleteSpy = vi.spyOn(api, "delete").mockResolvedValue({ data: undefined });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("uses the documented endpoint and payload for each API helper", async () => {
+    await login({ username: "alice", password: "secret" });
+    expect(postSpy).toHaveBeenLastCalledWith("/auth/login", {
+      username: "alice",
+      password: "secret",
+    });
+
+    await getExamSessions();
+    expect(getSpy).toHaveBeenLastCalledWith("/exam-sessions");
+    await startExamSession(11);
+    expect(postSpy).toHaveBeenLastCalledWith("/exam-sessions/11/start");
+    await submitExamSession(11);
+    expect(postSpy).toHaveBeenLastCalledWith("/exam-sessions/11/submit");
+    await getSessionResult(11);
+    expect(getSpy).toHaveBeenLastCalledWith("/exam-sessions/11/result");
+    await getExamSession(11);
+    expect(getSpy).toHaveBeenLastCalledWith("/exam-sessions/11");
+    await getExamSessionProblems(11);
+    expect(getSpy).toHaveBeenLastCalledWith("/exam-sessions/11/problems");
+    await getPublicTestcases(11, 22);
+    expect(getSpy).toHaveBeenLastCalledWith("/exam-sessions/11/problems/22/testcases");
+
+    await getUsers();
+    expect(getSpy).toHaveBeenLastCalledWith("/users");
+    await createUser({ username: "bob", password: "password", roleNames: ["candidate"] });
+    expect(postSpy).toHaveBeenLastCalledWith("/users", {
+      username: "bob",
+      password: "password",
+      roleNames: ["candidate"],
+    });
+    await createUsersBatch(3);
+    expect(postSpy).toHaveBeenLastCalledWith("/users/batch", { count: 3 });
+    await updateUser(7, { displayName: "Bob" });
+    expect(putSpy).toHaveBeenLastCalledWith("/users/7", { displayName: "Bob" });
+    await updateUserRoles(7, ["interviewer"]);
+    expect(putSpy).toHaveBeenLastCalledWith("/users/7/roles", { roleNames: ["interviewer"] });
+    await deleteUser(7);
+    expect(deleteSpy).toHaveBeenLastCalledWith("/users/7");
+    await getUserPassword(7);
+    expect(getSpy).toHaveBeenLastCalledWith("/users/7/password");
+
+    await getProblems();
+    expect(getSpy).toHaveBeenLastCalledWith("/problems");
+    await getProblemById(9);
+    expect(getSpy).toHaveBeenLastCalledWith("/problems/9");
+    await createProblem({ title: "Two Sum" } as never);
+    expect(postSpy).toHaveBeenLastCalledWith("/problems", { title: "Two Sum" });
+    await updateProblem(9, { title: "Updated" } as never);
+    expect(putSpy).toHaveBeenLastCalledWith("/problems/9", { title: "Updated" });
+    await deleteProblem(9);
+    expect(deleteSpy).toHaveBeenLastCalledWith("/problems/9");
+    await addTestcase(9, { inputData: "1", expectedOutput: "1", isPublic: true } as never);
+    expect(postSpy).toHaveBeenLastCalledWith("/problems/9/testcases", {
+      inputData: "1",
+      expectedOutput: "1",
+      isPublic: true,
+    });
+    await updateTestcase(9, 4, { expectedOutput: "2" });
+    expect(putSpy).toHaveBeenLastCalledWith("/problems/9/testcases/4", { expectedOutput: "2" });
+    await deleteTestcase(9, 4);
+    expect(deleteSpy).toHaveBeenLastCalledWith("/problems/9/testcases/4");
+
+    await createExamTemplateManual({ title: "Manual" } as never);
+    expect(postSpy).toHaveBeenLastCalledWith("/exam-sessions/templates/manual", {
+      title: "Manual",
+    });
+    await createExamTemplateRandom({ title: "Random" } as never);
+    expect(postSpy).toHaveBeenLastCalledWith("/exam-sessions/templates/random", {
+      title: "Random",
+    });
+    await updateExamTemplate(5, { title: "Updated" } as never);
+    expect(putSpy).toHaveBeenLastCalledWith("/exam-sessions/templates/5", {
+      title: "Updated",
+    });
+    await deleteExamTemplate(5);
+    expect(deleteSpy).toHaveBeenLastCalledWith("/exam-sessions/templates/5");
+    await listExamTemplates();
+    expect(getSpy).toHaveBeenLastCalledWith("/exam-sessions/templates");
+    await assignExamToCandidates(5, [1, 2]);
+    expect(postSpy).toHaveBeenLastCalledWith("/exam-sessions/templates/5/assign", {
+      candidateIds: [1, 2],
+    });
+
+    await createSubmission(11, {
+      problemId: 22,
+      language: "python3",
+      sourceCode: "print(1)",
+    } as never);
+    expect(postSpy).toHaveBeenLastCalledWith("/exam-sessions/11/submissions", {
+      problemId: 22,
+      language: "python3",
+      sourceCode: "print(1)",
+    });
+    await getSubmissionDetail(11, 33);
+    expect(getSpy).toHaveBeenLastCalledWith("/exam-sessions/11/submissions/33");
+    await listSessionSubmissions(11);
+    expect(getSpy).toHaveBeenLastCalledWith("/exam-sessions/11/submissions");
+
+    await getLanguages();
+    expect(getSpy).toHaveBeenLastCalledWith("/languages");
+    await saveExamDraft(11, 22, "python3", { code: "print(1)" });
+    expect(putSpy).toHaveBeenLastCalledWith("/exam-sessions/11/drafts/22/python3", {
+      code: "print(1)",
+    });
+    await getExamDrafts(11);
+    expect(getSpy).toHaveBeenLastCalledWith("/exam-sessions/11/drafts");
+    await getCandidatePassword(11);
+    expect(getSpy).toHaveBeenLastCalledWith("/exam-sessions/11/candidate-password");
+    await reportViolation(11, { violationType: "copy_paste", detail: "paste" } as never);
+    expect(postSpy).toHaveBeenLastCalledWith("/exam-sessions/11/violations", {
+      violationType: "copy_paste",
+      detail: "paste",
+    });
+    await getViolations(11);
+    expect(getSpy).toHaveBeenLastCalledWith("/exam-sessions/11/violations");
   });
 });

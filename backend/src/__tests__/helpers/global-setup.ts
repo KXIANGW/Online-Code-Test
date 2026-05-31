@@ -80,6 +80,33 @@ export async function setup() {
       ALTER TABLE exam_sessions
         ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ;
     `);
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'violation_type') THEN
+          CREATE TYPE violation_type AS ENUM (
+            'fullscreen_exit',
+            'tab_switch',
+            'window_blur',
+            'paste',
+            'copy'
+          );
+        END IF;
+      END $$;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS exam_violations (
+        id          BIGSERIAL PRIMARY KEY,
+        session_id  BIGINT NOT NULL REFERENCES exam_sessions(id) ON DELETE CASCADE,
+        type        violation_type NOT NULL,
+        detail      TEXT,
+        occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_exam_violations_session_id
+        ON exam_violations(session_id, occurred_at);
+    `);
   } finally {
     await pool.end();
   }
