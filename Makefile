@@ -4,7 +4,7 @@ SHELL := /bin/bash
         demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls
 
 help:
-	@echo "Online Code Test — M2 async judge"
+	@echo "Online Code Test"
 	@echo ""
 	@echo "  make bootstrap      Copy .env.example to .env (idempotent)"
 	@echo "  make dev            Build sandbox images, then start core services only (no monitoring)"
@@ -17,7 +17,7 @@ help:
 	@echo "  make psql           Open psql shell inside the postgres container"
 	@echo "  make sandbox-images Build judge sandbox images"
 	@echo "  make test           Run lint + test + build (mirrors CI)"
-	@echo "  make coverage       Run tests with coverage report (text + lcov)"
+	@echo "  make coverage       Run coverage for backend/frontend/worker/puller"
 	@echo ""
 	@echo "  Demo (Phase A+B+C — 100 concurrent observability):"
 	@echo "  make demo-up        Build sandbox images, bring full stack + prom/grafana/cadvisor"
@@ -59,12 +59,16 @@ psql:
 	docker compose exec -it postgres psql -U $${POSTGRES_USER:-oct} -d $${POSTGRES_DB:-oct}
 
 test:
-	cd backend && npm run format:check && npm run lint && npm test
+	cd backend && npm run format:check && npm run lint && npm test && npm run build
 	cd frontend && npm run format:check && npm run lint && npm test && npm run build
+	cd worker && npm run lint && npm test && npm run build
+	cd worker/puller && npm run lint && npm test && npm run build
 
 coverage:
-	cd backend && npm test -- --coverage
-	cd frontend && npm test -- --coverage
+	cd backend && npm run coverage
+	cd frontend && npm run coverage
+	cd worker && npm run coverage
+	cd worker/puller && npm run coverage
 
 sandbox-images:
 	$(MAKE) -C worker build-sandbox-images
