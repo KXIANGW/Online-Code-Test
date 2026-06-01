@@ -59,6 +59,16 @@ jobs:
           --health-timeout 3s
           --health-retries 5
 
+      rabbitmq:
+        image: rabbitmq:3-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -76,6 +86,7 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.CI_DB_PASSWORD || 'oct_dev_password' }}
         run: |
+          which psql || (sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends postgresql-client)
           for f in $(ls ../infra/postgres/[0-9]*.sql | sort); do
             psql -h localhost -U oct -d oct -f "$f"
           done
@@ -86,12 +97,14 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://oct:${{ secrets.CI_DB_PASSWORD || 'oct_dev_password' }}@localhost:5432/oct_test
           JWT_SECRET: test-secret-minimum-32-chars-for-jwt-signing
+          TEST_RABBITMQ_URL: amqp://guest:guest@localhost:5672
         run: npm test
 
       - name: Run coverage
         env:
           TEST_DATABASE_URL: postgres://oct:${{ secrets.CI_DB_PASSWORD || 'oct_dev_password' }}@localhost:5432/oct_test
           JWT_SECRET: test-secret-minimum-32-chars-for-jwt-signing
+          TEST_RABBITMQ_URL: amqp://guest:guest@localhost:5672
         run: npm run coverage
 
       - run: npm run build
@@ -138,6 +151,57 @@ jobs:
       - run: npm run coverage
       - run: npm run build
 
+  e2e:
+    name: E2E — API + Browser tests
+    runs-on: ubuntu-22.04
+    needs: [frontend, backend, worker, worker-puller]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Bootstrap environment
+        run: make bootstrap
+
+      - name: Build sandbox images
+        run: make sandbox-images
+
+      - name: Start full Docker stack
+        run: docker compose up -d --build --wait
+        timeout-minutes: 10
+
+      - name: Build isolate rootfs
+        run: make -C worker build-isolate-rootfs
+
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run API E2E tests (Vitest)
+        working-directory: e2e
+        run: npx vitest run
+
+      - name: Run Browser E2E tests (Playwright)
+        working-directory: e2e
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 14
+
   build-images:
     name: Build & push staging image for ${{ matrix.service }}
     needs: [frontend, backend, worker, worker-puller]
@@ -174,6 +238,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
 
@@ -222,6 +288,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
 

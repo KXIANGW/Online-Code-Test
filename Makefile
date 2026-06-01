@@ -150,6 +150,8 @@ EndtoEnd: ## Run full E2E suite (API + Browser) against running Docker stack (ru
 	    echo "ERROR: e2e needs Node 16+. Found: $$(node --version 2>/dev/null || echo none)." >&2; \
 	    exit 1; \
 	  fi
+	$(MAKE) -C worker build-isolate-rootfs
+	docker compose up -d --build worker frontend --wait
 	cd e2e && npm install --silent
 	@echo "==> [1/2] Running API-level E2E tests (Vitest)..."
 	cd e2e && npx vitest run
