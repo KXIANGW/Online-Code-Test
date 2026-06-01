@@ -64,7 +64,7 @@ describe("ProblemSetterDashboardPage()", () => {
     renderPage();
 
     // expect
-    expect(screen.getByText("題目管理")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "題目管理" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ 新增題目" })).toBeInTheDocument();
   });
 

@@ -29,7 +29,7 @@ export function NavBar({ homeHref }: NavBarProps) {
     }
   }
 
-  const showTabs = roleTabs.length > 1;
+  const showTabs = roleTabs.length > 0;
 
   return (
     <header className="border-b border-slate-200 bg-white">

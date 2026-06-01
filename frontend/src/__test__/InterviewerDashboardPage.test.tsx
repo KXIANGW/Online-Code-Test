@@ -214,7 +214,7 @@ describe("InterviewerDashboardPage()", () => {
     setupAuthStore();
     setupInterviewerStore();
     renderPage();
-    expect(screen.getByText("考試管理")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "考試管理" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "考生帳號" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "考試模板" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "考試分發" })).toBeInTheDocument();
