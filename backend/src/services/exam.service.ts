@@ -756,6 +756,7 @@ export async function getPublicTestcases(
     .select({
       id: problemTestcases.id,
       orderIndex: problemTestcases.orderIndex,
+      isPublic: problemTestcases.isPublic,
       inputData: problemTestcases.inputData,
       expectedOutput: problemTestcases.expectedOutput,
     })
