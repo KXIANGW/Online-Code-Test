@@ -1,4 +1,4 @@
-const API_BASE = process.env["BASE_URL"] ?? "http://localhost:3000/api";
+const API_BASE = (process.env["E2E_API_URL"] ?? "http://localhost:3000") + "/api";
 
 async function apiSeed<T = unknown>(
   method: string,

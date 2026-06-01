@@ -1,9 +1,10 @@
 import { Pool } from "pg";
 
+const PG_PORT = process.env["HOST_POSTGRES_PORT"] ?? "5433";
 export const pool = new Pool({
   connectionString:
     process.env["E2E_DATABASE_URL"] ??
-    "postgres://oct:oct_dev_password_change_me@localhost:5432/oct",
+    `postgres://oct:oct_dev_password_change_me@localhost:${PG_PORT}/oct`,
   max: 5,
 });
 

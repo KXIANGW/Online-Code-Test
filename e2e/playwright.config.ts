@@ -19,5 +19,5 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  globalSetup: "./global-setup.ts",
+  globalSetup: "./playwright-global-setup.ts",
 });

@@ -1,11 +1,13 @@
 import { Pool } from "pg";
 import { Redis } from "ioredis";
 
+// HOST_POSTGRES_PORT defaults to 5433 (matches docker-compose.yml port mapping 5433->5432)
+const PG_PORT = process.env["HOST_POSTGRES_PORT"] ?? "5433";
 const DB_URL =
   process.env["E2E_DATABASE_URL"] ??
-  "postgres://oct:oct_dev_password_change_me@localhost:5432/oct";
-const BACKEND_URL = process.env["BASE_URL"] ?? "http://localhost:3000";
-const WORKER_URL = process.env["WORKER_URL"] ?? "http://localhost:8080";
+  `postgres://oct:oct_dev_password_change_me@localhost:${PG_PORT}/oct`;
+// BASE_URL is reserved by Vite (defaults to "/"); use E2E_API_URL instead
+const BACKEND_URL = process.env["E2E_API_URL"] ?? "http://localhost:3000";
 
 async function pollUntilReady(url: string, timeoutMs = 120000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -21,10 +23,8 @@ async function pollUntilReady(url: string, timeoutMs = 120000): Promise<void> {
 
 export async function setup(): Promise<void> {
   console.log("[e2e] Waiting for Docker services...");
-  await Promise.all([
-    pollUntilReady(`${BACKEND_URL}/api/health`),
-    pollUntilReady(`${WORKER_URL}/healthz`),
-  ]);
+  // Worker port 8080 is not exposed on the host — backend health is sufficient
+  await pollUntilReady(`${BACKEND_URL}/api/health`);
   console.log("[e2e] Services ready. Resetting database...");
 
   const pool = new Pool({ connectionString: DB_URL, max: 2 });

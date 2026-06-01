@@ -4,7 +4,7 @@ import { seedBrowserSession } from "./helpers/seed.js";
 
 const TS = Date.now().toString().slice(-8);
 const FRONTEND_URL = process.env["FRONTEND_URL"] ?? "http://localhost:5173";
-const API_BASE = process.env["BASE_URL"] ?? "http://localhost:3000/api";
+const API_BASE = (process.env["E2E_API_URL"] ?? "http://localhost:3000") + "/api";
 
 test.describe("Candidate exam flow", () => {
   test(

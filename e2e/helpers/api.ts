@@ -1,5 +1,6 @@
+// BASE_URL is reserved by Vite (defaults to "/"); use E2E_API_URL instead
 export const BASE_URL =
-  process.env["BASE_URL"] ?? "http://localhost:3000/api";
+  (process.env["E2E_API_URL"] ?? "http://localhost:3000") + "/api";
 
 export async function api<T = unknown>(
   method: string,
