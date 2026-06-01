@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 
-const PG_PORT = process.env["HOST_POSTGRES_PORT"] ?? "5433";
+const PG_PORT = process.env["HOST_POSTGRES_PORT"] ?? "5432";
 export const pool = new Pool({
   connectionString:
     process.env["E2E_DATABASE_URL"] ??

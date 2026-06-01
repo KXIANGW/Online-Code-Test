@@ -1,8 +1,8 @@
 import { Pool } from "pg";
 import { Redis } from "ioredis";
 
-// HOST_POSTGRES_PORT defaults to 5433 (matches docker-compose.yml port mapping 5433->5432)
-const PG_PORT = process.env["HOST_POSTGRES_PORT"] ?? "5433";
+// HOST_POSTGRES_PORT defaults to 5432 (matches docker-compose.yml port mapping 5432->5432)
+const PG_PORT = process.env["HOST_POSTGRES_PORT"] ?? "5432";
 const DB_URL =
   process.env["E2E_DATABASE_URL"] ??
   `postgres://oct:oct_dev_password_change_me@localhost:${PG_PORT}/oct`;

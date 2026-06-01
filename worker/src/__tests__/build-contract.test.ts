@@ -4,6 +4,18 @@ import path from "path";
 import { describe, expect, it } from "vitest";
 
 describe("sandbox image build contract", () => {
+  it("keeps E2E host Postgres port defaults aligned with Docker Compose", () => {
+    const repoRoot = path.resolve(__dirname, "../../..");
+    const composeYaml = fs.readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8");
+    const globalSetup = fs.readFileSync(path.join(repoRoot, "e2e/global-setup.ts"), "utf8");
+    const e2eDbHelper = fs.readFileSync(path.join(repoRoot, "e2e/helpers/db.ts"), "utf8");
+    const compose = yaml.load(composeYaml) as Record<string, any>;
+
+    expect(compose.services.postgres.ports).toContain("${HOST_POSTGRES_PORT:-5432}:5432");
+    expect(globalSetup).toContain('process.env["HOST_POSTGRES_PORT"] ?? "5432"');
+    expect(e2eDbHelper).toContain('process.env["HOST_POSTGRES_PORT"] ?? "5432"');
+  });
+
   it("installs worker dependencies before CI builds sandbox images for E2E", () => {
     const repoRoot = path.resolve(__dirname, "../../..");
     const ciWorkflow = fs.readFileSync(path.join(repoRoot, ".github/workflows/ci.yml"), "utf8");
