@@ -17,6 +17,8 @@ languages:
     image: oct-sandbox-python:3.11
     source:
       filename: solution.py
+    compile:
+      cmd: ["/usr/local/bin/python3", "-m", "py_compile", "solution.py"]
     run:
       cmd: ["/usr/local/bin/python3", "/code/solution.py"]
       env:
