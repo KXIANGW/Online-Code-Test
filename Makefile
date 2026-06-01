@@ -1,14 +1,14 @@
 SHELL := /bin/bash
 
-.PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images dev test coverage help \
+.PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images isolate-rootfs dev test coverage help \
         demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls EndtoEnd
 
 help:
 	@echo "Online Code Test"
 	@echo ""
 	@echo "  make bootstrap      Copy .env.example to .env (idempotent)"
-	@echo "  make dev            Build sandbox images, then start core services only (no monitoring)"
-	@echo "  make up             Build sandbox images, then docker compose up -d --build"
+	@echo "  make dev            Build sandbox rootfs, then start core services only (no monitoring)"
+	@echo "  make up             Build sandbox rootfs, then docker compose up -d --build"
 	@echo "  make down           docker compose down"
 	@echo "  make logs           Tail logs from all services"
 	@echo "  make ps             Show service health"
@@ -16,11 +16,12 @@ help:
 	@echo "  make rebuild        clean + up (full reset)"
 	@echo "  make psql           Open psql shell inside the postgres container"
 	@echo "  make sandbox-images Build judge sandbox images"
+	@echo "  make isolate-rootfs Build judge sandbox images and local isolate rootfs"
 	@echo "  make test           Run lint + test + build (mirrors CI)"
 	@echo "  make coverage       Run coverage for backend/frontend/worker/puller"
 	@echo ""
 	@echo "  Demo (Phase A+B+C — 100 concurrent observability):"
-	@echo "  make demo-up        Build sandbox images, bring full stack + prom/grafana/cadvisor"
+	@echo "  make demo-up        Build sandbox rootfs, bring full stack + prom/grafana/cadvisor"
 	@echo "  make demo-seed      Provision 100 candidates + sessions (loadtest/seed.ts)"
 	@echo "  make demo-load      Run k6 burst of 100 concurrent submissions"
 	@echo "  make demo-watch     Run scale-watcher.sh (Ctrl-C to stop)"
@@ -37,7 +38,7 @@ bootstrap:
 		echo ".env already exists; leaving untouched."; \
 	fi
 
-up: bootstrap sandbox-images
+up: bootstrap isolate-rootfs
 	docker compose up -d --build
 
 up-build: up
@@ -74,7 +75,10 @@ coverage:
 sandbox-images:
 	$(MAKE) -C worker build-sandbox-images
 
-dev: bootstrap sandbox-images
+isolate-rootfs:
+	$(MAKE) -C worker build-isolate-rootfs
+
+dev: bootstrap isolate-rootfs
 	docker compose up -d --build postgres rabbitmq redis backend worker
 
 # ── Demo: 100 concurrent observability ────────────────────────────────────
@@ -94,7 +98,7 @@ DEMO_FIXTURE ?= ac.py
 # starts at 1 worker and lets scale-watcher fan out to MAX (default 5).
 WORKER_REPLICAS ?= 1
 
-demo-up: bootstrap sandbox-images
+demo-up: bootstrap isolate-rootfs
 	WORKER_REPLICAS=$(WORKER_REPLICAS) docker compose up -d --build --wait \
 	  --scale worker=$(WORKER_REPLICAS)
 
@@ -144,13 +148,12 @@ demo-urls:
 	@echo "RabbitMQ  : http://localhost:$${HOST_RABBITMQ_MGMT_PORT:-15672}  (oct / oct_dev_password)"
 	@echo "cAdvisor  : http://localhost:$${HOST_CADVISOR_PORT:-8081}"
 
-EndtoEnd: ## Run full E2E suite (API + Browser) against running Docker stack (run make up first)
+EndtoEnd: isolate-rootfs ## Run full E2E suite (API + Browser) against running Docker stack (run make up first)
 	@v=$$(node -e 'console.log(parseInt(process.versions.node.split(".")[0]))' 2>/dev/null); \
 	  if [ -z "$$v" ] || [ "$$v" -lt 16 ]; then \
 	    echo "ERROR: e2e needs Node 16+. Found: $$(node --version 2>/dev/null || echo none)." >&2; \
 	    exit 1; \
 	  fi
-	$(MAKE) -C worker build-isolate-rootfs
 	docker compose up -d --build worker frontend --wait
 	cd e2e && npm install --silent
 	@echo "==> [1/2] Running API-level E2E tests (Vitest)..."

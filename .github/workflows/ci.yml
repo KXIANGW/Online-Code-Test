@@ -177,12 +177,12 @@ jobs:
       - name: Build sandbox images
         run: make sandbox-images
 
+      - name: Build isolate rootfs
+        run: make -C worker build-isolate-rootfs
+
       - name: Start full Docker stack
         run: docker compose up -d --build --wait
         timeout-minutes: 10
-
-      - name: Build isolate rootfs
-        run: make -C worker build-isolate-rootfs
 
       - name: Install e2e dependencies
         working-directory: e2e

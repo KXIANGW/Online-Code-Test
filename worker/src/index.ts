@@ -2,7 +2,8 @@ import amqp, { type Channel, type ChannelModel } from "amqplib";
 import { config } from "./config";
 import { pool } from "./db/client";
 import { startJudgeConsumer } from "./consumers/judge.consumer";
-import { loadLanguages } from "./engine/languages";
+import { loadLanguages, type LanguageSpec } from "./engine/languages";
+import { RootfsResolver } from "./engine/rootfs-resolver";
 import { createSandboxEngine } from "./engine/sandbox-engine";
 import { createHealthServer, type HealthState } from "./healthcheck";
 
@@ -19,31 +20,34 @@ const healthState: HealthState = { rabbitConnected: false };
 
 async function main(): Promise<void> {
   const healthPort = parseInt(process.env["HEALTH_PORT"] ?? "8080", 10);
+  const languages = loadLanguages();
+  const rootfsResolver = new RootfsResolver({ baseDir: config.rootfsBaseDir });
+  healthState.rootfsReady = () => rootfsResolver.readyForAll(languages);
   const healthServer = createHealthServer(healthState, healthPort);
 
   process.on("SIGTERM", () => void shutdown("SIGTERM", healthServer));
   process.on("SIGINT", () => void shutdown("SIGINT", healthServer));
 
-  await connectWithRetry();
+  await connectWithRetry(languages);
 }
 
-async function connectWithRetry(attempt = 0): Promise<void> {
+async function connectWithRetry(languages: LanguageSpec[], attempt = 0): Promise<void> {
   try {
-    await connectOnce();
+    await connectOnce(languages);
     console.log("[worker] judge consumer started");
   } catch (err) {
     if (shuttingDown) return;
     const delay = Math.min(30000, 1000 * 2 ** attempt);
     console.error(`[worker] connection failed; retrying in ${delay}ms`, err);
     setTimeout(() => {
-      connectWithRetry(attempt + 1).catch((retryErr) => {
+      connectWithRetry(languages, attempt + 1).catch((retryErr) => {
         console.error("[worker] retry failed", retryErr);
       });
     }, delay);
   }
 }
 
-async function connectOnce(): Promise<void> {
+async function connectOnce(languages: LanguageSpec[]): Promise<void> {
   const nextConnection = await amqp.connect(config.rabbitmqUrl);
   connection = nextConnection;
   nextConnection.on("close", () => {
@@ -51,14 +55,13 @@ async function connectOnce(): Promise<void> {
     channel = null;
     connection = null;
     if (!shuttingDown) {
-      connectWithRetry().catch((err) => console.error("[worker] reconnect failed", err));
+      connectWithRetry(languages).catch((err) => console.error("[worker] reconnect failed", err));
     }
   });
   nextConnection.on("error", (err) => {
     console.error("[worker] rabbitmq connection error", err);
   });
 
-  const languages = loadLanguages();
   const engine = createSandboxEngine({
     rootfsBaseDir: config.rootfsBaseDir,
     isolateBoxId: config.isolateBoxId,

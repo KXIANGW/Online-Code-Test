@@ -62,6 +62,25 @@ describe("healthcheck server", () => {
     expect(JSON.parse(body)).toMatchObject({ status: "degraded", db: false });
   });
 
+  it("returns 503 while language rootfs is not ready", async () => {
+    vi.mocked(pool.query).mockResolvedValue({ rows: [] } as never);
+    const state: HealthState = {
+      rabbitConnected: true,
+      rootfsReady: async () => false,
+    };
+    server = createHealthServer(state, 18085);
+
+    const { status, body } = await get(18085, "/healthz");
+
+    expect(status).toBe(503);
+    expect(JSON.parse(body)).toMatchObject({
+      status: "degraded",
+      rabbit: true,
+      db: true,
+      rootfs: false,
+    });
+  });
+
   it("returns 404 for unknown paths", async () => {
     const state: HealthState = { rabbitConnected: true };
     server = createHealthServer(state, 18083);

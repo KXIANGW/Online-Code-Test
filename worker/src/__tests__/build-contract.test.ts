@@ -28,13 +28,26 @@ describe("sandbox image build contract", () => {
     expect(installWorkerDeps).toBeLessThan(buildSandboxImages);
   });
 
+  it("prepares isolate rootfs before CI waits for the E2E worker", () => {
+    const repoRoot = path.resolve(__dirname, "../../..");
+    const ciWorkflow = fs.readFileSync(path.join(repoRoot, ".github/workflows/ci.yml"), "utf8");
+
+    const buildRootfs = ciWorkflow.indexOf("run: make -C worker build-isolate-rootfs");
+    const startStack = ciWorkflow.indexOf("run: docker compose up -d --build --wait");
+
+    expect(buildRootfs).toBeGreaterThanOrEqual(0);
+    expect(startStack).toBeGreaterThanOrEqual(0);
+    expect(buildRootfs).toBeLessThan(startStack);
+  });
+
   it("builds the same sandbox image tags that the worker loads at runtime", () => {
     // After the Makefile became data-driven (reads languages.yaml via
     // scripts/list-languages.mjs), there are no per-language hardcoded
     // `docker build` lines. The contract we still want to enforce:
     //   1. languages.yaml's image tags match the legacy expected values
     //      (so anything else still consuming those tags keeps working).
-    //   2. The root Makefile delegates to the worker's build target.
+    //   2. The root Makefile keeps the legacy image target and prepares
+    //      isolate rootfs before starting compose services that run Worker.
     //   3. The worker Makefile's data-driven target exists and uses the
     //      list-languages.mjs helper to enumerate images.
     //   4. The legacy alias `build-sandbox-images` still resolves so the
@@ -53,7 +66,9 @@ describe("sandbox image build contract", () => {
 
     expect(runtimeImages).toEqual(["oct-sandbox-cpp:12", "oct-sandbox-python:3.11"]);
     expect(rootMakefile).toContain("$(MAKE) -C worker build-sandbox-images");
-    expect(rootMakefile).toContain("up: bootstrap sandbox-images");
+    expect(rootMakefile).toContain("$(MAKE) -C worker build-isolate-rootfs");
+    expect(rootMakefile).toContain("up: bootstrap isolate-rootfs");
+    expect(rootMakefile).toContain("demo-up: bootstrap isolate-rootfs");
     expect(workerMakefile).toMatch(/^build-language-images:/m);
     expect(workerMakefile).toContain("scripts/list-languages.mjs");
     // Legacy alias still resolves so existing callers don't break.
