@@ -16,9 +16,10 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
-const here = path.dirname(new URL(import.meta.url).pathname);
+const here = path.dirname(fileURLToPath(import.meta.url));
 const yamlPath = path.resolve(here, "..", "sandbox", "languages.yaml");
 
 const content = fs.readFileSync(yamlPath, "utf8");
