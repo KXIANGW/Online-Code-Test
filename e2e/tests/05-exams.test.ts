@@ -3,8 +3,10 @@ import { api, login } from "../helpers/api.js";
 import { SUM_PROBLEM } from "../helpers/fixtures.js";
 
 const TS = Date.now().toString().slice(-8);
+let _cnt = 0;
 
 async function buildExamStack() {
+  const suffix = `${TS}_${++_cnt}`;
   const rootToken = await login("root", "Root@1234");
   const aliceToken = await login("alice", "Test@1234");
 
@@ -12,7 +14,7 @@ async function buildExamStack() {
     "POST",
     "/users",
     {
-      username: `e2e_ps5_${TS}`,
+      username: `e2e_ps5_${suffix}`,
       password: "E2e@1234",
       displayName: "PS5",
       roleNames: ["problem_setter"],
@@ -26,7 +28,7 @@ async function buildExamStack() {
     "POST",
     "/users",
     {
-      username: `e2e_cand5_${TS}`,
+      username: `e2e_cand5_${suffix}`,
       password: "E2e@1234",
       displayName: "Cand5",
       roleNames: ["candidate"],

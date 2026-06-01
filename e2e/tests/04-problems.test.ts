@@ -3,14 +3,16 @@ import { api, login } from "../helpers/api.js";
 import { SUM_PROBLEM } from "../helpers/fixtures.js";
 
 const TS = Date.now().toString().slice(-8);
+let _cnt = 0;
 
 async function makePS() {
+  const suffix = `${TS}_${++_cnt}`;
   const rootToken = await login("root", "Root@1234");
   const ps = await api<{ id: number; username: string }>(
     "POST",
     "/users",
     {
-      username: `e2e_ps4_${TS}`,
+      username: `e2e_ps4_${suffix}`,
       password: "E2e@1234",
       displayName: "E2E PS4",
       roleNames: ["problem_setter"],

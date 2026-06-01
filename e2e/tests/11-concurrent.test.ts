@@ -231,10 +231,13 @@ describe("Concurrent submissions and queue serialization", () => {
       );
       expect(sessions).toHaveLength(10);
 
+      const userIdByName = new Map(allUsers.map((u) => [u.username, u.id]));
+      const credByCandId = new Map(batch.map((b) => [userIdByName.get(b.username)!, b]));
+
       const submissionIds: number[] = [];
       await Promise.all(
-        sessions.map(async (session, idx) => {
-          const cred = batch[idx]!;
+        sessions.map(async (session) => {
+          const cred = credByCandId.get(session.candidateId)!;
           const candToken = await login(cred.username, cred.password);
           await api(
             "POST",

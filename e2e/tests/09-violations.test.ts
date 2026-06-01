@@ -4,8 +4,10 @@ import { pool } from "../helpers/db.js";
 import { SUM_PROBLEM } from "../helpers/fixtures.js";
 
 const TS = Date.now().toString().slice(-8);
+let _cnt = 0;
 
 async function buildSession() {
+  const suffix = `${TS}_${++_cnt}`;
   const rootToken = await login("root", "Root@1234");
   const aliceToken = await login("alice", "Test@1234");
 
@@ -13,7 +15,7 @@ async function buildSession() {
     "POST",
     "/users",
     {
-      username: `e2e_ps9_${TS}`,
+      username: `e2e_ps9_${suffix}`,
       password: "E2e@1234",
       displayName: "PS9",
       roleNames: ["problem_setter"],
@@ -27,7 +29,7 @@ async function buildSession() {
     "POST",
     "/users",
     {
-      username: `e2e_cand9_${TS}`,
+      username: `e2e_cand9_${suffix}`,
       password: "E2e@1234",
       displayName: "Cand9",
       roleNames: ["candidate"],
