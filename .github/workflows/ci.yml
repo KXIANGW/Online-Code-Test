@@ -163,10 +163,16 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: e2e/package-lock.json
+          cache-dependency-path: |
+            e2e/package-lock.json
+            worker/package-lock.json
 
       - name: Bootstrap environment
         run: make bootstrap
+
+      - name: Install worker dependencies for sandbox image build
+        working-directory: worker
+        run: npm ci
 
       - name: Build sandbox images
         run: make sandbox-images

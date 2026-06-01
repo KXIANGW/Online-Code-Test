@@ -4,6 +4,18 @@ import path from "path";
 import { describe, expect, it } from "vitest";
 
 describe("sandbox image build contract", () => {
+  it("installs worker dependencies before CI builds sandbox images for E2E", () => {
+    const repoRoot = path.resolve(__dirname, "../../..");
+    const ciWorkflow = fs.readFileSync(path.join(repoRoot, ".github/workflows/ci.yml"), "utf8");
+
+    const installWorkerDeps = ciWorkflow.indexOf("working-directory: worker\n        run: npm ci");
+    const buildSandboxImages = ciWorkflow.indexOf("run: make sandbox-images");
+
+    expect(installWorkerDeps).toBeGreaterThanOrEqual(0);
+    expect(buildSandboxImages).toBeGreaterThanOrEqual(0);
+    expect(installWorkerDeps).toBeLessThan(buildSandboxImages);
+  });
+
   it("builds the same sandbox image tags that the worker loads at runtime", () => {
     // After the Makefile became data-driven (reads languages.yaml via
     // scripts/list-languages.mjs), there are no per-language hardcoded
