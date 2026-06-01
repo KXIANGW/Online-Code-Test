@@ -20,10 +20,11 @@ describe("Health checks", () => {
     expect(body).toBeDefined();
   });
 
-  it("Worker healthz returns 200", async () => {
-    const res = await fetch("http://localhost:8080/healthz");
+  it("GET /api/metrics returns Prometheus-format text", async () => {
+    const res = await fetch("http://localhost:3000/api/metrics");
     expect(res.ok).toBe(true);
-    const body = (await res.json()) as { status: string };
-    expect(body.status).toBe("ok");
+    const text = await res.text();
+    // Prometheus format always starts with # HELP or # TYPE lines
+    expect(text).toMatch(/^#\s+(HELP|TYPE)/m);
   });
 });

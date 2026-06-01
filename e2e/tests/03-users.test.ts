@@ -184,7 +184,7 @@ describe("User management", () => {
         "/users",
         {
           username: "hacker",
-          password: "x",
+          password: "Hacker@1",
           displayName: "x",
           roleNames: ["candidate"],
         },
