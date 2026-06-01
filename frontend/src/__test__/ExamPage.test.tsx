@@ -688,6 +688,43 @@ describe("ExamPage", () => {
     errorSpy.mockRestore();
   });
 
+  it("keeps the editor usable after a saveExamDraft rejection — failure must not block editing", async () => {
+    // FR-4.2 AC3: Redis 暫時不可用 → UI 不阻斷編輯，使用者仍能繼續輸入。
+    // given — in_progress session + cpp17 has pre-existing code so switching language
+    //         triggers a saveExamDraft sync (same path as the existing logging test).
+    mockGetExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "in_progress",
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    localStorage.setItem("oct:draft:42:1:cpp17", "int main() {}");
+    mockSaveExamDraft.mockRejectedValue(new Error("503 Service Unavailable"));
+    // The existing handler logs to console.error; suppress to keep test output clean.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("python3"));
+
+    // when — switch language to trigger the rejecting Redis save
+    fireEvent.change(select, { target: { value: "cpp17" } });
+    await waitFor(() => expect(errorSpy).toHaveBeenCalled());
+
+    // when — user keeps typing after the failure
+    const editorAfter = screen.getByLabelText("Code editor") as HTMLTextAreaElement;
+    fireEvent.change(editorAfter, { target: { value: "int main() { return 0; }" } });
+
+    // expect — editor still accepts input (value updates, no fatal overlay)
+    expect(editorAfter.value).toBe("int main() { return 0; }");
+    expect(
+      screen.queryByText("無法載入考試，請重新整理頁面或聯繫面試官。"),
+    ).not.toBeInTheDocument();
+    // expect — language selector remains operable as a second usability check
+    expect(select).not.toBeDisabled();
+
+    errorSpy.mockRestore();
+  });
+
   it("does not call saveExamDraft debounce when typing code if session is not_started", async () => {
     // given
     await renderExamPage();
