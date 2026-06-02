@@ -10,10 +10,11 @@ https://ikmlab.cs.nthu.edu.tw/online_code_test/
 
 ## 檔案
 
-| 檔案             | 用途                                                                               |
-| ---------------- | ---------------------------------------------------------------------------------- |
-| `k6-homepage.js` | 測部署站首頁 RPS，適合找 Ingress / frontend 靜態路徑的基準吞吐量。                 |
-| `k6-roles.js`    | 依角色拆分 anonymous / candidate / interviewer / problem-setter / admin 壓測場景。 |
+| 檔案                    | 用途                                                                               |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `k6-homepage.js`        | 測部署站首頁 RPS，適合找 Ingress / frontend 靜態路徑的基準吞吐量。                 |
+| `k6-roles.js`           | 依角色拆分 anonymous / candidate / interviewer / problem-setter / admin 壓測場景。 |
+| `run-role-api-tests.sh` | 依序跑各角色 API 壓測，輸出 k6 JSON 與 Markdown 報告。                             |
 
 其他檔案如 `seed.ts`、`k6-submit.js`、`scale-watcher.sh` 屬於本地 demo / worker 提交流程，不是本部署壓測 README 的主要範圍。
 
@@ -146,6 +147,51 @@ API_URL=https://ikmlab.cs.nthu.edu.tw/online_code_test/api k6 run loadtest/k6-ro
 ```bash
 CANDIDATE_WRITE_DRAFTS=true ROLE_SCENARIOS=candidate k6 run loadtest/k6-roles.js
 INCLUDE_PASSWORD_LOOKUPS=true ROLE_SCENARIOS=interviewer k6 run loadtest/k6-roles.js
+```
+
+## 逐一測試角色並產生報告
+
+`run-role-api-tests.sh` 會依序執行每個角色，將每次 k6 output 存成 log、summary JSON，最後彙整成 Markdown。
+
+最小 smoke：
+
+```bash
+DURATION=30s \
+ANON_RPS=1 \
+CANDIDATE_RPS=1 \
+INTERVIEWER_RPS=1 \
+PROBLEM_SETTER_RPS=1 \
+ADMIN_RPS=1 \
+./loadtest/run-role-api-tests.sh
+```
+
+只測指定角色：
+
+```bash
+ROLES="candidate interviewer" \
+DURATION=5m \
+CANDIDATE_RPS=20 \
+INTERVIEWER_RPS=10 \
+./loadtest/run-role-api-tests.sh
+```
+
+指定報告輸出位置：
+
+```bash
+REPORT_DIR=loadtest/reports/api-roles-$(date +%Y%m%d-%H%M%S) \
+./loadtest/run-role-api-tests.sh
+```
+
+報告會寫在：
+
+```txt
+loadtest/reports/<timestamp>/role-api-report.md
+```
+
+只檢查腳本會如何展開角色與 RPS，不真的執行 k6：
+
+```bash
+DRY_RUN=true ./loadtest/run-role-api-tests.sh
 ```
 
 ## 如何判斷極限
