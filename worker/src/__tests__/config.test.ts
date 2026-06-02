@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const ENV_KEYS = [
-  "RABBITMQ_URL",
-  "DATABASE_URL",
-  "HOST_WORK_DIR",
-  "ISOLATE_BIN_PATH",
-] as const;
+const ENV_KEYS = ["RABBITMQ_URL", "DATABASE_URL", "HOST_WORK_DIR", "ISOLATE_BIN_PATH"] as const;
 
 type EnvKey = (typeof ENV_KEYS)[number];
 

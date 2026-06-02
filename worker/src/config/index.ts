@@ -27,9 +27,7 @@ export const config = {
   // IsolateEngine config. The legacy DockerEngine + SANDBOX_ENGINE knob were
   // dropped in Step B; the only engine now is isolate.
   rootfsBaseDir: process.env["ROOTFS_BASE_DIR"],
-  isolateBoxId: process.env["ISOLATE_BOX_ID"]
-    ? Number(process.env["ISOLATE_BOX_ID"])
-    : undefined,
+  isolateBoxId: process.env["ISOLATE_BOX_ID"] ? Number(process.env["ISOLATE_BOX_ID"]) : undefined,
   // Directory containing the seccomp wrapper + policy. Defaults to the path
   // baked into the worker image; set to empty string to disable seccomp
   // (only safe in trusted local dev).

@@ -9,7 +9,10 @@ import { RootfsResolver, RootfsNotReadyError } from "../rootfs-resolver";
 // failure). Judge consumer routes these to system_error rather than a
 // verdict so a broken sandbox doesn't silently grade every submission WA.
 export class SandboxSystemError extends Error {
-  constructor(message: string, public readonly stderr?: string) {
+  constructor(
+    message: string,
+    public readonly stderr?: string,
+  ) {
     super(message);
     this.name = "SandboxSystemError";
   }
@@ -38,8 +41,7 @@ const COMPILE_TIME_SEC = 30;
 // Isolate doesn't inherit the host PATH after chroot, so bare command names
 // like "g++" or "python3" won't resolve. Apply a Debian-/Alpine-friendly
 // default; languages can still override via spec.run.env.PATH.
-const DEFAULT_CHROOT_PATH =
-  "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+const DEFAULT_CHROOT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 const DEFAULT_ISOLATE_BIN_PATH = "/usr/local/bin/isolate";
 const DEFAULT_ISOLATE_FIRST_UID = 60000;
 
@@ -110,7 +112,8 @@ export class IsolateEngine implements SandboxEngine {
   constructor(options: IsolateEngineOptions = {}) {
     this.resolver = options.rootfsResolver ?? new RootfsResolver();
     this.boxId = options.boxId ?? 0;
-    this.spawner = options.spawner ?? makeDefaultSpawner(options.isolateBinPath ?? DEFAULT_ISOLATE_BIN_PATH);
+    this.spawner =
+      options.spawner ?? makeDefaultSpawner(options.isolateBinPath ?? DEFAULT_ISOLATE_BIN_PATH);
     this.workDirOwnerUid = DEFAULT_ISOLATE_FIRST_UID + this.boxId;
     this.workDirOwnerGid = this.workDirOwnerUid;
     this.seccomp = options.seccomp;
@@ -147,7 +150,7 @@ export class IsolateEngine implements SandboxEngine {
       };
     } catch (err) {
       if (err instanceof RootfsNotReadyError) throw err; // surface as system error
-      if (err instanceof SandboxSystemError) throw err;  // surface as system error
+      if (err instanceof SandboxSystemError) throw err; // surface as system error
       return {
         success: false,
         errorLog: err instanceof Error ? err.message : String(err),
@@ -227,7 +230,7 @@ export class IsolateEngine implements SandboxEngine {
     if (initResult.exitCode !== 0) {
       throw new SandboxSystemError(
         `isolate --init failed (exit=${initResult.exitCode}): ${initResult.stderr.trim()}`,
-        initResult.stderr
+        initResult.stderr,
       );
     }
 
@@ -244,26 +247,20 @@ export class IsolateEngine implements SandboxEngine {
       if (runResult.exitCode > 1 && metaIsEmpty) {
         throw new SandboxSystemError(
           `isolate --run failed (exit=${runResult.exitCode}): ${runResult.stderr.trim()}`,
-          runResult.stderr
+          runResult.stderr,
         );
       }
 
       return { exitCode: runResult.exitCode, meta, stdout, stderr };
     } finally {
-      await this.runIsolate([`--box-id=${this.boxId}`, "--cg", "--cleanup"]).catch(
-        () => undefined
-      );
+      await this.runIsolate([`--box-id=${this.boxId}`, "--cg", "--cleanup"]).catch(() => undefined);
     }
   }
 
-  private buildRunArgs(
-    args: RunIsolateArgs,
-    rootfs: string,
-    metaPath: string
-  ): string[] {
+  private buildRunArgs(args: RunIsolateArgs, rootfs: string, metaPath: string): string[] {
     const memKb = args.memoryLimitMb * 1024;
     const timeSec = (args.timeLimitMs / 1000).toFixed(3);
-    const wallSec = (((args.wallTimeLimitMs ?? args.timeLimitMs * 2) / 1000)).toFixed(3);
+    const wallSec = ((args.wallTimeLimitMs ?? args.timeLimitMs * 2) / 1000).toFixed(3);
 
     const env: Record<string, string> = { PATH: DEFAULT_CHROOT_PATH, ...(args.spec.run.env ?? {}) };
     const envArgs: string[] = [];
@@ -341,9 +338,7 @@ export class IsolateEngine implements SandboxEngine {
     return this.runIsolateCapturingStderr(args).then((r) => r.exitCode);
   }
 
-  private runIsolateCapturingStderr(
-    args: string[]
-  ): Promise<{ exitCode: number; stderr: string }> {
+  private runIsolateCapturingStderr(args: string[]): Promise<{ exitCode: number; stderr: string }> {
     return new Promise((resolve, reject) => {
       const child = this.spawner(args);
       let stderr = "";
