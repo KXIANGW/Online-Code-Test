@@ -17,6 +17,10 @@ const mockUpdateExamTemplate = vi.hoisted(() => vi.fn());
 const mockSetTemplates = vi.hoisted(() => vi.fn());
 const mockUseInterviewerStore = vi.hoisted(() => vi.fn());
 
+interface TemplateCreateStoreSlice {
+  setTemplates: typeof mockSetTemplates;
+}
+
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
   return { ...actual, useNavigate: () => mockNavigate };
@@ -82,7 +86,7 @@ describe("TemplateCreatePage()", () => {
     mockUpdateExamTemplate.mockReset();
     mockSetTemplates.mockReset();
     setupAuthStore();
-    mockUseInterviewerStore.mockImplementation((sel: any) =>
+    mockUseInterviewerStore.mockImplementation((sel: (s: TemplateCreateStoreSlice) => unknown) =>
       sel({ setTemplates: mockSetTemplates }),
     );
     mockGetProblems.mockResolvedValue(mockProblemSummaries);
@@ -162,11 +166,13 @@ describe("TemplateCreatePage()", () => {
   });
 
   it("calls createExamTemplateRandom with correct payload and navigates to /interviewer", async () => {
+    // given
     mockCreateExamTemplateRandom.mockResolvedValue(mockCreatedTemplate);
     renderPage();
     await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
     const user = userEvent.setup();
 
+    // when
     await user.type(screen.getByRole("textbox", { name: "考試標題" }), "Random Exam");
     await user.click(screen.getByRole("button", { name: "隨機派題" }));
 
@@ -176,6 +182,7 @@ describe("TemplateCreatePage()", () => {
 
     await user.click(screen.getByRole("button", { name: "建立模板" }));
 
+    // expect
     await waitFor(() =>
       expect(mockCreateExamTemplateRandom).toHaveBeenCalledWith({
         title: "Random Exam",
@@ -185,6 +192,46 @@ describe("TemplateCreatePage()", () => {
       }),
     );
     expect(mockNavigate).toHaveBeenCalledWith("/interviewer");
+  });
+
+  it("random mode shows an error when the distribution total is zero", async () => {
+    // given
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
+    const user = userEvent.setup();
+
+    // when
+    await user.type(screen.getByRole("textbox", { name: "考試標題" }), "Empty Random Exam");
+    await user.click(screen.getByRole("button", { name: "隨機派題" }));
+    await user.click(screen.getByRole("button", { name: "建立模板" }));
+
+    // expect
+    expect(screen.getByText("請至少在難度分佈中填寫一題")).toBeInTheDocument();
+    expect(mockCreateExamTemplateRandom).not.toHaveBeenCalled();
+  });
+
+  it("random mode sends only positive distribution buckets", async () => {
+    // given
+    mockCreateExamTemplateRandom.mockResolvedValue(mockCreatedTemplate);
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
+    const user = userEvent.setup();
+
+    // when
+    await user.type(screen.getByRole("textbox", { name: "考試標題" }), "Mixed Random Exam");
+    await user.click(screen.getByRole("button", { name: "隨機派題" }));
+    await user.type(screen.getByRole("spinbutton", { name: "隨機中等題數" }), "2");
+    await user.type(screen.getByRole("spinbutton", { name: "隨機困難題數" }), "1");
+    await user.click(screen.getByRole("button", { name: "建立模板" }));
+
+    // expect
+    await waitFor(() =>
+      expect(mockCreateExamTemplateRandom).toHaveBeenCalledWith(
+        expect.objectContaining({
+          distribution: { medium: 2, hard: 1 },
+        }),
+      ),
+    );
   });
 
   it("shows error message when createExamTemplateManual rejects", async () => {
@@ -202,10 +249,13 @@ describe("TemplateCreatePage()", () => {
   });
 
   it("edit mode pre-fills template fields and selected problems", async () => {
+    // given
     renderEditPage();
 
+    // when
     await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
 
+    // expect
     expect(screen.getByRole("heading", { name: "編輯考試模板" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "考試標題" })).toHaveValue("Existing Exam");
     expect(screen.getByRole("spinbutton", { name: "測驗時長" })).toHaveValue(60);
@@ -216,12 +266,15 @@ describe("TemplateCreatePage()", () => {
   });
 
   it("edit mode calls updateExamTemplate with manual payload and navigates to /interviewer", async () => {
+    // given
     mockUpdateExamTemplate.mockResolvedValue(mockCreatedTemplate);
     renderEditPage();
     await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
 
+    // when
     await userEvent.click(screen.getByRole("button", { name: "更新模板" }));
 
+    // expect
     await waitFor(() =>
       expect(mockUpdateExamTemplate).toHaveBeenCalledWith(42, {
         title: "Existing Exam",
@@ -231,5 +284,60 @@ describe("TemplateCreatePage()", () => {
     );
     expect(mockSetTemplates).toHaveBeenCalledWith([]);
     expect(mockNavigate).toHaveBeenCalledWith("/interviewer");
+  });
+
+  it("edit mode shows an error when the template id is not found", async () => {
+    // given
+    mockListExamTemplates.mockResolvedValue([]);
+
+    // when
+    renderEditPage("404");
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
+
+    // expect
+    expect(screen.getByText("找不到此考試模板")).toBeInTheDocument();
+    expect(mockUpdateExamTemplate).not.toHaveBeenCalled();
+  });
+
+  it("manual mode removes a selected problem when its checkbox is toggled again", async () => {
+    // given
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
+    const user = userEvent.setup();
+
+    // when
+    await user.type(screen.getByRole("textbox", { name: "考試標題" }), "Manual Exam");
+    await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
+    await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
+    await user.click(screen.getByRole("button", { name: "建立模板" }));
+
+    // expect
+    expect(screen.getByText("請至少選擇一個題目")).toBeInTheDocument();
+    expect(mockCreateExamTemplateManual).not.toHaveBeenCalled();
+  });
+
+  it("manual mode includes edited score weights in the payload", async () => {
+    // given
+    mockCreateExamTemplateManual.mockResolvedValue(mockCreatedTemplate);
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入題目中...")).not.toBeInTheDocument());
+    const user = userEvent.setup();
+
+    // when
+    await user.type(screen.getByRole("textbox", { name: "考試標題" }), "Weighted Exam");
+    await user.click(screen.getByRole("checkbox", { name: /Two Sum/ }));
+    const scoreInput = screen.getByRole("spinbutton", { name: "Two Sum 配分" });
+    await user.clear(scoreInput);
+    await user.type(scoreInput, "35");
+    await user.click(screen.getByRole("button", { name: "建立模板" }));
+
+    // expect
+    await waitFor(() =>
+      expect(mockCreateExamTemplateManual).toHaveBeenCalledWith(
+        expect.objectContaining({
+          problems: [{ problemId: 1, scoreWeight: 35, orderIndex: 1 }],
+        }),
+      ),
+    );
   });
 });
