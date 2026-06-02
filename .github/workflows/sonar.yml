@@ -165,6 +165,12 @@ jobs:
           npm ci
           npx vitest run --coverage
 
+      - name: Worker puller — install + coverage
+        working-directory: worker/puller
+        run: |
+          npm ci
+          npx vitest run --coverage
+
       # The official scan action mounts the workspace, runs sonar-
       # scanner-cli, and leaves .scannerwork/report-task.txt behind for
       # the quality-gate-action to poll.
