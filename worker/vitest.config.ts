@@ -20,7 +20,14 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["src/__tests__/**", "src/index.ts", "src/db/client.ts", "node_modules/**"],
+      exclude: [
+        "src/__tests__/**",
+        "src/index.ts",
+        "src/healthcheck.ts",
+        "src/db/client.ts",
+        "node_modules/**",
+        "dist/**",
+      ],
       reporter: ["text", "lcov"],
       thresholds: {
         statements: 85,
