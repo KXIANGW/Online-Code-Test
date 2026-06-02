@@ -62,6 +62,19 @@ describe("worker config", () => {
     expect(config.isolateBinPath).toBe("/opt/oct/bin/isolate");
   });
 
+  it("treats whitespace-only optional paths as absent and keeps safe defaults", async () => {
+    // given
+    process.env["HOST_WORK_DIR"] = "   ";
+    process.env["ISOLATE_BIN_PATH"] = "\t";
+
+    // when
+    const { config } = await importConfig();
+
+    // expect
+    expect(config.hostWorkDir).toBe("/var/lib/oct/judge");
+    expect(config.isolateBinPath).toBe("/usr/local/bin/isolate");
+  });
+
   it("rejects relative HOST_WORK_DIR values before the worker starts", async () => {
     // given
     process.env["HOST_WORK_DIR"] = "relative/judge";

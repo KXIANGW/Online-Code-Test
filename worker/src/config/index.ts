@@ -10,7 +10,9 @@ function requireEnv(name: string): string {
 }
 
 function optionalAbsolutePathEnv(name: string, fallback: string): string {
-  const value = process.env[name]?.trim() || fallback;
+  const rawValue = process.env[name] ?? fallback;
+  const trimmedValue = rawValue.trim();
+  const value = trimmedValue.length > 0 ? trimmedValue : fallback;
   if (!value.startsWith("/")) {
     throw new Error(`${name} must be an absolute path`);
   }
