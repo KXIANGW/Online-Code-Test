@@ -174,11 +174,18 @@ jobs:
       # The official scan action mounts the workspace, runs sonar-
       # scanner-cli, and leaves .scannerwork/report-task.txt behind for
       # the quality-gate-action to poll.
+      # Both SonarSource actions are Docker actions — they run in their own
+      # container that joins the GHA network bridge. Inside that container
+      # `localhost` resolves to the container's own loopback, not the runner.
+      # The `sonarqube` service is reachable by its service name on the GHA
+      # bridge network, so use that as SONAR_HOST_URL here. Earlier steps
+      # (wait / token / failure breakdown) run directly on the runner and
+      # keep using `localhost:9000`.
       - name: Run SonarScanner
         uses: SonarSource/sonarqube-scan-action@v3.1.0
         env:
           SONAR_TOKEN: ${{ steps.sonar.outputs.token }}
-          SONAR_HOST_URL: http://localhost:9000
+          SONAR_HOST_URL: http://sonarqube:9000
 
       # Polls report-task.txt → Compute Engine task → Quality Gate API.
       # Action exits non-zero if status != OK, which marks the job — and
@@ -188,7 +195,7 @@ jobs:
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ steps.sonar.outputs.token }}
-          SONAR_HOST_URL: http://localhost:9000
+          SONAR_HOST_URL: http://sonarqube:9000
 
       # Diagnostic log if the gate failed: dump the conditions that
       # blocked the merge so reviewers don't have to dig in CI artifacts.
