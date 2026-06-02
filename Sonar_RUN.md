@@ -20,7 +20,7 @@
 6. [模組結構](#模組結構sonar-project-properties-怎麼配)
 7. [Quality Gate](#quality-gate)
 8. [常見問題排除](#常見問題排除)
-9. [CI / CD 整合（規劃中）](#ci--cd-整合規劃中)
+9. [CI / CD 整合](#ci--cd-整合)
 10. [相關檔案](#相關檔案)
 
 ---
@@ -373,45 +373,39 @@ docker compose -f docker-compose.sonar.yml restart sonarqube
 
 ---
 
-## CI / CD 整合（規劃中）
+## CI / CD 整合
 
-目前 `.github/workflows/` **尚未**整合 SonarScanner。要加的話建議用
-[SonarSource/sonarqube-scan-action](https://github.com/SonarSource/sonarqube-scan-action)，
-但前提是：
+已實裝於 [`.github/workflows/sonar.yml`](.github/workflows/sonar.yml)。
+**Quality Gate 不過 → PR 不能 merge**。
 
-1. SonarQube 要對 CI runner 開放（公網 / VPN / self-hosted runner）
-2. GitHub Secrets 加 `SONAR_TOKEN` + `SONAR_HOST_URL`
-3. CI 流程中先跑 vitest --coverage（已有，見 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)），再跑 scan-action
+### 觸發條件
 
-骨架（範例，**未實裝**）：
+| 事件 | 分支 | 為什麼這樣設 |
+|------|------|--------------|
+| `pull_request` | `main` / `develop` / `release/**` | PR 入長壽分支時擋掉 |
+| `push` | `main` / `develop` | 合入後重跑一次當作 post-merge audit |
 
-```yaml
-# .github/workflows/sonar.yml
-name: SonarQube
-on:
-  pull_request:
-    branches: [main, develop, "release/**"]
-jobs:
-  scan:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }              # blame 需要完整歷史
-      - uses: actions/setup-node@v4
-        with: { node-version: "22" }
-      - run: |
-          (cd frontend && npm ci && npx vitest run --coverage)
-          (cd backend  && npm ci && npx vitest run --coverage)
-          (cd worker   && npm ci && npx vitest run --coverage)
-      - uses: SonarSource/sonarqube-scan-action@v3.1.0
-        env:
-          SONAR_TOKEN:    ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-```
+feature branch 一般 push 不會觸發（每次跑 ~5–8 分鐘太貴），仍由 [`ci.yml`](.github/workflows/ci.yml) 跑 lint + test + build。
 
-實作前先決定：
-- SonarQube 跑哪？實驗室 server？校內網？
-- 是否要把 quality gate failure 設成 PR block 條件？
+### 設計亮點
+
+1. **不依賴外部 SonarQube** — 整個 workflow 用 GitHub Actions services 把 `sonarqube:10.7.0-community` + `postgres:16.4-alpine` 與既有 OCT 服務（postgres / redis）一起拉起來，沒有 `SONAR_HOST_URL` secret 要管。
+2. **Token 在 job 內動態產生** — 用 SonarQube 預設的 `admin:admin` 呼叫 `/api/user_tokens/generate`，每次 run 產生獨立 token（透過 `::add-mask::` 在 log 中遮罩）。GitHub Secrets 不需要任何 Sonar 相關設定。
+3. **走兩支官方 action** — [`SonarSource/sonarqube-scan-action@v3.1.0`](https://github.com/SonarSource/sonarqube-scan-action) 跑掃描、[`SonarSource/sonarqube-quality-gate-action@v1.1.0`](https://github.com/SonarSource/sonarqube-quality-gate-action) 輪詢 Quality Gate 並回傳 exit code。
+4. **失敗時自動 dump QG breakdown** — `if: failure()` 那步呼叫 `qualitygates/project_status` 把每條 condition 印出，PR reviewer 不用點進 CI artifact。
+
+### Trade-off
+
+| 維度 | 數字 |
+|------|------|
+| 每次 run 時間 | ~5–8 分鐘（SonarQube boot ~90s + analysis ~2–3 分鐘 + QG poll）|
+| Runner RAM 占用 | ~3 GB（SonarQube 2 GB + vitest 0.5 GB + headroom）|
+| 歷史趨勢 | ❌ 每次 SonarQube DB 都是新的，看不到跨 run 的 trend；要看趨勢請跑本地 `docker compose -f docker-compose.sonar.yml up -d` |
+| 跨 module 隔離 | ✅ 三個 module 各自分析、各自的 coverage / hotspot 列表 |
+
+### 想看更詳細
+
+直接讀 [`.github/workflows/sonar.yml`](.github/workflows/sonar.yml) — 約 130 行，每段都有 comment 說明為什麼這樣寫（例如為什麼要再額外 wait SonarQube fully ready，為什麼用 admin/admin 而不是 Secrets 帶 token）。
 
 ---
 
@@ -419,8 +413,9 @@ jobs:
 
 | 檔案 | 用途 |
 |------|------|
-| [docker-compose.sonar.yml](./docker-compose.sonar.yml) | SonarQube + Postgres + scanner 編排 |
+| [docker-compose.sonar.yml](./docker-compose.sonar.yml) | SonarQube + Postgres + scanner 編排（本地用）|
 | [sonar-project.properties](./sonar-project.properties) | monorepo 三模組設定 |
+| [.github/workflows/sonar.yml](./.github/workflows/sonar.yml) | PR-blocking Quality Gate workflow |
 | [frontend/vite.config.ts](./frontend/vite.config.ts) | frontend vitest 含 lcov reporter |
 | [backend/vitest.config.ts](./backend/vitest.config.ts) | backend vitest 含 lcov reporter |
 | [worker/vitest.config.ts](./worker/vitest.config.ts) | worker vitest 含 lcov reporter |
