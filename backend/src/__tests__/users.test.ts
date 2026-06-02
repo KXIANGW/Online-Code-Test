@@ -693,6 +693,9 @@ describe("PUT /api/users/:id", () => {
 // only superusers may assign roles; assignable roles are constrained.
 
 describe("PUT /api/users/:id/roles", () => {
+  // GET /api/users/:id does NOT include `roles` — only the list endpoint
+  // returns the aggregated role names via array_agg. To verify role changes
+  // we re-list and look up the target user.
   async function getUserIds(rootToken: string): Promise<{ id: number; username: string }[]> {
     const listRes = await app.inject({
       method: "GET",
@@ -700,6 +703,19 @@ describe("PUT /api/users/:id/roles", () => {
       headers: { authorization: `Bearer ${rootToken}` },
     });
     return listRes.json<{ id: number; username: string }[]>();
+  }
+
+  async function getRolesFor(rootToken: string, userId: number): Promise<string[]> {
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${rootToken}` },
+    });
+    const found = listRes
+      .json<{ id: number; roles: string[] }[]>()
+      .find((u) => u.id === userId);
+    if (!found) throw new Error(`user ${userId} missing from list response`);
+    return found.roles;
   }
 
   it("superuser can replace a candidate's roles with interviewer → 200 and roles take effect", async () => {
@@ -718,15 +734,10 @@ describe("PUT /api/users/:id/roles", () => {
 
     // expect
     expect(res.statusCode).toBe(200);
-    // verify next list reflects the change
-    const after = await app.inject({
-      method: "GET",
-      url: `/api/users/${cand.id}`,
-      headers: { authorization: `Bearer ${rootToken}` },
-    });
-    const updated = after.json<{ roles: string[] }>();
-    expect(updated.roles).toEqual(["interviewer"]);
-    expect(updated.roles).not.toContain("candidate");
+    // verify role list now contains exactly ["interviewer"]
+    const updatedRoles = await getRolesFor(rootToken, cand.id);
+    expect(updatedRoles).toEqual(["interviewer"]);
+    expect(updatedRoles).not.toContain("candidate");
   });
 
   it("superuser can assign multiple roles (interviewer + problem_setter) → 200", async () => {
@@ -745,15 +756,8 @@ describe("PUT /api/users/:id/roles", () => {
 
     // expect
     expect(res.statusCode).toBe(200);
-    const after = await app.inject({
-      method: "GET",
-      url: `/api/users/${cand.id}`,
-      headers: { authorization: `Bearer ${rootToken}` },
-    });
-    expect(after.json<{ roles: string[] }>().roles.sort()).toEqual([
-      "interviewer",
-      "problem_setter",
-    ]);
+    const updatedRoles = await getRolesFor(rootToken, cand.id);
+    expect(updatedRoles.sort()).toEqual(["interviewer", "problem_setter"]);
   });
 
   it("superuser can clear roles by passing an empty array → 200", async () => {
@@ -772,12 +776,7 @@ describe("PUT /api/users/:id/roles", () => {
 
     // expect
     expect(res.statusCode).toBe(200);
-    const after = await app.inject({
-      method: "GET",
-      url: `/api/users/${alice.id}`,
-      headers: { authorization: `Bearer ${rootToken}` },
-    });
-    expect(after.json<{ roles: string[] }>().roles).toEqual([]);
+    expect(await getRolesFor(rootToken, alice.id)).toEqual([]);
   });
 
   it("rejects unassignable role names (candidate or root) → 400", async () => {
