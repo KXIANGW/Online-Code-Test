@@ -512,6 +512,12 @@ describe("IsolateEngine default behavior", () => {
     // construction path doesn't throw.
     expect(typeof engine.runOne).toBe("function");
   });
+
+  it("rejects relative isolate binary paths to avoid PATH-based command lookup", () => {
+    expect(() => new IsolateEngine({ isolateBinPath: "isolate" })).toThrow(
+      "isolateBinPath must be an absolute path",
+    );
+  });
 });
 
 // Silence the @vitest unused-import warning on `vi` in environments where the

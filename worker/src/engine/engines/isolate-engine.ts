@@ -40,13 +40,19 @@ const COMPILE_TIME_SEC = 30;
 // default; languages can still override via spec.run.env.PATH.
 const DEFAULT_CHROOT_PATH =
   "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+const DEFAULT_ISOLATE_BIN_PATH = "/usr/local/bin/isolate";
+const DEFAULT_ISOLATE_FIRST_UID = 60000;
 
 // Process abstraction so unit tests can inject a fake spawn(). The default
-// implementation calls child_process.spawn on the host "isolate" binary.
+// implementation calls child_process.spawn on the configured isolate binary.
 export type IsolateSpawner = (args: string[]) => ChildProcess;
 
-const defaultSpawner: IsolateSpawner = (args) =>
-  spawn("isolate", args, { stdio: ["ignore", "pipe", "pipe"] });
+function makeDefaultSpawner(isolateBinPath: string): IsolateSpawner {
+  if (!isolateBinPath.startsWith("/")) {
+    throw new Error("isolateBinPath must be an absolute path");
+  }
+  return (args) => spawn(isolateBinPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+}
 
 export interface IsolateSeccompPolicy {
   // Host directory containing two files:
@@ -68,6 +74,7 @@ export interface IsolateEngineOptions {
   // we enable Pod-internal concurrency.
   boxId?: number;
   spawner?: IsolateSpawner;
+  isolateBinPath?: string;
   seccomp?: IsolateSeccompPolicy;
 }
 
@@ -96,22 +103,26 @@ export class IsolateEngine implements SandboxEngine {
   private readonly resolver: RootfsResolver;
   private readonly boxId: number;
   private readonly spawner: IsolateSpawner;
+  private readonly workDirOwnerUid: number;
+  private readonly workDirOwnerGid: number;
   private readonly seccomp?: IsolateSeccompPolicy;
 
   constructor(options: IsolateEngineOptions = {}) {
     this.resolver = options.rootfsResolver ?? new RootfsResolver();
     this.boxId = options.boxId ?? 0;
-    this.spawner = options.spawner ?? defaultSpawner;
+    this.spawner = options.spawner ?? makeDefaultSpawner(options.isolateBinPath ?? DEFAULT_ISOLATE_BIN_PATH);
+    this.workDirOwnerUid = DEFAULT_ISOLATE_FIRST_UID + this.boxId;
+    this.workDirOwnerGid = this.workDirOwnerUid;
     this.seccomp = options.seccomp;
   }
 
   async compile(task: CompileTask): Promise<CompileResult> {
     if (!task.spec.compile) return { success: true };
     try {
-      // isolate runs each box under a private high UID (>=60000); the host
-      // work directory must be world-writable so the candidate can produce
-      // the compiled binary / stdout / stderr files.
-      await prepareSandboxWorkDir(task.hostWorkDir);
+      await prepareSandboxWorkDir(task.hostWorkDir, {
+        ownerUid: this.workDirOwnerUid,
+        ownerGid: this.workDirOwnerGid,
+      });
       const result = await this.runInIsolate({
         spec: task.spec,
         hostWorkDir: task.hostWorkDir,
@@ -146,7 +157,10 @@ export class IsolateEngine implements SandboxEngine {
 
   async runOne(task: RunTask): Promise<RunOneResult> {
     try {
-      await prepareSandboxWorkDir(task.hostWorkDir);
+      await prepareSandboxWorkDir(task.hostWorkDir, {
+        ownerUid: this.workDirOwnerUid,
+        ownerGid: this.workDirOwnerGid,
+      });
       await fs.writeFile(path.join(task.hostWorkDir, STDIN_FILE), task.inputData);
 
       const cmd = task.spec.run.entrypointPath

@@ -58,6 +58,9 @@ export interface SandboxEngineConfig {
   // task at a time, so a single fixed id is fine. The box-id pool becomes
   // relevant when (if) we enable Pod-internal concurrency.
   isolateBoxId?: number;
+  // Absolute path to isolate binary. Do not rely on PATH lookup for the
+  // privileged sandbox executable.
+  isolateBinPath?: string;
   // Host directory containing seccomp-wrapper + seccomp.policy. IsolateEngine
   // binds it into every sandbox and runs the candidate through the wrapper
   // to install a Docker-equivalent syscall blacklist before execve(). Unset
@@ -69,6 +72,7 @@ export function createSandboxEngine(config: SandboxEngineConfig = {}): SandboxEn
   return new IsolateEngine({
     rootfsResolver: new RootfsResolver({ baseDir: config.rootfsBaseDir }),
     boxId: config.isolateBoxId,
+    isolateBinPath: config.isolateBinPath,
     seccomp: config.seccompBundleDir ? { bundleDir: config.seccompBundleDir } : undefined,
   });
 }

@@ -65,6 +65,7 @@ async function connectOnce(languages: LanguageSpec[]): Promise<void> {
   const engine = createSandboxEngine({
     rootfsBaseDir: config.rootfsBaseDir,
     isolateBoxId: config.isolateBoxId,
+    isolateBinPath: config.isolateBinPath,
     seccompBundleDir: config.seccompBundleDir || undefined,
   });
   console.log(`[worker] sandbox engine = ${engine.name}`);

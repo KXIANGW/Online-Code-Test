@@ -122,8 +122,9 @@ make verify-language LANG=python3
 | --- | --- |
 | `RABBITMQ_URL` | RabbitMQ 連線字串 |
 | `DATABASE_URL` | PostgreSQL 連線字串 |
-| `HOST_WORK_DIR` | 用於編譯與測試案例檔案的主機/工作目錄 |
+| `HOST_WORK_DIR` | 用於編譯與測試案例檔案的主機/工作目錄，預設 `/var/lib/oct/judge`；正式環境應使用 Worker 專用目錄，不要使用 public temp |
 | `ROOTFS_BASE_DIR` | 語言 rootfs 目錄樹的根目錄 |
+| `ISOLATE_BIN_PATH` | isolate 執行檔絕對路徑，預設 `/usr/local/bin/isolate`；拒絕相對路徑以避免 PATH lookup |
 | `SECCOMP_BUNDLE_DIR` | 包含 `seccomp-wrapper` 與 `seccomp.policy` 的目錄 |
 | `ISOLATE_BOX_ID` | 可選的 isolate box ID 覆蓋值 |
 | `HEALTH_PORT` | 健康/指標 HTTP 埠號 |
