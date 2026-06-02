@@ -230,7 +230,9 @@ describe("CandidateCreatePage()", () => {
 
   it("resets the result panel and batch form when continuing after a batch success", async () => {
     // given
-    mockCreateUsersBatch.mockResolvedValue([{ username: "candidate_batch_001", password: "pass1" }]);
+    mockCreateUsersBatch.mockResolvedValue([
+      { username: "candidate_batch_001", password: "pass1" },
+    ]);
     renderPage();
     const user = userEvent.setup();
 

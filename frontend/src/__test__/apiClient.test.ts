@@ -467,10 +467,7 @@ describe("response error interceptor", () => {
 
     // expect
     await expect(promise).rejects.toBe(rawError);
-    expect(consoleSpy).toHaveBeenCalledWith(
-      "[API Error] Unexpected non-Axios error:",
-      rawError,
-    );
+    expect(consoleSpy).toHaveBeenCalledWith("[API Error] Unexpected non-Axios error:", rawError);
     consoleSpy.mockRestore();
   });
 });
