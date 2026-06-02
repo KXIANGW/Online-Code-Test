@@ -711,9 +711,7 @@ describe("PUT /api/users/:id/roles", () => {
       url: "/api/users",
       headers: { authorization: `Bearer ${rootToken}` },
     });
-    const found = listRes
-      .json<{ id: number; roles: string[] }[]>()
-      .find((u) => u.id === userId);
+    const found = listRes.json<{ id: number; roles: string[] }[]>().find((u) => u.id === userId);
     if (!found) throw new Error(`user ${userId} missing from list response`);
     return found.roles;
   }
