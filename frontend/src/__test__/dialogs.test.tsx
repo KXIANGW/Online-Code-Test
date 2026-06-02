@@ -83,7 +83,7 @@ describe("dialogs", () => {
     // given
     const user = userEvent.setup();
     const onSaved = vi.fn();
-    vi.mocked(updateUser).mockResolvedValue({} as Awaited<ReturnType<typeof updateUser>>);
+    vi.mocked(updateUser).mockResolvedValue(undefined);
 
     render(<EditCandidateDialog open candidate={candidate} onClose={vi.fn()} onSaved={onSaved} />);
 
@@ -121,7 +121,7 @@ describe("dialogs", () => {
     // given
     const user = userEvent.setup();
     const onSaved = vi.fn();
-    vi.mocked(updateUser).mockResolvedValue({} as Awaited<ReturnType<typeof updateUser>>);
+    vi.mocked(updateUser).mockResolvedValue(undefined);
 
     render(<EditCandidateDialog open candidate={candidate} onClose={vi.fn()} onSaved={onSaved} />);
 
