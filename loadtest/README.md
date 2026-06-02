@@ -164,7 +164,7 @@ ROLE_SCENARIOS=interviewer,problemSetter INTERVIEWER_RPS=10 PROBLEM_SETTER_RPS=1
 
 ```bash
 APP_URL=https://ikmlab.cs.nthu.edu.tw/online_code_test/ \
-CANDIDATE_USERNAME=candidate_20260509_002 \
+CANDIDATE_USERNAME=candidate_20260509_001 \
 CANDIDATE_PASSWORD='Cand@1234' \
 INTERVIEWER_USERNAME=alice \
 INTERVIEWER_PASSWORD='Test@1234' \
@@ -270,7 +270,7 @@ WORKER_REPLICAS=2 make demo-up
 | `DEBUG_FAILURES`           | `false`                                               |
 | `CANDIDATE_WRITE_DRAFTS`   | `false`                                               |
 | `INCLUDE_PASSWORD_LOOKUPS` | `false`                                               |
-| `CANDIDATE_USERNAME`       | `candidate_20260509_002`                              |
+| `CANDIDATE_USERNAME`       | `candidate_20260509_001`                              |
 | `CANDIDATE_PASSWORD`       | `Cand@1234`                                           |
 | `INTERVIEWER_USERNAME`     | `alice`                                               |
 | `INTERVIEWER_PASSWORD`     | `Test@1234`                                           |

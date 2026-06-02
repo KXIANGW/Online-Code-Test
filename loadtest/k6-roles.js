@@ -35,7 +35,7 @@ const ROLE_SCENARIOS = new Set(
 
 const credentials = {
   candidate: {
-    username: __ENV.CANDIDATE_USERNAME ?? "candidate_20260509_002",
+    username: __ENV.CANDIDATE_USERNAME ?? "candidate_20260509_001",
     password: __ENV.CANDIDATE_PASSWORD ?? "Cand@1234",
   },
   interviewer: {
