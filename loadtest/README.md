@@ -9,6 +9,7 @@
 | 檔案               | 用途                                                                                |
 | ------------------ | ----------------------------------------------------------------------------------- |
 | `k6-homepage.js`   | 對部署站首頁做 ramping RPS 測試，用來找可穩定承受的 request per second。            |
+| `k6-roles.js`      | 依角色拆分 anonymous / candidate / interviewer / problem-setter / admin 壓測場景。  |
 | `seed.ts`          | 以面試官身份登入，建立應試者帳號與進行中的 Session，並寫入 `.session-tokens.json`。 |
 | `k6-submit.js`     | 執行 k6 爆量測試，每個虛擬使用者提交一次。                                          |
 | `scale-watcher.sh` | 輪詢 Prometheus 並調整 Docker Compose Worker 副本數量。                             |
@@ -118,6 +119,75 @@ kubectl get pods -n <namespace> -w
 
 首頁測試主要壓到 Ingress 與 frontend 靜態資源路徑。若要測登入、API 查詢或程式碼提交，請另外建立獨立腳本，避免把不同瓶頸混在同一個 RPS 數字裡。
 
+## 依角色壓測
+
+`k6-roles.js` 會把不同角色拆成獨立 k6 scenario，讓結果可以依 `role` tag 區分。預設流程以讀取為主，不會新增題目、不會新增使用者、不會提交程式碼。程式碼提交請使用既有的 `k6-submit.js`，因為它需要先 seed 多個 candidate session。
+
+預設角色與流量：
+
+| 角色            | 預設 RPS | 主要測試內容                                         |
+| --------------- | -------- | ---------------------------------------------------- |
+| `anonymous`     | `20`     | 首頁與首頁引用的 JS/CSS/assets。                     |
+| `candidate`     | `5`      | 場次列表、場次詳情、題目、草稿、提交紀錄、公開測資。 |
+| `interviewer`   | `2`      | 使用者列表、考試場次、考卷模板、題目、違規紀錄。     |
+| `problemSetter` | `2`      | 題目列表、題目詳情、語言列表。                       |
+| `admin`         | `1`      | Root dashboard 常用讀取 API。                        |
+
+跑全部角色：
+
+```bash
+k6 run loadtest/k6-roles.js
+```
+
+先用 30 秒 smoke 確認帳號與 API 都可用：
+
+```bash
+DURATION=30s \
+ANON_RPS=1 \
+CANDIDATE_RPS=1 \
+INTERVIEWER_RPS=1 \
+PROBLEM_SETTER_RPS=1 \
+ADMIN_RPS=1 \
+k6 run loadtest/k6-roles.js
+```
+
+只跑特定角色：
+
+```bash
+ROLE_SCENARIOS=candidate CANDIDATE_RPS=20 DURATION=5m k6 run loadtest/k6-roles.js
+ROLE_SCENARIOS=interviewer,problemSetter INTERVIEWER_RPS=10 PROBLEM_SETTER_RPS=10 DURATION=5m k6 run loadtest/k6-roles.js
+```
+
+指定部署 URL 與帳密：
+
+部署站不一定有本地 seed 的預設帳密；若登入出現 `401`，請改用部署環境實際存在的測試帳號。
+
+```bash
+APP_URL=https://ikmlab.cs.nthu.edu.tw/online_code_test/ \
+CANDIDATE_USERNAME=candidate_20260509_002 \
+CANDIDATE_PASSWORD='Cand@1234' \
+INTERVIEWER_USERNAME=alice \
+INTERVIEWER_PASSWORD='Test@1234' \
+PROBLEM_SETTER_USERNAME=carol \
+PROBLEM_SETTER_PASSWORD='Test@1234' \
+ADMIN_USERNAME=root \
+ADMIN_PASSWORD='Root@1234' \
+k6 run loadtest/k6-roles.js
+```
+
+如果 API 不在 `APP_URL/api`，可以直接覆蓋：
+
+```bash
+API_URL=https://ikmlab.cs.nthu.edu.tw/online_code_test/api k6 run loadtest/k6-roles.js
+```
+
+可選的寫入/敏感讀取開關預設關閉：
+
+```bash
+CANDIDATE_WRITE_DRAFTS=true ROLE_SCENARIOS=candidate k6 run loadtest/k6-roles.js
+INCLUDE_PASSWORD_LOOKUPS=true ROLE_SCENARIOS=interviewer k6 run loadtest/k6-roles.js
+```
+
 ## 一鍵示範
 
 ```bash
@@ -180,6 +250,34 @@ WORKER_REPLICAS=2 make demo-up
 | `PRE_ALLOCATED_VUS` | `100`                                             |
 | `MAX_VUS`           | `1000`                                            |
 | `DEBUG_FAILURES`    | `false`                                           |
+
+`k6-roles.js`：
+
+| 變數                       | 預設值                                                |
+| -------------------------- | ----------------------------------------------------- |
+| `APP_URL`                  | `https://ikmlab.cs.nthu.edu.tw/online_code_test/`     |
+| `API_URL`                  | `${APP_URL}/api`                                      |
+| `ROLE_SCENARIOS`           | `anonymous,candidate,interviewer,problemSetter,admin` |
+| `DURATION`                 | `5m`                                                  |
+| `ANON_RPS`                 | `20`                                                  |
+| `CANDIDATE_RPS`            | `5`                                                   |
+| `INTERVIEWER_RPS`          | `2`                                                   |
+| `PROBLEM_SETTER_RPS`       | `2`                                                   |
+| `ADMIN_RPS`                | `1`                                                   |
+| `PRE_ALLOCATED_VUS`        | `50`                                                  |
+| `MAX_VUS`                  | `500`                                                 |
+| `FETCH_ASSETS`             | `true`                                                |
+| `DEBUG_FAILURES`           | `false`                                               |
+| `CANDIDATE_WRITE_DRAFTS`   | `false`                                               |
+| `INCLUDE_PASSWORD_LOOKUPS` | `false`                                               |
+| `CANDIDATE_USERNAME`       | `candidate_20260509_002`                              |
+| `CANDIDATE_PASSWORD`       | `Cand@1234`                                           |
+| `INTERVIEWER_USERNAME`     | `alice`                                               |
+| `INTERVIEWER_PASSWORD`     | `Test@1234`                                           |
+| `PROBLEM_SETTER_USERNAME`  | `carol`                                               |
+| `PROBLEM_SETTER_PASSWORD`  | `Test@1234`                                           |
+| `ADMIN_USERNAME`           | `root`                                                |
+| `ADMIN_PASSWORD`           | `Root@1234`                                           |
 
 `scale-watcher.sh`：
 
