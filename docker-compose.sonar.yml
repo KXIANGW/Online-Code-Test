@@ -1,0 +1,105 @@
+# Local SonarQube — code quality scanning for OCT (frontend / backend / worker).
+#
+# Usage:
+#   1. docker compose -f docker-compose.sonar.yml up -d sonarqube
+#      → wait ~90s for first boot (UI: http://localhost:9000, admin/admin)
+#   2. UI → Administration → Security → Users → Tokens → generate one
+#      → export SONAR_TOKEN=<the token>
+#   3. Generate lcov coverage in each tree:
+#        (cd frontend && npx vitest run --coverage)
+#        (cd backend  && npx vitest run --coverage)
+#        (cd worker   && npx vitest run --coverage)   # see note in README
+#   4. docker compose -f docker-compose.sonar.yml --profile scan run --rm scanner
+#   5. Open http://localhost:9000/dashboard?id=oct
+#
+# Shutdown without losing analysis history:
+#   docker compose -f docker-compose.sonar.yml down
+# Full reset (drops DB + scan history):
+#   docker compose -f docker-compose.sonar.yml down -v
+
+services:
+  sonar-db:
+    image: postgres:16.4-alpine
+    container_name: oct-sonar-db
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar_dev_password_change_me
+      POSTGRES_DB: sonarqube
+    volumes:
+      - sonar_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar -d sonarqube"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - sonar
+
+  sonarqube:
+    image: sonarqube:10.7.0-community
+    container_name: oct-sonarqube
+    depends_on:
+      sonar-db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonar-db:5432/sonarqube
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar_dev_password_change_me
+      # Disable Elasticsearch bootstrap checks — required to run on Docker Desktop / OrbStack
+      # without tweaking host vm.max_map_count.
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonar_data:/opt/sonarqube/data
+      - sonar_extensions:/opt/sonarqube/extensions
+      - sonar_logs:/opt/sonarqube/logs
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      # The status endpoint reports "UP" once Elasticsearch + WebServer + ComputeEngine are ready.
+      test:
+        - CMD-SHELL
+        - >-
+          wget -q -O - http://localhost:9000/api/system/status
+          | grep -q '"status":"UP"' || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - sonar
+
+  # One-shot scanner. Not started by default; invoke explicitly with --profile scan:
+  #   SONAR_TOKEN=<token> docker compose -f docker-compose.sonar.yml --profile scan run --rm scanner
+  scanner:
+    image: sonarsource/sonar-scanner-cli:11.1
+    container_name: oct-sonar-scanner
+    profiles: ["scan"]
+    depends_on:
+      sonarqube:
+        condition: service_healthy
+    environment:
+      # Inside the compose network the SonarQube hostname is "sonarqube"; this overrides
+      # whatever sonar.host.url is in sonar-project.properties.
+      SONAR_HOST_URL: http://sonarqube:9000
+      # If unset, sonar-scanner-cli aborts with a clear "Not authorized" message.
+      SONAR_TOKEN: ${SONAR_TOKEN:-}
+    volumes:
+      - .:/usr/src
+    working_dir: /usr/src
+    networks:
+      - sonar
+
+volumes:
+  sonar_db: {}
+  sonar_data: {}
+  sonar_extensions: {}
+  sonar_logs: {}
+
+networks:
+  sonar: {}
