@@ -1,3 +1,4 @@
+import os from "node:os";
 import Fastify from "fastify";
 import sensible from "@fastify/sensible";
 import websocket from "@fastify/websocket";
@@ -22,6 +23,12 @@ import { assertSessionResultAccess } from "./services/submission.service";
 import { subscribeToSession, unsubscribeClient } from "./ws/hub";
 import { closeSessionEventBus, startSessionEventBus } from "./ws/session-events";
 
+// Identifies the backend pod + node that served a response. Surfaced as the
+// X-Served-By header so an HA drill (`curl -I` in a loop while a node is
+// drained) visibly shows the value switch to the surviving node. NODE_NAME is
+// injected via the Downward API in k8s; os.hostname() is the pod name.
+const SERVED_BY = `${os.hostname()}@${process.env["NODE_NAME"] ?? "local"}`;
+
 export async function buildApp() {
   const app = Fastify({
     logger: {
@@ -35,6 +42,11 @@ export async function buildApp() {
   await app.register(sensible);
   await app.register(websocket);
   await app.register(jwtPlugin);
+
+  // Stamp the serving pod@node on every response (HA visibility).
+  app.addHook("onRequest", async (_request, reply) => {
+    reply.header("X-Served-By", SERVED_BY);
+  });
 
   // Record HTTP RED metrics for every request. Uses the matched route URL
   // (e.g. /api/exam-sessions/:sessionId/submissions) so cardinality is bounded.
