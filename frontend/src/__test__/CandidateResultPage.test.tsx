@@ -351,4 +351,96 @@ describe("CandidateResultPage", () => {
 
     expect(screen.getByText("judging")).toBeInTheDocument();
   });
+
+  it("judge_result message updates verdict and score in the history list", async () => {
+    // given
+    await renderPage();
+
+    // when: formal judge_result arrives for the pending submission
+    act(() => {
+      realtimeHandler?.({
+        type: "judge_result",
+        submissionId: 9002,
+        examSessionProblemId: 102,
+        sessionId: 42,
+        status: "done",
+        verdict: "WA",
+        runtimeMs: 30,
+        memoryKb: 2048,
+        judgedAt: "2026-01-01T00:20:05.000Z",
+        submissionType: "formal",
+        score: 0,
+        testcaseResults: [],
+      });
+    });
+
+    // expect: history row for submission 9002 now shows verdict WA
+    await waitFor(() => expect(screen.getByText("WA")).toBeInTheDocument());
+  });
+
+  it("shows 未作答 when a problem has no submission", async () => {
+    // given: one problem with no_submission status
+    mockGetSessionResult.mockResolvedValue({
+      ...sessionResult,
+      problems: [
+        {
+          ...sessionResult.problems[0]!,
+          latestStatus: "no_submission",
+          latestSubmissionId: null,
+          finalSubmissionId: null,
+          score: 0,
+          runtimeMs: null,
+          memoryKb: null,
+          submittedAt: null,
+          judgedAt: null,
+        },
+      ],
+    });
+
+    // when
+    await renderPage();
+
+    // expect
+    expect(screen.getByText("未作答")).toBeInTheDocument();
+  });
+
+  it("expands problem detail and shows testcase table", async () => {
+    // given: problem 1 has finalSubmissionId 9001 → "查看詳情 ▶" available
+    await renderPage();
+
+    // when: click the problem section expand button
+    await act(async () => {
+      screen.getByRole("button", { name: "查看詳情 ▶" }).click();
+    });
+
+    // expect: testcase rows appear (submissionDetail has 2 testcases)
+    expect(await screen.findByText("公開測資 1")).toBeInTheDocument();
+    expect(screen.getByText("隱藏測資 2")).toBeInTheDocument();
+    expect(mockGetSubmissionDetail).toHaveBeenCalledWith(42, 9001);
+  });
+
+  it("shows error when problem detail fetch fails", async () => {
+    // given
+    mockGetSubmissionDetail.mockRejectedValue(new Error("network error"));
+    await renderPage();
+
+    // when
+    await act(async () => {
+      screen.getByRole("button", { name: "查看詳情 ▶" }).click();
+    });
+
+    // expect
+    expect(await screen.findByText("無法載入測資結果")).toBeInTheDocument();
+  });
+
+  it("shows 尚無提交紀錄 when submission list is empty", async () => {
+    // given
+    mockListSessionSubmissions.mockResolvedValue([]);
+
+    // when
+    await renderPage();
+
+    // expect
+    expect(screen.getByText("尚無提交紀錄")).toBeInTheDocument();
+  });
 });
