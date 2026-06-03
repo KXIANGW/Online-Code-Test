@@ -13,6 +13,11 @@ scrape_configs:
           - backend:3000
         labels:
           app: backend
+          # Single-host parity with k3s: the k3s scrape adds node/pod via
+          # kubernetes_sd relabel, so the shared dashboards' "by node"/"by pod"
+          # panels render a labelled series here too (one synthetic node).
+          node: compose
+          pod: backend
 
   - job_name: worker
     metrics_path: /metrics
@@ -33,6 +38,8 @@ scrape_configs:
     relabel_configs:
       - source_labels: [__meta_dns_name]
         target_label: dns_name
+      - target_label: node
+        replacement: compose
 
   - job_name: frontend
     # nginx-prometheus-exporter in front of the frontend nginx stub_status.
@@ -41,6 +48,8 @@ scrape_configs:
           - frontend-exporter:9113
         labels:
           app: frontend
+          node: compose
+          pod: frontend
     scrape_interval: 5s
 
   - job_name: cadvisor
