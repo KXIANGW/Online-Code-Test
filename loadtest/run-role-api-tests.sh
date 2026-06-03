@@ -18,6 +18,11 @@ DURATION="${DURATION:-5m}"
 PRE_ALLOCATED_VUS="${PRE_ALLOCATED_VUS:-50}"
 MAX_VUS="${MAX_VUS:-500}"
 DRY_RUN="${DRY_RUN:-false}"
+ANON_RPS="${ANON_RPS:-40}"
+CANDIDATE_RPS="${CANDIDATE_RPS:-5}"
+INTERVIEWER_RPS="${INTERVIEWER_RPS:-2}"
+PROBLEM_SETTER_RPS="${PROBLEM_SETTER_RPS:-2}"
+ADMIN_RPS="${ADMIN_RPS:-1}"
 
 mkdir -p "$REPORT_DIR"
 
@@ -38,11 +43,11 @@ fi
 
 role_rps() {
   case "$1" in
-    anonymous) echo "${ANON_RPS:-20}" ;;
-    candidate) echo "${CANDIDATE_RPS:-5}" ;;
-    interviewer) echo "${INTERVIEWER_RPS:-2}" ;;
-    problemSetter) echo "${PROBLEM_SETTER_RPS:-2}" ;;
-    admin) echo "${ADMIN_RPS:-1}" ;;
+    anonymous) echo "${ANON_RPS}" ;;
+    candidate) echo "${CANDIDATE_RPS}" ;;
+    interviewer) echo "${INTERVIEWER_RPS}" ;;
+    problemSetter) echo "${PROBLEM_SETTER_RPS}" ;;
+    admin) echo "${ADMIN_RPS}" ;;
     *)
       echo "Unknown role: $1" >&2
       exit 1
@@ -83,11 +88,11 @@ write_report_header() {
     echo "API_URL=${api_url}"
     echo "DURATION=${DURATION}"
     echo "ROLES=${ROLES}"
-    echo "ANON_RPS=${ANON_RPS:-20}"
-    echo "CANDIDATE_RPS=${CANDIDATE_RPS:-5}"
-    echo "INTERVIEWER_RPS=${INTERVIEWER_RPS:-2}"
-    echo "PROBLEM_SETTER_RPS=${PROBLEM_SETTER_RPS:-2}"
-    echo "ADMIN_RPS=${ADMIN_RPS:-1}"
+    echo "ANON_RPS=${ANON_RPS}"
+    echo "CANDIDATE_RPS=${CANDIDATE_RPS}"
+    echo "INTERVIEWER_RPS=${INTERVIEWER_RPS}"
+    echo "PROBLEM_SETTER_RPS=${PROBLEM_SETTER_RPS}"
+    echo "ADMIN_RPS=${ADMIN_RPS}"
     echo "PRE_ALLOCATED_VUS=${PRE_ALLOCATED_VUS}"
     echo "MAX_VUS=${MAX_VUS}"
     echo "FETCH_ASSETS=${FETCH_ASSETS:-true}"
