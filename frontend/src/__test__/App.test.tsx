@@ -67,13 +67,13 @@ describe("App route guards", () => {
     expect(screen.getByText("🚫 存取拒絕")).toBeInTheDocument();
   });
 
-  it("allows superusers to access admin-only routes", () => {
+  it("allows superusers to access admin-only routes", async () => {
     window.history.pushState({}, "", "/admin");
     setAuth({ token: "token", isSuperuser: true, permissions: [] });
 
     render(<App />);
 
-    expect(screen.getByText("Admin Dashboard")).toBeInTheDocument();
+    expect(await screen.findByText("Admin Dashboard")).toBeInTheDocument();
   });
 
   it("redirects authenticated login visits to the highest-priority role page", async () => {

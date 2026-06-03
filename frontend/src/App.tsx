@@ -1,17 +1,18 @@
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import LoginPage from "./pages/LoginPage";
-import DashboardPage from "./pages/DashboardPage"; // 考生: exam:take
-import InterviewerDashboardPage from "./pages/InterviewerDashboardPage"; // 面試官: exam:manage
-import AdminDashboardPage from "./pages/AdminDashboardPage"; // Root: is_superuser
-import ExamResultPage from "./pages/ExamResultPage";
-import ProblemSetterDashboardPage from "./pages/ProblemSetterDashboardPage";
-import ProblemFormPage from "./pages/ProblemFormPage";
-import CandidateCreatePage from "./pages/CandidateCreatePage";
-import TemplateCreatePage from "./pages/TemplateCreatePage";
-import TemplateAssignPage from "./pages/TemplateAssignPage";
-import ExamPage from "./pages/ExamPage";
-import CandidateResultPage from "./pages/CandidateResultPage";
+
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const InterviewerDashboardPage = lazy(() => import("./pages/InterviewerDashboardPage"));
+const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage"));
+const ExamResultPage = lazy(() => import("./pages/ExamResultPage"));
+const ProblemSetterDashboardPage = lazy(() => import("./pages/ProblemSetterDashboardPage"));
+const ProblemFormPage = lazy(() => import("./pages/ProblemFormPage"));
+const CandidateCreatePage = lazy(() => import("./pages/CandidateCreatePage"));
+const TemplateCreatePage = lazy(() => import("./pages/TemplateCreatePage"));
+const TemplateAssignPage = lazy(() => import("./pages/TemplateAssignPage"));
+const ExamPage = lazy(() => import("./pages/ExamPage"));
+const CandidateResultPage = lazy(() => import("./pages/CandidateResultPage"));
 import { useAuthStore } from "./stores/authStore";
 import { PERMISSIONS, type Permission } from "./config/permissions";
 
@@ -108,144 +109,146 @@ export default function App() {
 
   return (
     <BrowserRouter basename={routerBasePath}>
-      <Routes>
-        {/* 公共路徑 */}
-        <Route path="/login" element={token ? <RoleRedirect /> : <LoginPage />} />
+      <Suspense fallback={<div className="p-8 text-center text-slate-500">載入中...</div>}>
+        <Routes>
+          {/* 公共路徑 */}
+          <Route path="/login" element={token ? <RoleRedirect /> : <LoginPage />} />
 
-        {/* 管理員路徑：onlyAdmin 為簡寫，意同 onlyAdmin={true} */}
-        <Route
-          path="/admin"
-          element={
-            <RoleBasedRoute onlyAdmin>
-              <AdminDashboardPage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 管理員路徑：onlyAdmin 為簡寫，意同 onlyAdmin={true} */}
+          <Route
+            path="/admin"
+            element={
+              <RoleBasedRoute onlyAdmin>
+                <AdminDashboardPage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 面試官路徑：要求 exam:manage */}
-        <Route
-          path="/interviewer"
-          element={
-            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
-              <InterviewerDashboardPage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 面試官路徑：要求 exam:manage */}
+          <Route
+            path="/interviewer"
+            element={
+              <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
+                <InterviewerDashboardPage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 考生路徑：要求 exam:take */}
-        <Route
-          path="/candidate"
-          element={
-            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_TAKE}>
-              <DashboardPage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 考生路徑：要求 exam:take */}
+          <Route
+            path="/candidate"
+            element={
+              <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_TAKE}>
+                <DashboardPage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 出題主管：題目列表 */}
-        <Route
-          path="/problem-setter"
-          element={
-            <RoleBasedRoute requiredPermission={PERMISSIONS.PROBLEM_MANAGE}>
-              <ProblemSetterDashboardPage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 出題主管：題目列表 */}
+          <Route
+            path="/problem-setter"
+            element={
+              <RoleBasedRoute requiredPermission={PERMISSIONS.PROBLEM_MANAGE}>
+                <ProblemSetterDashboardPage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 出題主管：新增題目 */}
-        <Route
-          path="/problem-setter/new"
-          element={
-            <RoleBasedRoute requiredPermission={PERMISSIONS.PROBLEM_MANAGE}>
-              <ProblemFormPage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 出題主管：新增題目 */}
+          <Route
+            path="/problem-setter/new"
+            element={
+              <RoleBasedRoute requiredPermission={PERMISSIONS.PROBLEM_MANAGE}>
+                <ProblemFormPage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 出題主管：編輯題目 */}
-        <Route
-          path="/problem-setter/:id/edit"
-          element={
-            <RoleBasedRoute requiredPermission={PERMISSIONS.PROBLEM_MANAGE}>
-              <ProblemFormPage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 出題主管：編輯題目 */}
+          <Route
+            path="/problem-setter/:id/edit"
+            element={
+              <RoleBasedRoute requiredPermission={PERMISSIONS.PROBLEM_MANAGE}>
+                <ProblemFormPage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 面試官：建立考生帳號 */}
-        <Route
-          path="/interviewer/candidates/new"
-          element={
-            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
-              <CandidateCreatePage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 面試官：建立考生帳號 */}
+          <Route
+            path="/interviewer/candidates/new"
+            element={
+              <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
+                <CandidateCreatePage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 面試官：建立考試模板 */}
-        <Route
-          path="/interviewer/templates/new"
-          element={
-            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
-              <TemplateCreatePage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 面試官：建立考試模板 */}
+          <Route
+            path="/interviewer/templates/new"
+            element={
+              <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
+                <TemplateCreatePage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 面試官：編輯考試模板 */}
-        <Route
-          path="/interviewer/templates/:id/edit"
-          element={
-            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
-              <TemplateCreatePage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 面試官：編輯考試模板 */}
+          <Route
+            path="/interviewer/templates/:id/edit"
+            element={
+              <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
+                <TemplateCreatePage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 面試官：分配考試 */}
-        <Route
-          path="/interviewer/templates/:id/assign"
-          element={
-            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
-              <TemplateAssignPage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 面試官：分配考試 */}
+          <Route
+            path="/interviewer/templates/:id/assign"
+            element={
+              <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
+                <TemplateAssignPage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 考生：考試頁 */}
-        <Route
-          path="/exam/:id"
-          element={
-            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_TAKE}>
-              <ExamPage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 考生：考試頁 */}
+          <Route
+            path="/exam/:id"
+            element={
+              <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_TAKE}>
+                <ExamPage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 考生：交卷後結果頁 */}
-        <Route
-          path="/exam/:id/result"
-          element={
-            <RoleBasedRoute requiredPermission="exam:take">
-              <CandidateResultPage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 考生：交卷後結果頁 */}
+          <Route
+            path="/exam/:id/result"
+            element={
+              <RoleBasedRoute requiredPermission="exam:take">
+                <CandidateResultPage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 面試官：考試結果頁 */}
-        <Route
-          path="/result/:id"
-          element={
-            <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
-              <ExamResultPage />
-            </RoleBasedRoute>
-          }
-        />
+          {/* 面試官：考試結果頁 */}
+          <Route
+            path="/result/:id"
+            element={
+              <RoleBasedRoute requiredPermission={PERMISSIONS.EXAM_MANAGE}>
+                <ExamResultPage />
+              </RoleBasedRoute>
+            }
+          />
 
-        {/* 根路徑導向 */}
-        <Route path="/" element={token ? <RoleRedirect /> : <Navigate to="/login" replace />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          {/* 根路徑導向 */}
+          <Route path="/" element={token ? <RoleRedirect /> : <Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }
