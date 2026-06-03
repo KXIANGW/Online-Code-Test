@@ -43,6 +43,20 @@ describe("system routes", () => {
       dbLatencyMs: expect.any(Number),
     });
   });
+
+  it("GET /api/metrics returns Prometheus exposition text with known metric names", async () => {
+    // given / when
+    const res = await app.inject({ method: "GET", url: "/api/metrics" });
+
+    // expect: 200 with Prometheus text format
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/text\/plain/);
+    // exposition format always starts with HELP comment blocks
+    expect(res.body).toMatch(/^# HELP /m);
+    // application-defined counters should appear
+    expect(res.body).toContain("submission_created_total");
+    expect(res.body).toContain("submission_completed_total");
+  });
 });
 
 describe("GET /api/ws", () => {
