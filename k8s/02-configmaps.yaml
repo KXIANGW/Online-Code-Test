@@ -96,6 +96,29 @@ data:
           - target_label: app
             replacement: cadvisor
 
+      # frontend nginx exporter (sidecar) — per-pod ingress request/connection
+      # counts; with externalTrafficPolicy=Local the per-node rate is the
+      # external IKM nginx's actual load distribution across nodes.
+      - job_name: frontend
+        scrape_interval: 5s
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [oct]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: frontend
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: "9113"
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - target_label: app
+            replacement: frontend
+
       # kube-state-metrics — cluster object state (pod readiness by node,
       # deployment replicas, HPA/KEDA desired-vs-current, node Ready) for the
       # Load Balancing & Resilience and scaling panels.

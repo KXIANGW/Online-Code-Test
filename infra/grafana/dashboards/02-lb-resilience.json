@@ -17,7 +17,7 @@
       "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
-        "content": "**Traffic path:** external IKM nginx (`upstream oct_frontend`, round-robin over the ikmlab + 9105 node entry ports) → NodePort 31000 → kube-proxy → frontend pod → backend ClusterIP → backend pod.\n\n**Is traffic going through the LB?** The *Backend request rate by node* panel should show ~50/50 across both nodes. All traffic on one node = not load-balanced.\n\n**Node-down drill:** `kubectl cordon <node>` then delete that node's pods (or power it off). Expect: that node's request rate → 0, the survivor absorbs it, *5xx ratio* stays flat, pods reschedule, replicas recover. The external nginx ejecting the dead upstream is what you see as the per-node traffic shift (k3s-only board; panels backed by kube-state-metrics show *No data* under docker-compose)."
+        "content": "**Traffic path:** external IKM nginx (`upstream oct_frontend`, round-robin over the ikmlab + 9105 node entry ports) → NodePort 31000 → kube-proxy → frontend pod → backend ClusterIP → backend pod.\n\n**Is traffic going through the LB?** *Frontend ingress requests by node* is the faithful view — it's the external IKM nginx's actual per-node distribution (ingress is node-local via externalTrafficPolicy=Local). *Backend request rate by node* shows the cluster's own kube-proxy balancing across backend pods. Per-request, `curl -I` shows `X-Frontend-Pod` and `X-Served-By: pod@node`.\n\n**Node-down drill:** `kubectl cordon <node>` then delete that node's pods (or power it off). Expect: that node's request rate → 0, the survivor absorbs it, *5xx ratio* stays flat, pods reschedule, replicas recover. The external nginx ejecting the dead upstream is what you see as the per-node traffic shift (k3s-only board; panels backed by kube-state-metrics show *No data* under docker-compose)."
       }
     },
     {
@@ -66,10 +66,21 @@
     },
     {
       "type": "timeseries",
-      "title": "Backend request rate by node (LB distribution)",
+      "title": "Frontend ingress requests by node (external LB entry)",
+      "id": 14,
+      "description": "From the frontend nginx stub_status exporter. With externalTrafficPolicy=Local each node serves only its own frontend pod, so this is the external IKM nginx's actual per-node distribution. Under load both nodes rise together; on node-down one drops to 0.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "sum by (node) (rate(nginx_http_requests_total{job=\"frontend\"}[1m]))", "refId": "A", "legendFormat": "{{node}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 30, "stacking": { "mode": "normal" } } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Backend request rate by node",
       "id": 6,
-      "description": "Proves round-robin spread across nodes. On node-down, the dead node's series drops to 0 and the survivor absorbs the load.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "description": "Backend serving spread across nodes (kube-proxy balances the ClusterIP). On node-down, the dead node's series drops to 0 and the survivor absorbs the load.",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
       "targets": [
         { "expr": "sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m]))", "refId": "A", "legendFormat": "{{node}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
       ],
@@ -79,7 +90,7 @@
       "type": "timeseries",
       "title": "Backend request rate by pod",
       "id": 7,
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
       "targets": [
         { "expr": "sum by (pod) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m]))", "refId": "A", "legendFormat": "{{pod}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
       ],
