@@ -21,6 +21,11 @@ DRY_RUN="${DRY_RUN:-false}"
 
 mkdir -p "$REPORT_DIR"
 
+SUMMARY_TMP="${REPORT_DIR}/.summary-rows.tmp"
+DETAILS_TMP="${REPORT_DIR}/.details.tmp"
+> "$SUMMARY_TMP"
+> "$DETAILS_TMP"
+
 if ! command -v k6 >/dev/null 2>&1; then
   echo "k6 is required. Install with: brew install k6" >&2
   exit 1
@@ -75,8 +80,8 @@ write_report_header() {
     echo
     echo "## Summary"
     echo
-    echo "| Role | Target RPS | Actual RPS | Requests | Failed % | p95 ms | p99 ms | Check failures | Dropped iterations | Result |"
-    echo "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"
+    echo "| Role | Target RPS | Actual RPS | Requests | Failed (n) | Failed % | Avg ms | p95 ms | p99 ms | Check failures | Dropped iterations | Result |"
+    echo "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"
   } >"$REPORT_PATH"
 }
 
@@ -86,7 +91,7 @@ append_summary_row() {
   local summary_json="$3"
   local exit_code="$4"
 
-  node - "$role" "$target_rps" "$summary_json" "$exit_code" >>"$REPORT_PATH" <<'NODE'
+  node - "$role" "$target_rps" "$summary_json" "$exit_code" >>"$SUMMARY_TMP" <<'NODE'
 const fs = require("node:fs");
 
 const [role, targetRps, summaryPath, exitCodeText] = process.argv.slice(2);
@@ -106,7 +111,10 @@ function fixed(number, digits) {
 
 const requests = value("http_reqs", "count");
 const actualRps = value("http_reqs", "rate");
-const failedRate = value("http_req_failed", "rate") * 100;
+// http_req_failed is a Rate metric: "passes" = failed requests count, "value" = rate (0-1)
+const failedCount = value("http_req_failed", "passes");
+const failedRate = value("http_req_failed", "value") * 100;
+const avgMs = value("http_req_duration", "avg");
 const p95 = value("http_req_duration", "p(95)");
 const p99 = value("http_req_duration", "p(99)");
 const checkFailures = value("role_check_failures", "count") || value("checks_failed", "count");
@@ -114,7 +122,7 @@ const dropped = value("dropped_iterations", "count");
 const result = exitCode === 0 ? "PASS" : "FAIL";
 
 console.log(
-  `| ${role} | ${targetRps} | ${fixed(actualRps, 2)} | ${requests} | ${fixed(failedRate, 2)} | ${fixed(p95, 2)} | ${fixed(p99, 2)} | ${checkFailures} | ${dropped} | ${result} |`,
+  `| ${role} | ${targetRps} | ${fixed(actualRps, 2)} | ${requests} | ${failedCount} | ${fixed(failedRate, 2)} | ${fixed(avgMs, 2)} | ${fixed(p95, 2)} | ${fixed(p99, 2)} | ${checkFailures} | ${dropped} | ${result} |`,
 );
 NODE
 }
@@ -135,7 +143,56 @@ append_detail_section() {
     echo "- k6 log: ${log_path}"
     echo "- Exit code: ${exit_code}"
     echo
-  } >>"$REPORT_PATH"
+  } >>"$DETAILS_TMP"
+
+  # Per-check failure breakdown
+  node - "$summary_json" >>"$DETAILS_TMP" <<'NODE'
+const fs = require("node:fs");
+const [summaryPath] = process.argv.slice(2);
+const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
+
+function collectChecks(group, rows) {
+  for (const check of Object.values(group.checks ?? {})) {
+    const total = (check.passes ?? 0) + (check.fails ?? 0);
+    if (total > 0) rows.push({ name: check.name, passes: check.passes ?? 0, fails: check.fails ?? 0, total });
+  }
+  for (const sub of Object.values(group.groups ?? {})) collectChecks(sub, rows);
+}
+
+const rows = [];
+collectChecks(summary.root_group ?? {}, rows);
+if (rows.length === 0) process.exit(0);
+
+console.log("### Check results\n");
+console.log("| Check | Pass | Fail | Pass % |");
+console.log("| --- | ---: | ---: | ---: |");
+for (const r of rows) {
+  const pct = ((r.passes / r.total) * 100).toFixed(1);
+  const mark = r.fails > 0 ? "✗" : "✓";
+  console.log(`| ${mark} ${r.name} | ${r.passes} | ${r.fails} | ${pct}% |`);
+}
+console.log();
+NODE
+
+  # Error type summary from log (top 10, only if errors exist)
+  local error_summary
+  error_summary=$(grep 'Request Failed' "$log_path" 2>/dev/null \
+    | sed 's/.*error="\(.*\)"/\1/' \
+    | sed 's/\\"/"/g' \
+    | sed 's/Get "http[^"]*": //' \
+    | sort | uniq -c | sort -rn | head -10 || true)
+
+  if [[ -n "$error_summary" ]]; then
+    {
+      echo "### Request error breakdown"
+      echo
+      echo "\`\`\`"
+      echo "  count  error"
+      echo "$error_summary"
+      echo "\`\`\`"
+      echo
+    } >>"$DETAILS_TMP"
+  fi
 }
 
 write_report_header
@@ -176,6 +233,11 @@ for role in $ROLES; do
     overall_exit=1
   fi
 done
+
+# Assemble: header (already in REPORT_PATH) → all summary rows → all detail sections
+cat "$SUMMARY_TMP" >> "$REPORT_PATH"
+cat "$DETAILS_TMP" >> "$REPORT_PATH"
+rm -f "$SUMMARY_TMP" "$DETAILS_TMP"
 
 cat >>"$REPORT_PATH" <<'EOF'
 
