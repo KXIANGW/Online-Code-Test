@@ -300,3 +300,156 @@ kubectl logs -n ingress-nginx deploy/ingress-nginx-controller -f
 | `PROBLEM_SETTER_PASSWORD`  | `Test@1234`                                           |
 | `ADMIN_USERNAME`           | `root`                                                |
 | `ADMIN_PASSWORD`           | `Root@1234`                                           |
+
+---
+
+## 瓶頸壓測
+
+系統最可能的三個寫入瓶頸，對應不同的後端路徑：
+
+| 場景 | 端點 | 後端路徑 | 腳本 |
+| --- | --- | --- | --- |
+| 同時進入考場 | `POST /exam-sessions/:id/start` | DB 狀態機轉換（no MQ） | `k6-start.js` |
+| 同時 Run 公開測資 | `POST /exam-sessions/:id/submissions` (type=simple) | DB write + MQ publish + Worker | `k6-submit.js` |
+| 同時正式提交 | `POST /exam-sessions/:id/submissions` (type=formal) | DB write + MQ publish + Worker + scoring | `k6-submit.js` |
+
+---
+
+### 場景一：同時進入考場（`k6-start.js`）
+
+測試所有考生同時觸發 `/start` 時，DB 狀態機在高併發下的事務隔離能力。
+此路徑不走 RabbitMQ，瓶頸純粹在 PostgreSQL 寫入吞吐量。
+
+**重要：每個 session 只能 start 一次（狀態轉換不可逆），每次測試前必須重新 seed。**
+
+Step 1：產生 `not_started` sessions
+
+```bash
+cd loadtest
+npx tsx seed-start.ts          # 預設 N=100
+N=200 npx tsx seed-start.ts    # 調整並發數
+```
+
+Step 2：執行突發壓測
+
+```bash
+k6 run loadtest/k6-start.js
+```
+
+調整並發數（VUS 須 <= seed 時的 N）：
+
+```bash
+VUS=200 k6 run loadtest/k6-start.js
+```
+
+本地 docker compose 環境：
+
+```bash
+VUS=100 BASE_URL=http://localhost:3000/api k6 run loadtest/k6-start.js
+```
+
+**如何判斷瓶頸**：若 `p95 > 2000ms` 或 `start_failures > 0`，代表 DB connection pool 或 row lock 已飽和。
+同時觀察：
+
+```bash
+kubectl top pods -n <namespace>    # 看 backend pod CPU/Memory
+kubectl logs -n <namespace> deploy/<backend> -f  # 看 connection pool 錯誤
+```
+
+---
+
+### 場景二：同時 Run 公開測資（`k6-submit.js` with `SUBMISSION_TYPE=simple`）
+
+測試考生在考試中頻繁按「Run」時的系統吞吐量。
+type=simple 只跑公開測資、不更新分數，session 狀態維持 `in_progress`，**可重複觸發**。
+
+Step 1：seed（與 formal submit 共用，已有 session 可跳過）
+
+```bash
+cd loadtest
+npx tsx seed.ts          # 預設 N=100
+```
+
+Step 2：執行突發壓測
+
+```bash
+SUBMISSION_TYPE=simple k6 run loadtest/k6-submit.js
+```
+
+高並發變體：
+
+```bash
+VUS=200 SUBMISSION_TYPE=simple k6 run loadtest/k6-submit.js
+```
+
+模擬 TLE 工作負載（讓 Worker 持續 busy，觀察 scale-watcher 是否觸發）：
+
+```bash
+VUS=50 SUBMISSION_TYPE=simple FIXTURE=tle.py k6 run loadtest/k6-submit.js
+```
+
+**如何判斷瓶頸**：`http_req_duration{name:submit}` p95 反映 MQ enqueue 延遲（後端到 RabbitMQ）；
+judge 端到端延遲需另外觀察 Prometheus `judge_duration_seconds` 或 WebSocket 事件。
+
+---
+
+### 場景三：同時正式提交（`k6-submit.js` with `SUBMISSION_TYPE=formal`）
+
+測試考試結束前所有考生同時正式提交的峰值壓力。
+走完整路徑：DB write → RabbitMQ → Worker judge → scoring update。
+
+Step 1：seed（與場景二共用同一批 sessions）
+
+```bash
+cd loadtest
+npx tsx seed.ts
+```
+
+Step 2：執行突發壓測
+
+```bash
+k6 run loadtest/k6-submit.js                 # 預設 SUBMISSION_TYPE=formal
+```
+
+觀察 Worker 自動擴縮（需啟動 scale-watcher）：
+
+```bash
+# terminal 1
+./loadtest/scale-watcher.sh
+
+# terminal 2
+VUS=100 FIXTURE=tle.py k6 run loadtest/k6-submit.js
+```
+
+**如何判斷瓶頸**：
+- `submit_failures` 高 → backend → MQ 連線或 DB write 飽和
+- `http_req_duration{name:submit}` p95 正常但 judge 慢 → Worker 數量不足，Queue depth 持續增長
+- Worker CPU 持續 100% → CPU 是瓶頸，需增加 Worker 副本上限
+
+---
+
+### 建議測試順序
+
+```
+1. smoke (讀取確認)       DURATION=30s 各角色 RPS=1  → k6-roles.js
+2. 進入考場峰值測試        VUS=100 → k6-start.js         (DB 狀態機)
+3. Run 公開測資吞吐量       VUS=100 SUBMISSION_TYPE=simple → k6-submit.js  (MQ path)
+4. 正式提交峰值測試        VUS=100 SUBMISSION_TYPE=formal → k6-submit.js  (full path)
+5. TLE 高負載長跑          VUS=50  FIXTURE=tle.py          → 觀察 scale-watcher
+```
+
+`k6-submit.js` 環境變數：
+
+| 變數 | 預設值 | 說明 |
+| --- | --- | --- |
+| `BASE_URL` | `http://localhost:3000/api` | API base |
+| `VUS` | `100` | 並發數（需 <= seed N） |
+| `SUBMISSION_TYPE` | `formal` | `formal` 或 `simple` |
+| `FIXTURE` | `ac.py` | 提交的程式碼：`ac.py` / `wa.py` / `tle.py` |
+
+`k6-start.js` 環境變數：
+
+| 變數 | 預設值 | 說明 |
+| --- | --- | --- |
+| `BASE_URL` | `http://localhost:3000/api` | API base |
+| `VUS` | `100` | 並發數（需 <= seed-start.ts 的 N） |
