@@ -65,6 +65,10 @@ metadata:
   namespace: oct
 spec:
   type: NodePort
+  # Local: a node's NodePort serves only its own frontend pod (1 per node under
+  # hard anti-affinity), so the external IKM nginx's per-node routing is not
+  # re-balanced by kube-proxy and the real client IP is preserved (no SNAT).
+  externalTrafficPolicy: Local
   selector:
     app: frontend
   ports:
