@@ -261,17 +261,24 @@ describe("ExamPage", () => {
   });
 
   it("renders live remaining time when exam is in progress", async () => {
-    const oneHourFromNow = new Date(Date.now() + 3_600_500).toISOString();
+    // given: pin Date.now so calculateTimeLeft is deterministic regardless of CI speed
+    const frozenNow = Date.now();
+    const dateSpy = vi.spyOn(Date, "now").mockReturnValue(frozenNow);
+
     mockGetExamSession.mockResolvedValue({
       ...mockExamPageSession,
       status: "in_progress",
-      actualStartAt: new Date().toISOString(),
-      expiresAt: oneHourFromNow,
+      actualStartAt: new Date(frozenNow).toISOString(),
+      expiresAt: new Date(frozenNow + 3_600_000).toISOString(),
     });
 
+    // when
     await renderExamPage();
 
+    // expect
     expect(screen.getByLabelText("倒數計時")).toHaveTextContent("01:00:00");
+
+    dateSpy.mockRestore();
   });
 
   it("renders problem description panel with first problem by default", async () => {
