@@ -31,38 +31,122 @@ data:
         monitor: oct-k8s
 
     scrape_configs:
+      # backend BFF — discovered per-pod so every replica is scraped (a
+      # ClusterIP Service would load-balance and hide per-pod/per-node series).
+      # node/pod labels feed the Load Balancing & Resilience board.
       - job_name: backend
         metrics_path: /api/metrics
-        static_configs:
-          - targets:
-              - backend:3000
-            labels:
-              app: backend
+        scrape_interval: 2s
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [oct]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: backend
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: "3000"
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - target_label: app
+            replacement: backend
 
+      # judge worker — per-pod so process CPU/mem and judge metrics are not
+      # aliased across replicas when KEDA scales the pool.
       - job_name: worker
         metrics_path: /metrics
-        static_configs:
-          - targets:
-              - worker:8080
-            labels:
-              app: worker
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [oct]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: worker
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: "8080"
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - target_label: app
+            replacement: worker
 
+      # cAdvisor DaemonSet — discovered per-pod so we get one series set per
+      # node (Service DNS would only scrape a single random daemon).
       - job_name: cadvisor
-        static_configs:
-          - targets:
-              - cadvisor:8080
-            labels:
-              app: cadvisor
         scrape_interval: 10s
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [oct]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: cadvisor
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+          - target_label: app
+            replacement: cadvisor
 
+      # frontend nginx exporter (sidecar) — per-pod ingress request/connection
+      # counts; with externalTrafficPolicy=Local the per-node rate is the
+      # external IKM nginx's actual load distribution across nodes.
+      - job_name: frontend
+        scrape_interval: 5s
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [oct]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: frontend
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: "9113"
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - target_label: app
+            replacement: frontend
+
+      # kube-state-metrics — cluster object state (pod readiness by node,
+      # deployment replicas, HPA/KEDA desired-vs-current, node Ready) for the
+      # Load Balancing & Resilience and scaling panels.
+      - job_name: kube-state-metrics
+        scrape_interval: 10s
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [oct]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: kube-state-metrics
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: "8080"
+          - target_label: app
+            replacement: kube-state-metrics
+
+      # rabbitmq — single instance; Service DNS is sufficient for queue depth.
       - job_name: rabbitmq
         metrics_path: /metrics/per-object
+        scrape_interval: 2s
         static_configs:
           - targets:
               - rabbitmq:15692
             labels:
               app: rabbitmq
-        scrape_interval: 10s
 
       - job_name: prometheus
         static_configs:

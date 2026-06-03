@@ -1,0 +1,109 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Judge Pipeline & Scaling", "type": "link", "url": "/d/oct-judge-pipeline", "icon": "external link" },
+    { "title": "Load Balancing & Resilience", "type": "link", "url": "/d/oct-lb-resilience", "icon": "external link" }
+  ],
+  "liveNow": true,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Total traffic (req/s)",
+      "id": 1,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(http_request_duration_seconds_count{job=\"backend\"}[1m]))", "refId": "A", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "type": "stat",
+      "title": "Global error ratio (5xx)",
+      "id": 2,
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(http_request_duration_seconds_count{job=\"backend\", status=\"5xx\"}[5m])) / clamp_min(sum(rate(http_request_duration_seconds_count{job=\"backend\"}[5m])), 1)", "refId": "A", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.05 } ] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Global p95 (s)",
+      "id": 3,
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"backend\"}[1m])) by (le))", "refId": "A", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 } ] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Active WS connections",
+      "id": 4,
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        { "expr": "sum(ws_active_connections)", "refId": "A", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Traffic by route (req/s)",
+      "id": 5,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "sum by (route) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m]))", "refId": "A", "legendFormat": "{{route}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 15, "stacking": { "mode": "normal" } } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Error rate by route (4xx / 5xx)",
+      "id": 6,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "sum by (route, status) (rate(http_request_duration_seconds_count{job=\"backend\", status=~\"4xx|5xx\"}[1m]))", "refId": "A", "legendFormat": "{{status}} {{route}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 15 } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency p95 by route (s)",
+      "id": 7,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"backend\"}[1m])) by (le, route))", "refId": "A", "legendFormat": "{{route}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 5 } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Request rate by backend replica",
+      "id": 8,
+      "description": "Per-instance request rate (instance = pod hostname in k3s) — confirms the BFF traffic is spread across replicas.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "sum by (instance) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m]))", "refId": "A", "legendFormat": "{{instance}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["oct", "red", "api"],
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "browser",
+  "title": "OCT · API RED Overview",
+  "uid": "oct-api-red",
+  "version": 1,
+  "weekStart": ""
+}

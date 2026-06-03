@@ -16,3 +16,5 @@ resources:
   - 11-grafana.yaml
   - 12-cadvisor.yaml
   - 13-autoscaling.yaml
+  - 14-kube-state-metrics.yaml
+  - 15-grafana-dashboards.yaml

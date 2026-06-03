@@ -34,6 +34,15 @@ scrape_configs:
       - source_labels: [__meta_dns_name]
         target_label: dns_name
 
+  - job_name: frontend
+    # nginx-prometheus-exporter in front of the frontend nginx stub_status.
+    static_configs:
+      - targets:
+          - frontend-exporter:9113
+        labels:
+          app: frontend
+    scrape_interval: 5s
+
   - job_name: cadvisor
     static_configs:
       - targets:

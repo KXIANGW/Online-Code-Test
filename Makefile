@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 .PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images isolate-rootfs dev test coverage help \
-        demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls EndtoEnd
+        demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls EndtoEnd grafana-k8s-cm
 
 help:
 	@echo "Online Code Test"
@@ -98,6 +98,9 @@ DEMO_FIXTURE ?= ac.py
 # starts at 1 worker and lets scale-watcher fan out to MAX (default 5).
 WORKER_REPLICAS ?= 1
 
+grafana-k8s-cm: ## Regenerate k8s/15-grafana-dashboards.yaml from infra/grafana/dashboards/*.json
+	@python3 infra/grafana/gen-k8s-dashboards-cm.py
+
 demo-up: bootstrap isolate-rootfs
 	WORKER_REPLICAS=$(WORKER_REPLICAS) docker compose up -d --build --wait \
 	  --scale worker=$(WORKER_REPLICAS)
@@ -143,7 +146,9 @@ demo-urls:
 	@echo "Backend   : http://localhost:$${HOST_BACKEND_PORT:-3000}/api/health"
 	@echo "  metrics : http://localhost:$${HOST_BACKEND_PORT:-3000}/api/metrics"
 	@echo "Grafana   : http://localhost:$${HOST_GRAFANA_PORT:-3001}  (anonymous viewer; admin/oct_dev_grafana)"
-	@echo "  dash    : http://localhost:$${HOST_GRAFANA_PORT:-3001}/d/oct-demo"
+	@echo "  judge   : http://localhost:$${HOST_GRAFANA_PORT:-3001}/d/oct-judge-pipeline"
+	@echo "  lb      : http://localhost:$${HOST_GRAFANA_PORT:-3001}/d/oct-lb-resilience"
+	@echo "  red     : http://localhost:$${HOST_GRAFANA_PORT:-3001}/d/oct-api-red"
 	@echo "Prometheus: http://localhost:$${HOST_PROMETHEUS_PORT:-9090}/targets"
 	@echo "RabbitMQ  : http://localhost:$${HOST_RABBITMQ_MGMT_PORT:-15672}  (oct / oct_dev_password)"
 	@echo "cAdvisor  : http://localhost:$${HOST_CADVISOR_PORT:-8081}"

@@ -67,6 +67,10 @@ spec:
                 secretKeyRef:
                   name: oct-secrets
                   key: JWT_SECRET
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             - name: PORT
               value: "3000"
             - name: NODE_ENV

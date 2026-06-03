@@ -1,4 +1,43 @@
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: oct
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: oct-prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: false
+        jsonData:
+          timeInterval: 5s
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: oct
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: online-code-test
+        orgId: 1
+        folder: "Online Code Test"
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        allowUiUpdates: false
+        options:
+          path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: false
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: grafanadata-pvc
@@ -54,6 +93,15 @@ spec:
           volumeMounts:
             - name: grafanadata
               mountPath: /var/lib/grafana
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+              readOnly: true
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+              readOnly: true
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /api/health
@@ -64,6 +112,15 @@ spec:
         - name: grafanadata
           persistentVolumeClaim:
             claimName: grafanadata-pvc
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
 ---
 apiVersion: v1
 kind: Service
