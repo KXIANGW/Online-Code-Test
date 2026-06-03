@@ -4,7 +4,7 @@ metadata:
   name: frontend
   namespace: oct
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: frontend
@@ -15,6 +15,18 @@ spec:
     spec:
       nodeSelector:
         oct-role: app
+      # Spread the 2 replicas across the app nodes (9105 + ikmlab) when
+      # possible. preferred (not required) so both can still run on one
+      # surviving node during a node outage instead of going Pending.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: frontend
+                topologyKey: kubernetes.io/hostname
       imagePullSecrets:
         - name: ghcr-secret
       initContainers:

@@ -42,10 +42,9 @@ spec:
                   key: GRAFANA_PASSWORD
             - name: GF_USERS_ALLOW_SIGN_UP
               value: "false"
+            # Anonymous access disabled — viewing dashboards now requires login.
             - name: GF_AUTH_ANONYMOUS_ENABLED
-              value: "true"
-            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
-              value: "Viewer"
+              value: "false"
           ports:
             - containerPort: 3000
           volumeMounts:
