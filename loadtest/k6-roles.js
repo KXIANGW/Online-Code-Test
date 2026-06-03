@@ -15,7 +15,7 @@ import { Counter } from "k6/metrics";
 const roleCheckFailures = new Counter("role_check_failures");
 
 const APP_URL = trimTrailingSlash(
-  __ENV.APP_URL ?? "https://ikmlab.cs.nthu.edu.tw/online_code_test/",
+  __ENV.APP_URL ?? "http://140.114.77.154:5173/",
 );
 const API_URL = trimTrailingSlash(__ENV.API_URL ?? `${APP_URL}/api`);
 const DURATION = __ENV.DURATION ?? "5m";
