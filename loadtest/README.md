@@ -10,13 +10,17 @@ https://ikmlab.cs.nthu.edu.tw/online_code_test/
 
 ## 檔案
 
-| 檔案                    | 用途                                                                               |
-| ----------------------- | ---------------------------------------------------------------------------------- |
-| `k6-homepage.js`        | 測部署站首頁 RPS，適合找 Ingress / frontend 靜態路徑的基準吞吐量。                 |
-| `k6-roles.js`           | 依角色拆分 anonymous / candidate / interviewer / problem-setter / admin 壓測場景。 |
-| `run-role-api-tests.sh` | 依序跑各角色 API 壓測，輸出 k6 JSON 與 Markdown 報告。                             |
-
-其他檔案如 `seed.ts`、`k6-submit.js`、`scale-watcher.sh` 屬於本地 demo / worker 提交流程，不是本部署壓測 README 的主要範圍。
+| 檔案                        | 用途                                                                               |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| `k6-homepage.js`            | 測部署站首頁 RPS，適合找 Ingress / frontend 靜態路徑的基準吞吐量。                 |
+| `k6-roles.js`               | 依角色拆分 anonymous / candidate / interviewer / problem-setter / admin 壓測場景。 |
+| `run-role-api-tests.sh`     | 依序跑各角色 API 壓測，輸出 k6 JSON 與 Markdown 報告。                             |
+| `run-bottleneck-tests.sh`   | 依序跑三個寫入瓶頸場景（start / run / submit），匯總成 `bottleneck-report.md`。    |
+| `k6-start.js`               | 同時進入考場突發壓測（DB 狀態機）。                                                |
+| `k6-submit.js`              | 同時 Run / Submit 壓測（MQ + Worker + Judge）。                                    |
+| `seed.ts`                   | 建立 N 個 `in_progress` session，供 k6-submit.js 使用。                            |
+| `seed-start.ts`             | 建立 N 個 `not_started` session，供 k6-start.js 使用。                             |
+| `scale-watcher.sh`          | 監控 queue depth / CPU，自動調整 docker compose worker 副本數。                    |
 
 ## 安裝 k6
 
@@ -538,14 +542,52 @@ VUS=100 FIXTURE=tle.py k6 run loadtest/k6-submit.js
 
 ---
 
+### 一鍵執行（`run-bottleneck-tests.sh`）
+
+三個場景依序自動 seed + 跑 k6，最後輸出單一報告：
+
+```bash
+./loadtest/run-bottleneck-tests.sh
+```
+
+報告位置：
+
+```
+loadtest/reports/<timestamp>/bottleneck-report.md
+```
+
+常用覆蓋變數：
+
+```bash
+# 調整並發數
+VUS=200 ./loadtest/run-bottleneck-tests.sh
+
+# 只跑指定場景
+SCENARIOS="submit_simple submit_formal" ./loadtest/run-bottleneck-tests.sh
+
+# TLE fixture（Worker 高負載）
+FIXTURE=tle.py VUS=50 ./loadtest/run-bottleneck-tests.sh
+
+# 確認腳本邏輯但不真的執行
+DRY_RUN=true ./loadtest/run-bottleneck-tests.sh
+```
+
+報告範例（`bottleneck-report.md`）：
+
+```markdown
+| Scenario      | VUS | Requests | Failed % | p95 ms | p99 ms | Custom failures | Result  |
+| ------------- | --: | -------: | -------: | -----: | -----: | --------------: | ------- |
+| start         | 100 |      100 |     0.00 | 312.45 | 450.12 |               0 | ✅ PASS |
+| submit_simple | 100 |      100 |     0.00 | 185.23 | 290.44 |               0 | ✅ PASS |
+| submit_formal | 100 |      100 |     2.00 | 654.78 | 980.11 |               2 | ❌ FAIL |
+```
+
 ### 建議測試順序
 
 ```
 1. smoke (讀取確認)       DURATION=30s 各角色 RPS=1  → k6-roles.js
-2. 進入考場峰值測試        VUS=100 → k6-start.js         (DB 狀態機)
-3. Run 公開測資吞吐量       VUS=100 SUBMISSION_TYPE=simple → k6-submit.js  (MQ path)
-4. 正式提交峰值測試        VUS=100 SUBMISSION_TYPE=formal → k6-submit.js  (full path)
-5. TLE 高負載長跑          VUS=50  FIXTURE=tle.py          → 觀察 scale-watcher
+2. 瓶頸測試（一鍵）       VUS=100                    → run-bottleneck-tests.sh
+3. TLE 高負載長跑          FIXTURE=tle.py VUS=50      → run-bottleneck-tests.sh + scale-watcher
 ```
 
 `k6-submit.js` 環境變數：
