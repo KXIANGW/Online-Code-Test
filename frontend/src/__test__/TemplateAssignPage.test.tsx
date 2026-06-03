@@ -263,6 +263,22 @@ describe("TemplateAssignPage()", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
+  it("deselects a candidate when their checkbox is clicked a second time", async () => {
+    // given
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+    const user = userEvent.setup();
+    const checkbox = screen.getByRole("checkbox", { name: /Alice Chen/ });
+
+    // when: select then deselect
+    await user.click(checkbox);
+    expect(screen.getByRole("button", { name: /確認分配.*1/ })).not.toBeDisabled();
+    await user.click(checkbox);
+
+    // expect: button disabled again (selectedIds is empty)
+    expect(screen.getByRole("button", { name: /確認分配.*0/ })).toBeDisabled();
+  });
+
   it("hides in-progress and ended candidates but shows pending candidate template", async () => {
     mockGetUsers.mockResolvedValue([
       ...mockUserSummaries,

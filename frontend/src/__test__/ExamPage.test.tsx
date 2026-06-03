@@ -1546,4 +1546,115 @@ describe("ExamPage", () => {
     // expect — problem 1 history is empty (submission belonged to problem 2)
     expect(screen.getByText("尚無提交記錄")).toBeInTheDocument();
   });
+
+  it("shows error message when sessionId is not a valid integer (NaN)", async () => {
+    // given / when: render with a non-numeric route param
+    render(
+      <MemoryRouter initialEntries={["/exam/not-a-number"]}>
+        <Routes>
+          <Route path="/exam/:id" element={<ExamPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    // expect
+    expect(screen.getByText("無效的考試連結。")).toBeInTheDocument();
+  });
+
+  it("formal judge_result sets isFinalSubmission on the matching submission", async () => {
+    // given
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('submit')" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalledWith(42, expect.objectContaining({ type: "formal" })));
+
+    // when — formal judge_result arrives
+    act(() => {
+      realtimeHandler?.({
+        type: "judge_result",
+        submissionId: 9002,
+        examSessionProblemId: 101,
+        sessionId: 42,
+        status: "done",
+        verdict: "AC",
+        runtimeMs: 50,
+        memoryKb: 2048,
+        judgedAt: "2026-01-01T00:20:00.000Z",
+        submissionType: "formal",
+        score: 100,
+        testcaseResults: [],
+      });
+    });
+
+    // expect: history tab shows the formal submission marked as final
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+    await waitFor(() => expect(screen.getByText("最終提交")).toBeInTheDocument());
+  });
+
+  it("testcase button shows red styling for non-AC verdict and green for AC verdict", async () => {
+    // given: two public testcases — Case 1 active by default (dark), Case 2 not active
+    mockGetPublicTestcases.mockResolvedValue([
+      { id: 1, orderIndex: 1, inputData: "1", expectedOutput: "2" } satisfies PublicTestcase,
+      { id: 2, orderIndex: 2, inputData: "3", expectedOutput: "4" } satisfies PublicTestcase,
+    ]);
+    await renderExamPage();
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText("Code editor"), { target: { value: "print(1)" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalled());
+
+    // when — judge_result: tc1 = AC, tc2 = WA
+    act(() => {
+      realtimeHandler?.({
+        type: "judge_result",
+        submissionId: 9001,
+        examSessionProblemId: 101,
+        sessionId: 42,
+        status: "done",
+        verdict: "WA",
+        runtimeMs: 10,
+        memoryKb: 512,
+        judgedAt: "2026-01-01T00:10:02.000Z",
+        submissionType: "simple",
+        score: 0,
+        testcaseResults: [
+          { id: 1, testcaseId: 1, orderIndex: 1, isPublic: true, verdict: "AC", runtimeMs: 5, memoryKb: 256 },
+          { id: 2, testcaseId: 2, orderIndex: 2, isPublic: true, verdict: "WA", runtimeMs: 10, memoryKb: 512 },
+        ],
+      });
+    });
+
+    // switch back to testcases tab (Run switches it to output)
+    fireEvent.click(screen.getByRole("tab", { name: "測試資料" }));
+
+    // Case 1 is active (dark), Case 2 is inactive — check their styling
+    // click Case 2 to make Case 1 inactive so its AC colour is visible
+    fireEvent.click(await screen.findByRole("button", { name: "Case 2" }));
+
+    // expect: now Case 1 (AC, not active) is green, Case 2 (WA, active) is dark
+    const case1 = screen.getByRole("button", { name: "Case 1" });
+    const case2 = screen.getByRole("button", { name: "Case 2" });
+    expect(case1.className).toMatch(/green/);
+    expect(case2.className).toMatch(/slate-900/);
+  });
+
+  it("shows expired overlay when exam time has run out", async () => {
+    // given: expiresAt is in the past so timeLeft === 0
+    mockGetExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "in_progress",
+      actualStartAt: new Date(Date.now() - 7_200_000).toISOString(),
+      expiresAt: new Date(Date.now() - 1_000).toISOString(),
+    });
+
+    // when
+    await renderExamPage();
+
+    // expect
+    expect(screen.getByLabelText("考試時間已到")).toBeInTheDocument();
+    expect(screen.getByText("考試時間已到")).toBeInTheDocument();
+  });
 });

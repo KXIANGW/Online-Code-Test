@@ -230,6 +230,112 @@ describe("CandidateResultPage", () => {
     expect(screen.getByText("最終提交")).toBeInTheDocument();
   });
 
+  it("shows loading state while fetching history submission detail", async () => {
+    // given: make getSubmissionDetail hang indefinitely
+    let resolveDetail!: (v: SubmissionDetail) => void;
+    mockGetSubmissionDetail.mockReturnValue(
+      new Promise<SubmissionDetail>((resolve) => {
+        resolveDetail = resolve;
+      }),
+    );
+    await renderPage();
+
+    // when
+    await act(async () => {
+      screen.getByRole("button", { name: "查看詳細測資：提交 9001" }).click();
+    });
+
+    // expect
+    expect(screen.getByText("載入詳細測資中...")).toBeInTheDocument();
+
+    // cleanup – resolve so no dangling promise warning
+    resolveDetail(submissionDetail);
+  });
+
+  it("shows error message when history submission detail fetch fails", async () => {
+    // given
+    mockGetSubmissionDetail.mockRejectedValue(new Error("network error"));
+    await renderPage();
+
+    // when
+    await act(async () => {
+      screen.getByRole("button", { name: "查看詳細測資：提交 9001" }).click();
+    });
+
+    // expect
+    expect(await screen.findByText("無法載入詳細測資結果")).toBeInTheDocument();
+  });
+
+  it("shows empty state when history submission has no testcase results", async () => {
+    // given
+    mockGetSubmissionDetail.mockResolvedValue({ ...submissionDetail, testcaseResults: [] });
+    await renderPage();
+
+    // when
+    await act(async () => {
+      screen.getByRole("button", { name: "查看詳細測資：提交 9001" }).click();
+    });
+
+    // expect
+    expect(await screen.findByText("無詳細測資結果")).toBeInTheDocument();
+  });
+
+  it("shows dash for runtime and memory when testcase verdict is skipped", async () => {
+    // given
+    mockGetSubmissionDetail.mockResolvedValue({
+      ...submissionDetail,
+      testcaseResults: [
+        {
+          id: 1,
+          testcaseId: 1,
+          orderIndex: 1,
+          isPublic: true,
+          verdict: "skipped",
+          runtimeMs: null,
+          memoryKb: null,
+        },
+      ],
+    });
+    await renderPage();
+
+    // when
+    await act(async () => {
+      screen.getByRole("button", { name: "查看詳細測資：提交 9001" }).click();
+    });
+
+    // expect: both runtime and memory columns display "—"
+    const dashes = await screen.findAllByText("—");
+    expect(dashes.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows dash for runtime and memory when runtimeMs and memoryKb are null", async () => {
+    // given: non-skipped verdict but null timing values
+    mockGetSubmissionDetail.mockResolvedValue({
+      ...submissionDetail,
+      testcaseResults: [
+        {
+          id: 1,
+          testcaseId: 1,
+          orderIndex: 1,
+          isPublic: true,
+          verdict: "WA",
+          runtimeMs: null,
+          memoryKb: null,
+        },
+      ],
+    });
+    await renderPage();
+
+    // when
+    await act(async () => {
+      screen.getByRole("button", { name: "查看詳細測資：提交 9001" }).click();
+    });
+
+    // expect
+    const dashes = await screen.findAllByText("—");
+    expect(dashes.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("updates pending history rows when lifecycle events arrive", async () => {
     await renderPage();
 

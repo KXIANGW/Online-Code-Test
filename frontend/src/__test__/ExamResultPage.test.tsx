@@ -641,4 +641,87 @@ describe("ExamResultPage()", () => {
     expect(mockLogout).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith("/login");
   });
+
+  it("collapses an expanded history submission detail on second click", async () => {
+    // given: expand submission 2
+    mockGetSessionResult.mockResolvedValue(mockSessionResult);
+    mockListSessionSubmissions.mockResolvedValue(mockSubmissions);
+    mockGetSubmissionDetail.mockResolvedValue(mockSubmissionDetail);
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "查看詳細測資：提交 2" }));
+    await screen.findByText("公開測資 1");
+
+    // when: click again to collapse
+    await userEvent.click(screen.getByRole("button", { name: "查看詳細測資：提交 2" }));
+
+    // expect: detail rows hidden
+    expect(screen.queryByText("公開測資 1")).not.toBeInTheDocument();
+  });
+
+  it("shows dash for runtime in problem final submission when testcase verdict is skipped", async () => {
+    // given: final submission has a skipped testcase
+    mockGetSessionResult.mockResolvedValue(mockSessionResult);
+    mockGetSubmissionDetail.mockResolvedValue({
+      ...mockSubmissionDetail,
+      testcaseResults: [
+        { id: 1, testcaseId: 1, orderIndex: 1, isPublic: true, verdict: "skipped", runtimeMs: null, memoryKb: null },
+      ],
+    });
+    renderPage();
+
+    // when: expand the problem detail
+    await userEvent.click(await screen.findByRole("button", { name: "查看詳情 ▶" }));
+
+    // expect: runtime and memory show "—"
+    const dashes = await screen.findAllByText("—");
+    expect(dashes.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows error state in history submission detail when fetch fails", async () => {
+    // given
+    mockGetSessionResult.mockResolvedValue(mockSessionResult);
+    mockListSessionSubmissions.mockResolvedValue(mockSubmissions);
+    mockGetSubmissionDetail.mockRejectedValue(new Error("network error"));
+    renderPage();
+
+    // when
+    await userEvent.click(await screen.findByRole("button", { name: "查看詳細測資：提交 2" }));
+
+    // expect
+    expect(await screen.findByText("無法載入詳細測資結果")).toBeInTheDocument();
+  });
+
+  it("shows empty state in history submission detail when testcaseResults is empty", async () => {
+    // given
+    mockGetSessionResult.mockResolvedValue(mockSessionResult);
+    mockListSessionSubmissions.mockResolvedValue(mockSubmissions);
+    mockGetSubmissionDetail.mockResolvedValue({ ...mockSubmissionDetail, testcaseResults: [] });
+    renderPage();
+
+    // when
+    await userEvent.click(await screen.findByRole("button", { name: "查看詳細測資：提交 2" }));
+
+    // expect
+    expect(await screen.findByText("無詳細測資結果")).toBeInTheDocument();
+  });
+
+  it("shows dash for runtime and memory in history detail when verdict is skipped", async () => {
+    // given
+    mockGetSessionResult.mockResolvedValue(mockSessionResult);
+    mockListSessionSubmissions.mockResolvedValue(mockSubmissions);
+    mockGetSubmissionDetail.mockResolvedValue({
+      ...mockSubmissionDetail,
+      testcaseResults: [
+        { id: 1, testcaseId: 1, orderIndex: 1, isPublic: true, verdict: "skipped", runtimeMs: null, memoryKb: null },
+      ],
+    });
+    renderPage();
+
+    // when
+    await userEvent.click(await screen.findByRole("button", { name: "查看詳細測資：提交 2" }));
+
+    // expect: both runtime and memory show "—"
+    const dashes = await screen.findAllByText("—");
+    expect(dashes.length).toBeGreaterThanOrEqual(2);
+  });
 });
