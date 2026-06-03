@@ -67,7 +67,7 @@ describe("crypto.service", () => {
       const encrypted = encryptPassword("original");
       const [iv, tag, enc] = encrypted.split(":") as [string, string, string];
       const corrupted = Buffer.from(enc, "base64");
-      corrupted[0] ^= 0xff;
+      corrupted.writeUInt8(corrupted.readUInt8(0) ^ 0xff, 0);
       const tampered = [iv, tag, corrupted.toString("base64")].join(":");
 
       // when / expect: GCM integrity check fails
@@ -79,7 +79,7 @@ describe("crypto.service", () => {
       const encrypted = encryptPassword("original");
       const [iv, tag, enc] = encrypted.split(":") as [string, string, string];
       const corruptedTag = Buffer.from(tag, "base64");
-      corruptedTag[0] ^= 0xff;
+      corruptedTag.writeUInt8(corruptedTag.readUInt8(0) ^ 0xff, 0);
       const tampered = [iv, corruptedTag.toString("base64"), enc].join(":");
 
       // when / expect
