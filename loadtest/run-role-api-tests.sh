@@ -65,18 +65,36 @@ role_env_name() {
 }
 
 write_report_header() {
-  local app_url="${APP_URL:-https://ikmlab.cs.nthu.edu.tw/online_code_test/}"
+  local app_url="${APP_URL:-http://140.114.77.154:5173/}"
   local api_url="${API_URL:-${app_url%/}/api}"
 
   {
     echo "# Role API Load Test Report"
     echo
     echo "- Generated at: $(date '+%Y-%m-%d %H:%M:%S %Z')"
-    echo "- APP_URL: ${app_url}"
-    echo "- API_URL: ${api_url}"
-    echo "- Duration per role: ${DURATION}"
     echo "- Roles: ${ROLES}"
+    echo "- Duration per role: ${DURATION}"
     echo "- Report directory: ${REPORT_DIR}"
+    echo
+    echo "## Environment"
+    echo
+    echo '```'
+    echo "APP_URL=${app_url}"
+    echo "API_URL=${api_url}"
+    echo "DURATION=${DURATION}"
+    echo "ROLES=${ROLES}"
+    echo "ANON_RPS=${ANON_RPS:-20}"
+    echo "CANDIDATE_RPS=${CANDIDATE_RPS:-5}"
+    echo "INTERVIEWER_RPS=${INTERVIEWER_RPS:-2}"
+    echo "PROBLEM_SETTER_RPS=${PROBLEM_SETTER_RPS:-2}"
+    echo "ADMIN_RPS=${ADMIN_RPS:-1}"
+    echo "PRE_ALLOCATED_VUS=${PRE_ALLOCATED_VUS}"
+    echo "MAX_VUS=${MAX_VUS}"
+    echo "FETCH_ASSETS=${FETCH_ASSETS:-true}"
+    echo "CANDIDATE_WRITE_DRAFTS=${CANDIDATE_WRITE_DRAFTS:-false}"
+    echo "INCLUDE_PASSWORD_LOOKUPS=${INCLUDE_PASSWORD_LOOKUPS:-false}"
+    echo "DEBUG_FAILURES=${DEBUG_FAILURES:-false}"
+    echo '```'
     echo
     echo "## Summary"
     echo
