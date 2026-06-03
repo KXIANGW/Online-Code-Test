@@ -664,7 +664,15 @@ describe("ExamResultPage()", () => {
     mockGetSubmissionDetail.mockResolvedValue({
       ...mockSubmissionDetail,
       testcaseResults: [
-        { id: 1, testcaseId: 1, orderIndex: 1, isPublic: true, verdict: "skipped", runtimeMs: null, memoryKb: null },
+        {
+          id: 1,
+          testcaseId: 1,
+          orderIndex: 1,
+          isPublic: true,
+          verdict: "skipped",
+          runtimeMs: null,
+          memoryKb: null,
+        },
       ],
     });
     renderPage();
@@ -712,7 +720,15 @@ describe("ExamResultPage()", () => {
     mockGetSubmissionDetail.mockResolvedValue({
       ...mockSubmissionDetail,
       testcaseResults: [
-        { id: 1, testcaseId: 1, orderIndex: 1, isPublic: true, verdict: "skipped", runtimeMs: null, memoryKb: null },
+        {
+          id: 1,
+          testcaseId: 1,
+          orderIndex: 1,
+          isPublic: true,
+          verdict: "skipped",
+          runtimeMs: null,
+          memoryKb: null,
+        },
       ],
     });
     renderPage();

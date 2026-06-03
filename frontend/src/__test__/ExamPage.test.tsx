@@ -1568,7 +1568,12 @@ describe("ExamPage", () => {
       target: { value: "print('submit')" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Submit" }));
-    await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalledWith(42, expect.objectContaining({ type: "formal" })));
+    await waitFor(() =>
+      expect(mockCreateSubmission).toHaveBeenCalledWith(
+        42,
+        expect.objectContaining({ type: "formal" }),
+      ),
+    );
 
     // when — formal judge_result arrives
     act(() => {
@@ -1621,8 +1626,24 @@ describe("ExamPage", () => {
         submissionType: "simple",
         score: 0,
         testcaseResults: [
-          { id: 1, testcaseId: 1, orderIndex: 1, isPublic: true, verdict: "AC", runtimeMs: 5, memoryKb: 256 },
-          { id: 2, testcaseId: 2, orderIndex: 2, isPublic: true, verdict: "WA", runtimeMs: 10, memoryKb: 512 },
+          {
+            id: 1,
+            testcaseId: 1,
+            orderIndex: 1,
+            isPublic: true,
+            verdict: "AC",
+            runtimeMs: 5,
+            memoryKb: 256,
+          },
+          {
+            id: 2,
+            testcaseId: 2,
+            orderIndex: 2,
+            isPublic: true,
+            verdict: "WA",
+            runtimeMs: 10,
+            memoryKb: 512,
+          },
         ],
       });
     });
