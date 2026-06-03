@@ -1,302 +1,188 @@
-# 部署環境負載測試
+# 負載測試
 
-`loadtest/` 目前用於測試部署站：
+壓測目標預設為**本地 Docker**（`http://localhost:3000/api`）。  
+打 Production 需手動傳 `BASE_URL` / `APP_URL`，會建立真實資料，請確認時間窗口。
 
-```txt
-https://ikmlab.cs.nthu.edu.tw/online_code_test/
-```
-
-壓測可能影響真實服務。請先確認測試時間、通知使用者，並從小流量開始逐步加壓。
-
-## 檔案
-
-| 檔案                    | 用途                                                                               |
-| ----------------------- | ---------------------------------------------------------------------------------- |
-| `k6-homepage.js`        | 測部署站首頁 RPS，適合找 Ingress / frontend 靜態路徑的基準吞吐量。                 |
-| `k6-roles.js`           | 依角色拆分 anonymous / candidate / interviewer / problem-setter / admin 壓測場景。 |
-| `run-role-api-tests.sh` | 依序跑各角色 API 壓測，輸出 k6 JSON 與 Markdown 報告。                             |
-
-其他檔案如 `seed.ts`、`k6-submit.js`、`scale-watcher.sh` 屬於本地 demo / worker 提交流程，不是本部署壓測 README 的主要範圍。
-
-## 安裝 k6
-
-macOS：
+## 前置
 
 ```bash
-brew install k6
+brew install k6   # 其他平台：https://grafana.com/docs/k6/latest/set-up/install-k6/
 ```
 
-其他平台請參考 <https://grafana.com/docs/k6/latest/set-up/install-k6/>。
+## 腳本對照
 
-## 首頁 RPS 測試
+| 腳本 | 測什麼 | 目標 |
+| --- | --- | --- |
+| `k6-homepage.js` | 首頁 RPS | Production |
+| `k6-roles.js` / `run-role-api-tests.sh` | 各角色 API 讀取 | Production |
+| `run-bottleneck-tests.sh` | 三個寫入瓶頸（一鍵） | **Local** |
+| `k6-start.js` | 同時進入考場（DB 狀態機） | Local |
+| `k6-submit.js` | 同時 Run / Submit（MQ + Worker） | Local |
 
-最小煙霧測試，只確認部署站可連線與腳本可執行：
+---
+
+## 首頁 RPS（`k6-homepage.js`）
 
 ```bash
-START_RPS=1 \
-MAX_RPS=1 \
-RAMP_DURATION=1s \
-HOLD_DURATION=1s \
-PRE_ALLOCATED_VUS=1 \
-MAX_VUS=5 \
+# smoke
+MAX_RPS=1 RAMP_DURATION=1s HOLD_DURATION=1s k6 run loadtest/k6-homepage.js
+
+# 找極限（從 10 爬升到 200 RPS）
 k6 run loadtest/k6-homepage.js
+
+# 固定 RPS hold
+START_RPS=300 MAX_RPS=300 RAMP_DURATION=30s HOLD_DURATION=5m \
+  k6 run loadtest/k6-homepage.js
 ```
 
-保守測試：
+---
+
+## 角色 API 讀取（`k6-roles.js`）
 
 ```bash
-MAX_RPS=50 k6 run loadtest/k6-homepage.js
-```
+# smoke（30 秒，各角色 1 RPS）
+DURATION=30s ANON_RPS=1 CANDIDATE_RPS=1 INTERVIEWER_RPS=1 \
+  PROBLEM_SETTER_RPS=1 ADMIN_RPS=1 \
+  k6 run loadtest/k6-roles.js
 
-固定 RPS hold，適合確認某個 RPS 是否能穩定撐住：
-
-```bash
-TARGET_URL=https://ikmlab.cs.nthu.edu.tw/online_code_test/ \
-START_RPS=300 \
-MAX_RPS=300 \
-RAMP_DURATION=30s \
-HOLD_DURATION=5m \
-PRE_ALLOCATED_VUS=150 \
-MAX_VUS=1500 \
-k6 run loadtest/k6-homepage.js
-```
-
-如果要看失敗請求的 status：
-
-```bash
-DEBUG_FAILURES=true MAX_RPS=50 k6 run loadtest/k6-homepage.js
-```
-
-## 依角色壓測
-
-`k6-roles.js` 會把不同角色拆成獨立 k6 scenario，讓結果可以依 `role` tag 區分。
-
-預設流程以讀取為主：
-
-- 不新增題目
-- 不新增使用者
-- 不提交程式碼
-- 不查詢考生密碼
-- 不寫入草稿
-
-預設角色與流量：
-
-| 角色            | 預設 RPS | 主要測試內容                                         |
-| --------------- | -------- | ---------------------------------------------------- |
-| `anonymous`     | `20`     | 首頁與首頁引用的 JS/CSS/assets。                     |
-| `candidate`     | `5`      | 場次列表、場次詳情、題目、草稿、提交紀錄、公開測資。 |
-| `interviewer`   | `2`      | 使用者列表、考試場次、考卷模板、題目、違規紀錄。     |
-| `problemSetter` | `2`      | 題目列表、題目詳情、語言列表。                       |
-| `admin`         | `1`      | Root dashboard 常用讀取 API。                        |
-
-先跑 30 秒 smoke，確認帳號與 API 都可用：
-
-```bash
-DURATION=30s \
-ANON_RPS=1 \
-CANDIDATE_RPS=1 \
-INTERVIEWER_RPS=1 \
-PROBLEM_SETTER_RPS=1 \
-ADMIN_RPS=1 \
+# 全部角色預設流量（5 分鐘）
 k6 run loadtest/k6-roles.js
-```
 
-跑全部角色：
-
-```bash
-k6 run loadtest/k6-roles.js
-```
-
-只跑特定角色：
-
-```bash
+# 只測特定角色
 ROLE_SCENARIOS=candidate CANDIDATE_RPS=20 DURATION=5m k6 run loadtest/k6-roles.js
 ```
 
-```bash
-ROLE_SCENARIOS=interviewer,problemSetter \
-INTERVIEWER_RPS=10 \
-PROBLEM_SETTER_RPS=10 \
-DURATION=5m \
-k6 run loadtest/k6-roles.js
-```
-
-指定部署 URL 與帳密：
+### 產生 Markdown 報告
 
 ```bash
-APP_URL=https://ikmlab.cs.nthu.edu.tw/online_code_test/ \
-CANDIDATE_USERNAME=candidate_20260509_001 \
-CANDIDATE_PASSWORD='Cand@1234' \
-INTERVIEWER_USERNAME=alice \
-INTERVIEWER_PASSWORD='Test@1234' \
-PROBLEM_SETTER_USERNAME=carol \
-PROBLEM_SETTER_PASSWORD='Test@1234' \
-ADMIN_USERNAME=root \
-ADMIN_PASSWORD='Root@1234' \
-k6 run loadtest/k6-roles.js
-```
-
-如果 API 不在 `APP_URL/api`，可直接覆蓋：
-
-```bash
-API_URL=https://ikmlab.cs.nthu.edu.tw/online_code_test/api k6 run loadtest/k6-roles.js
-```
-
-可選的寫入/敏感讀取開關預設關閉：
-
-```bash
-CANDIDATE_WRITE_DRAFTS=true ROLE_SCENARIOS=candidate k6 run loadtest/k6-roles.js
-INCLUDE_PASSWORD_LOOKUPS=true ROLE_SCENARIOS=interviewer k6 run loadtest/k6-roles.js
-```
-
-## 逐一測試角色並產生報告
-
-`run-role-api-tests.sh` 會依序執行每個角色，將每次 k6 output 存成 log、summary JSON，最後彙整成 Markdown。
-
-最小 smoke：
-
-```bash
-DURATION=30s \
-ANON_RPS=1 \
-CANDIDATE_RPS=1 \
-INTERVIEWER_RPS=1 \
-PROBLEM_SETTER_RPS=1 \
-ADMIN_RPS=1 \
+# 全部角色
 ./loadtest/run-role-api-tests.sh
-```
 
-只測指定角色：
+# 指定角色與 RPS
+ROLES="candidate interviewer" CANDIDATE_RPS=20 INTERVIEWER_RPS=10 \
+  ./loadtest/run-role-api-tests.sh
 
-```bash
-ROLES="candidate interviewer" \
-DURATION=5m \
-CANDIDATE_RPS=20 \
-INTERVIEWER_RPS=10 \
-./loadtest/run-role-api-tests.sh
-```
-
-指定報告輸出位置：
-
-```bash
-REPORT_DIR=loadtest/reports/api-roles-$(date +%Y%m%d-%H%M%S) \
-./loadtest/run-role-api-tests.sh
-```
-
-報告會寫在：
-
-```txt
-loadtest/reports/<timestamp>/role-api-report.md
-```
-
-只檢查腳本會如何展開角色與 RPS，不真的執行 k6：
-
-```bash
+# 確認展開邏輯但不執行
 DRY_RUN=true ./loadtest/run-role-api-tests.sh
 ```
 
-## 如何判斷極限
+報告輸出：`loadtest/reports/<timestamp>/role-api-report.md`
 
-以「可穩定承受」為準，不是瞬間最高值。建議把極限定義為：
+---
 
-- `http_req_failed < 1%`
-- `http_req_duration p95 < 1000ms`
-- `http_req_duration p99 < 2000ms`
-- 沒有持續出現 `429 / 500 / 502 / 503 / 504`
-- k6 沒有明顯 `dropped_iterations`
-- 伺服器 CPU、Memory、Ingress latency 沒有持續飽和
-- 在該 RPS 至少 hold `3 到 10 分鐘`
+## 瓶頸寫入（`run-bottleneck-tests.sh`）
 
-k6 結果中最重要的欄位：
-
-| 指標                 | 意義                                                                          |
-| -------------------- | ----------------------------------------------------------------------------- |
-| `http_reqs`          | 總請求數與平均 request rate，可用來看實際 RPS。                               |
-| `http_req_failed`    | HTTP 層錯誤率，超過 1% 通常代表已不穩。                                       |
-| `http_req_duration`  | latency；重點看 p95 / p99，不只看平均。                                       |
-| `dropped_iterations` | k6 client 送不出目標 RPS；若增加 `MAX_VUS` 後仍出現，可能是壓測端先成為瓶頸。 |
-| `checks_failed`      | 腳本定義的業務檢查失敗數，例如 status 不是 2xx/3xx。                          |
-
-## 沒有 Grafana 時怎麼監視
-
-壓測同時開另一個 terminal 觀察 Kubernetes：
+三個場景依序執行：`start` → `submit_simple` → `submit_formal`，自動 seed，輸出單一報告。
 
 ```bash
-kubectl top pods -n <namespace>
-kubectl top nodes
-kubectl get hpa -n <namespace> -w
-kubectl get pods -n <namespace> -w
+# 一鍵跑全部（Local，VUS=100）
+./loadtest/run-bottleneck-tests.sh
+
+# 調整並發數
+VUS=200 ./loadtest/run-bottleneck-tests.sh
+
+# 只跑指定場景
+SCENARIOS="submit_simple submit_formal" ./loadtest/run-bottleneck-tests.sh
+
+# TLE 工作負載
+FIXTURE=tle.py VUS=50 ./loadtest/run-bottleneck-tests.sh
+
+# 確認展開邏輯但不執行
+DRY_RUN=true ./loadtest/run-bottleneck-tests.sh
 ```
 
-如果不知道 namespace：
+報告輸出：`loadtest/reports/<timestamp>/bottleneck-report.md`
+
+> **注意**：`start` 場景的 session 是一次性的（狀態機不可逆），每次都會自動重新 seed。
+
+### 單獨執行各場景
+
+**進入考場（start）**
 
 ```bash
-kubectl get ns
-kubectl get pods -A | grep online
+# 1. seed（每次必跑，N 需 >= VUS）
+cd loadtest && N=100 npx tsx seed-start.ts
+
+# 2. k6
+VUS=100 k6 run loadtest/k6-start.js
 ```
 
-同步看 logs：
+**Run 公開測資（submit_simple）**
 
 ```bash
-kubectl logs -n <namespace> deploy/<frontend-deploy-name> -f
-kubectl logs -n <namespace> deploy/<backend-deploy-name> -f
+# 1. seed（可重複使用同一批 session）
+cd loadtest && npx tsx seed.ts
+
+# 2. k6
+SUBMISSION_TYPE=simple VUS=100 k6 run loadtest/k6-submit.js
 ```
 
-如果有 ingress-nginx：
+**正式提交（submit_formal）**
 
 ```bash
-kubectl logs -n ingress-nginx deploy/ingress-nginx-controller -f
+# 1. seed（與 submit_simple 共用，已 seed 可跳過）
+cd loadtest && npx tsx seed.ts
+
+# 2. k6
+VUS=100 k6 run loadtest/k6-submit.js
 ```
 
-## 有 Prometheus / Grafana 時建議看
+---
 
-| 層級             | 觀察項目                                                      |
-| ---------------- | ------------------------------------------------------------- |
-| Ingress / Nginx  | RPS、4xx/5xx rate、upstream latency、active connections。     |
-| Frontend Pod     | CPU、Memory、replica 數、restart count。                      |
-| Backend Pod      | CPU、Memory、request duration、5xx rate。                     |
-| PostgreSQL       | active connections、CPU、slow queries、lock。                 |
-| Redis / RabbitMQ | queue depth、publish/consume rate、memory。                   |
-| Worker           | queue depth、judge duration、system error rate、CPU、Memory。 |
+## 本地監控
+
+`docker compose up -d` 已包含 Prometheus + Grafana + cAdvisor。
+
+| 服務 | URL | 帳密 |
+| --- | --- | --- |
+| Grafana | http://localhost:3001 | admin / oct_dev_grafana |
+| Prometheus | http://localhost:9090 | — |
+| RabbitMQ | http://localhost:15672 | oct / oct_dev_password |
+| cAdvisor | http://localhost:8081 | — |
+
+Dashboard：http://localhost:3001/d/oct-demo/oct-demo-e28094-100-concurrent
+
+壓測時把右上角改成 **Last 5 minutes / auto refresh 5s**，觀察：
+
+- **Queue depth** — submit 後是否清空
+- **Verdict rate** — Worker 吞吐量
+- **Submit API p95** — MQ enqueue 延遲
+- **Worker pool CPU %** — Worker 是否飽和
+
+---
 
 ## 環境變數
 
-`k6-homepage.js`：
+### `run-bottleneck-tests.sh`
 
-| 變數                | 預設值                                            |
-| ------------------- | ------------------------------------------------- |
-| `TARGET_URL`        | `https://ikmlab.cs.nthu.edu.tw/online_code_test/` |
-| `START_RPS`         | `10`                                              |
-| `MAX_RPS`           | `200`                                             |
-| `RAMP_DURATION`     | `5m`                                              |
-| `HOLD_DURATION`     | `3m`                                              |
-| `PRE_ALLOCATED_VUS` | `100`                                             |
-| `MAX_VUS`           | `1000`                                            |
-| `DEBUG_FAILURES`    | `false`                                           |
+| 變數 | 預設值 | 說明 |
+| --- | --- | --- |
+| `BASE_URL` | `http://localhost:3000/api` | API 位址 |
+| `VUS` | `100` | 並發數（需 <= seed N） |
+| `SCENARIOS` | `start submit_simple submit_formal` | 執行的場景 |
+| `FIXTURE` | `ac.py` | 提交程式碼：`ac.py` / `wa.py` / `tle.py` |
+| `DRY_RUN` | `false` | `true` 只印指令不執行 |
 
-`k6-roles.js`：
+### `k6-homepage.js`
 
-| 變數                       | 預設值                                                |
-| -------------------------- | ----------------------------------------------------- |
-| `APP_URL`                  | `https://ikmlab.cs.nthu.edu.tw/online_code_test/`     |
-| `API_URL`                  | `${APP_URL}/api`                                      |
-| `ROLE_SCENARIOS`           | `anonymous,candidate,interviewer,problemSetter,admin` |
-| `DURATION`                 | `5m`                                                  |
-| `ANON_RPS`                 | `20`                                                  |
-| `CANDIDATE_RPS`            | `5`                                                   |
-| `INTERVIEWER_RPS`          | `2`                                                   |
-| `PROBLEM_SETTER_RPS`       | `2`                                                   |
-| `ADMIN_RPS`                | `1`                                                   |
-| `PRE_ALLOCATED_VUS`        | `50`                                                  |
-| `MAX_VUS`                  | `500`                                                 |
-| `FETCH_ASSETS`             | `true`                                                |
-| `DEBUG_FAILURES`           | `false`                                               |
-| `CANDIDATE_WRITE_DRAFTS`   | `false`                                               |
-| `INCLUDE_PASSWORD_LOOKUPS` | `false`                                               |
-| `CANDIDATE_USERNAME`       | `candidate_20260509_001`                              |
-| `CANDIDATE_PASSWORD`       | `Cand@1234`                                           |
-| `INTERVIEWER_USERNAME`     | `alice`                                               |
-| `INTERVIEWER_PASSWORD`     | `Test@1234`                                           |
-| `PROBLEM_SETTER_USERNAME`  | `carol`                                               |
-| `PROBLEM_SETTER_PASSWORD`  | `Test@1234`                                           |
-| `ADMIN_USERNAME`           | `root`                                                |
-| `ADMIN_PASSWORD`           | `Root@1234`                                           |
+| 變數 | 預設值 |
+| --- | --- |
+| `TARGET_URL` | `https://ikmlab.cs.nthu.edu.tw/online_code_test/` |
+| `START_RPS` | `10` |
+| `MAX_RPS` | `200` |
+| `RAMP_DURATION` | `5m` |
+| `HOLD_DURATION` | `3m` |
+
+### `k6-roles.js`
+
+| 變數 | 預設值 |
+| --- | --- |
+| `APP_URL` | `https://ikmlab.cs.nthu.edu.tw/online_code_test/` |
+| `DURATION` | `5m` |
+| `ANON_RPS` | `20` |
+| `CANDIDATE_RPS` | `5` |
+| `INTERVIEWER_RPS` | `2` |
+| `PROBLEM_SETTER_RPS` | `2` |
+| `ADMIN_RPS` | `1` |
+| `CANDIDATE_WRITE_DRAFTS` | `false` |
+| `INCLUDE_PASSWORD_LOOKUPS` | `false` |
