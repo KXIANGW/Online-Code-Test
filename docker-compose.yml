@@ -188,8 +188,8 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-oct_dev_grafana}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # Anonymous access disabled — viewing dashboards now requires login.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
     ports:
       - "${HOST_GRAFANA_PORT:-3001}:3000"
     volumes:

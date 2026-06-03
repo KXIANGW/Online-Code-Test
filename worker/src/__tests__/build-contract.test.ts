@@ -21,7 +21,7 @@ describe("sandbox image build contract", () => {
     const ciWorkflow = fs.readFileSync(path.join(repoRoot, ".github/workflows/ci.yml"), "utf8");
 
     const installWorkerDeps = ciWorkflow.indexOf("working-directory: worker\n        run: npm ci");
-    const buildSandboxImages = ciWorkflow.indexOf("run: make sandbox-images");
+    const buildSandboxImages = ciWorkflow.indexOf("command: make sandbox-images");
 
     expect(installWorkerDeps).toBeGreaterThanOrEqual(0);
     expect(buildSandboxImages).toBeGreaterThanOrEqual(0);

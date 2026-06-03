@@ -4,7 +4,15 @@ metadata:
   name: frontend
   namespace: oct
 spec:
-  replicas: 1
+  replicas: 2
+  # maxSurge 0 + maxUnavailable 1: under hard anti-affinity, free a node
+  # (terminate an old pod) before scheduling the new one, so rolling
+  # updates don't deadlock waiting for a third node that doesn't exist.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: frontend
@@ -15,6 +23,13 @@ spec:
     spec:
       nodeSelector:
         oct-role: app
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: frontend
+              topologyKey: kubernetes.io/hostname
       imagePullSecrets:
         - name: ghcr-secret
       initContainers:
