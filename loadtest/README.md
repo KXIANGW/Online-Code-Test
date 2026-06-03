@@ -303,6 +303,116 @@ kubectl logs -n ingress-nginx deploy/ingress-nginx-controller -f
 
 ---
 
+## 本地 Docker 監控環境
+
+Prometheus、Grafana、cAdvisor 已內建在 `docker-compose.yml`，不需要額外安裝。
+
+### 服務 URL
+
+| 服務 | URL | 帳密 |
+| --- | --- | --- |
+| Grafana | http://localhost:3001 | admin / oct_dev_grafana |
+| Prometheus | http://localhost:9090 | — |
+| RabbitMQ Management | http://localhost:15672 | oct / oct_dev_password |
+| cAdvisor | http://localhost:8081 | — |
+| Backend API | http://localhost:3000/api | — |
+
+### 啟動完整 stack（含監控）
+
+```bash
+docker compose up -d
+```
+
+等所有服務 healthy（約 30–60 秒）：
+
+```bash
+docker compose ps
+```
+
+### 預建 Grafana Dashboard
+
+開啟 http://localhost:3001 登入後，側欄 → Dashboards → **OCT Demo — 100 concurrent**
+
+已有的 panel：
+
+| Panel | 壓測時觀察什麼 |
+| --- | --- |
+| Queue depth (judge.tasks) | Submit / Run 後是否快速清空，或持續堆積 |
+| Judge in-flight | 同時執行中的 judge 數量，反映 Worker 飽和度 |
+| Submit API p95 (s) | HTTP enqueue 延遲，MQ 連線瓶頸會先反映在這裡 |
+| Verdict rate (per second) | Worker 實際吞吐量（AC/WA/TLE 各佔比） |
+| Worker replicas | 觀察 scale-watcher 是否觸發擴縮 |
+| Worker pool CPU % | Worker container CPU 使用率 |
+| Worker pool memory (MB) | Worker 記憶體使用量 |
+| Judge p50/p95/p99 by language | 各語言 end-to-end judge 延遲分佈 |
+| Submission created vs completed | 送入速率 vs 完成速率，gap 代表 queue 積壓 |
+
+### 壓測同時開監控的 workflow
+
+**Terminal 1** — 監視 stack 狀態：
+
+```bash
+docker compose ps -a
+docker compose logs -f backend worker
+```
+
+**Terminal 2** — 啟動 scale-watcher（可選，自動擴縮 Worker）：
+
+```bash
+./loadtest/scale-watcher.sh
+```
+
+**Terminal 3** — 執行 k6 壓測：
+
+```bash
+# 範例：100 VU 同時正式提交
+VUS=100 k6 run loadtest/k6-submit.js
+```
+
+**Browser** — 開 Grafana http://localhost:3001，切到 **OCT Demo** dashboard，右上角改成 **Last 5 minutes / auto refresh 5s**。
+
+### 各瓶頸場景的觀察重點
+
+#### 場景一（同時進入考場）— `k6-start.js`
+
+此路徑不走 MQ，Grafana 上的 Worker panel 不會有明顯變化。  
+改用 Prometheus 直接查 HTTP 延遲：
+
+```
+# 進入考場端點 p95 latency（秒）
+histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{route=~".*start.*"}[30s])) by (le))
+```
+
+若 p95 持續上升 → DB connection pool 飽和；查 backend log 找 `Connection pool exhausted` 或 `deadlock`。
+
+#### 場景二（同時 Run）/ 場景三（同時正式提交）— `k6-submit.js`
+
+重點 panel 組合：
+
+```
+Queue depth spike → Worker in-flight 上升 → Verdict rate 追上 → Queue drain
+```
+
+異常訊號：
+- Queue depth 持續增長，不清空 → Worker 數量不足，調高 `MAX` 後重跑 scale-watcher
+- Submit API p95 > 1s 但 Queue depth 沒漲 → backend 到 MQ 連線瓶頸
+- Judge p99 極高（> 30s）+ Worker CPU 100% → Worker CPU 是瓶頸
+
+補充 Prometheus raw query（無 Grafana 時用）：
+
+```promql
+# RabbitMQ judge queue 深度
+rabbitmq_queue_messages{queue="judge.tasks"}
+
+# Backend HTTP error rate（5xx）
+sum(rate(http_requests_total{status=~"5.."}[1m]))
+
+# Worker CPU %（cAdvisor）
+rate(container_cpu_usage_seconds_total{name=~".*worker.*"}[30s]) * 100
+```
+
+---
+
 ## 瓶頸壓測
 
 系統最可能的三個寫入瓶頸，對應不同的後端路徑：
