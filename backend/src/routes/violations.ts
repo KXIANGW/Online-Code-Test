@@ -6,6 +6,7 @@ import { db } from "../db/client";
 import { examViolations, examSessions } from "../db/schema";
 import { parsePositiveIntParam } from "./params";
 import { BadRequestError } from "../errors";
+import { getFreshSessionOrThrow } from "../services/session-lifecycle.service";
 
 const VIOLATION_TYPES = ["fullscreen_exit", "tab_switch", "window_blur", "paste", "copy"] as const;
 
@@ -45,13 +46,18 @@ export const violationRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // GET /exam-sessions/:id/violations
-  // 面試官查詢特定場次的所有違規紀錄（需有 exam:manage 權限或為 superuser）
+  // 面試官查詢特定場次的所有違規紀錄（需有 exam:manage 權限或為 superuser，且須為該場次建立者）
   app.get("/:id/violations", { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const sessionId = parsePositiveIntParam(id, "id");
 
     const canRead = request.user.isSuperuser || request.user.permissions.includes("exam:manage");
     if (!canRead) return reply.status(403).send({ message: "Forbidden" });
+
+    const session = await getFreshSessionOrThrow(sessionId);
+    if (!request.user.isSuperuser && session.createdBy !== request.user.id) {
+      return reply.status(403).send({ message: "Forbidden" });
+    }
 
     const violations = await db
       .select()
