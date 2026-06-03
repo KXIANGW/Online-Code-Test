@@ -13,6 +13,7 @@ describe("createSandboxEngine", () => {
     const engine = createSandboxEngine({
       rootfsBaseDir: "/tmp/custom-rootfs",
       isolateBoxId: 7,
+      isolateBinPath: "/usr/local/bin/isolate",
       seccompBundleDir: "/etc/custom-seccomp",
     });
     expect(engine.name).toBe("isolate");

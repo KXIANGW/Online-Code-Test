@@ -454,6 +454,22 @@ describe("response error interceptor", () => {
     expect(callCount).toBe(1);
     consoleSpy.mockRestore();
   });
+
+  it("logs and rejects unexpected non-Axios errors without retrying", async () => {
+    // given
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const rawError = new Error("adapter exploded before Axios wrapped the error");
+
+    // when
+    const promise = api.get("/non-axios-error", {
+      adapter: () => Promise.reject(rawError),
+    });
+
+    // expect
+    await expect(promise).rejects.toBe(rawError);
+    expect(consoleSpy).toHaveBeenCalledWith("[API Error] Unexpected non-Axios error:", rawError);
+    consoleSpy.mockRestore();
+  });
 });
 
 describe("endpoint wrapper contracts", () => {

@@ -1,0 +1,207 @@
+# Spins up an ephemeral SonarQube + Postgres alongside the OCT test
+# services, runs coverage in all three trees, lets sonar-scanner-cli
+# analyse the repo, and finally polls the Quality Gate API. If the gate
+# does not return OK the job fails — this is the PR-blocking step.
+#
+# Trade-off: each run takes ~5–8 min (SonarQube boot ~90 s + analysis).
+# Restricted to PRs / pushes to long-lived branches to keep CI minutes
+# under control. Feature-branch commits still run the normal ci.yml
+# (lint + tests + build) without the Sonar overhead.
+
+name: SonarQube Quality Gate
+
+on:
+  pull_request:
+    branches: [main, develop, "release/**"]
+  push:
+    branches: [main, develop]
+
+# A new push to the same ref supersedes a still-running scan.
+concurrency:
+  group: sonar-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonar:
+    name: Run Sonar + enforce Quality Gate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+
+    services:
+      # Backing DB for the ephemeral SonarQube. Postgres 16.4-alpine
+      # matches docker-compose.sonar.yml so behaviour stays consistent
+      # between local and CI.
+      sonar-db:
+        image: postgres:16.4-alpine
+        env:
+          POSTGRES_USER: sonar
+          POSTGRES_PASSWORD: sonar_ci_db_password
+          POSTGRES_DB: sonarqube
+        options: >-
+          --health-cmd "pg_isready -U sonar -d sonarqube"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+      sonarqube:
+        image: sonarqube:10.7.0-community
+        env:
+          SONAR_JDBC_URL: jdbc:postgresql://sonar-db:5432/sonarqube
+          SONAR_JDBC_USERNAME: sonar
+          SONAR_JDBC_PASSWORD: sonar_ci_db_password
+          # GitHub-hosted runners can't bump vm.max_map_count, so disable
+          # Elasticsearch bootstrap checks the same way docker-compose
+          # does locally.
+          SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "wget -q -O - http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"'"
+          --health-interval 15s
+          --health-timeout 5s
+          --health-retries 30
+          --health-start-period 90s
+
+      # The OCT app's own stack — required for the backend integration
+      # tests to produce a meaningful lcov.info. Frontend and worker
+      # unit tests don't touch these.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: oct
+          POSTGRES_PASSWORD: oct_dev_password
+          POSTGRES_DB: oct
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Sonar needs full git history for blame-based assignment of
+          # new code / hotspot owners.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # OCT schema lives in infra/postgres/*.sql; backend tests assume
+      # the `oct` and `oct_test` databases are seeded. The 50-create-
+      # testdb.sql at the end clones oct → oct_test (per repo memory).
+      - name: Apply OCT database schema
+        env:
+          PGPASSWORD: oct_dev_password
+        run: |
+          for f in $(ls infra/postgres/[0-9]*.sql | sort); do
+            echo "→ applying $f"
+            psql -h localhost -U oct -d oct -f "$f"
+          done
+
+      # Service healthcheck waits for status=UP but the Compute Engine
+      # pipeline may still be initialising; re-poll explicitly so a
+      # racy scanner call doesn't silently produce an empty report.
+      - name: Wait for SonarQube fully ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9000/api/system/status \
+                | grep -q '"status":"UP"'; then
+              echo "SonarQube UP after $i attempts"
+              break
+            fi
+            echo "  attempt $i: SonarQube not ready, sleeping 5 s..."
+            sleep 5
+          done
+
+      # SonarQube 10.x still accepts admin/admin on the API until the
+      # password is rotated through the UI; we never go through the UI
+      # here so this stays valid for the lifetime of the ephemeral
+      # instance. Token is masked from logs.
+      - name: Generate Sonar scanner token
+        id: sonar
+        run: |
+          set -euo pipefail
+          TOKEN_JSON=$(curl -sf -u admin:admin -X POST \
+            "http://localhost:9000/api/user_tokens/generate?name=ci-scanner-${{ github.run_id }}")
+          TOKEN=$(echo "$TOKEN_JSON" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['token'])")
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      # ── Coverage: each tree on its own to keep failures attributable ─
+      - name: Frontend — install + coverage
+        working-directory: frontend
+        run: |
+          npm ci
+          npx vitest run --coverage
+
+      - name: Backend — install + coverage
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgres://oct:oct_dev_password@localhost:5432/oct_test
+          JWT_SECRET: test-secret-minimum-32-chars-for-jwt-signing
+          RABBITMQ_URL: amqp://oct:oct_dev_password@localhost:5672
+        run: |
+          npm ci
+          npx vitest run --coverage
+
+      - name: Worker — install + coverage
+        working-directory: worker
+        run: |
+          npm ci
+          npx vitest run --coverage
+
+      - name: Worker puller — install + coverage
+        working-directory: worker/puller
+        run: |
+          npm ci
+          npx vitest run --coverage
+
+      # The official scan action mounts the workspace, runs sonar-
+      # scanner-cli, and leaves .scannerwork/report-task.txt behind for
+      # the quality-gate-action to poll.
+      # The scan action runs in its own container on the GHA network bridge.
+      # Inside that container `localhost` resolves to the scanner container,
+      # so reach the SonarQube service by its GHA service name.
+      - name: Run SonarScanner
+        uses: SonarSource/sonarqube-scan-action@v3.1.0
+        env:
+          SONAR_TOKEN: ${{ steps.sonar.outputs.token }}
+          SONAR_HOST_URL: http://sonarqube:9000
+
+      # Polls report-task.txt → Compute Engine task → Quality Gate API.
+      # This action runs on the runner, where the SonarQube service is
+      # exposed through the published localhost:9000 port.
+      # Action exits non-zero if status != OK, which marks the job — and
+      # therefore the PR check — as failed.
+      - name: Quality Gate check
+        uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ steps.sonar.outputs.token }}
+          SONAR_HOST_URL: http://localhost:9000
+
+      # Diagnostic log if the gate failed: dump the conditions that
+      # blocked the merge so reviewers don't have to dig in CI artifacts.
+      - name: Quality Gate breakdown (on failure)
+        if: failure()
+        env:
+          SONAR_TOKEN: ${{ steps.sonar.outputs.token }}
+        run: |
+          curl -sf -u "$SONAR_TOKEN:" \
+            "http://localhost:9000/api/qualitygates/project_status?projectKey=oct" \
+            | python3 -m json.tool || true

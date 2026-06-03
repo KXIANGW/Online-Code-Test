@@ -9,6 +9,8 @@ let app: FastifyInstance;
 let interviewerToken: string;
 let candidateToken: string;
 let otherCandidateToken: string;
+let otherInterviewerToken: string;
+let problemSetterToken: string;
 let interviewerId: number;
 let candidateId: number;
 let otherCandidateId: number;
@@ -46,10 +48,24 @@ beforeEach(async () => {
     roleNames: ["candidate"],
     createdBy: interviewerId,
   });
+  await seedUser({
+    username: "bob",
+    password: "Bob@1234",
+    displayName: "Bob",
+    roleNames: ["interviewer"],
+  });
+  await seedUser({
+    username: "carol",
+    password: "Carol@1234",
+    displayName: "Carol",
+    roleNames: ["problem_setter"],
+  });
 
   interviewerToken = await loginAs(app, "alice", "Alice@1234");
   candidateToken = await loginAs(app, "david", "David@1234");
   otherCandidateToken = await loginAs(app, "eve", "Eve@1234");
+  otherInterviewerToken = await loginAs(app, "bob", "Bob@1234");
+  problemSetterToken = await loginAs(app, "carol", "Carol@1234");
 
   // 建立一個 in_progress 的考試場次
   const [problem] = await db
@@ -271,5 +287,46 @@ describe("GET /api/exam-sessions/:id/violations", () => {
     // expect
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual([]);
+  });
+
+  it("returns 404 when session does not exist", async () => {
+    // given
+    const nonExistentId = 99999999;
+
+    // when
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${nonExistentId}/violations`,
+      headers: { Authorization: `Bearer ${interviewerToken}` },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("returns 403 when interviewer reads violations for another interviewer's session", async () => {
+    // given: sessionId was created by alice; bob is a different interviewer
+
+    // when
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/violations`,
+      headers: { Authorization: `Bearer ${otherInterviewerToken}` },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("returns 403 for problem_setter who lacks exam:manage", async () => {
+    // given / when
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/exam-sessions/${sessionId}/violations`,
+      headers: { Authorization: `Bearer ${problemSetterToken}` },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(403);
   });
 });

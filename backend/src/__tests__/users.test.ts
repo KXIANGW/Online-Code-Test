@@ -687,3 +687,217 @@ describe("PUT /api/users/:id", () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+// ── PUT /api/users/:id/roles ──────────────────────────────────────────────────
+// Covers RequirementConverting FR-1.3 AC1: Role-Based Access Control —
+// only superusers may assign roles; assignable roles are constrained.
+
+describe("PUT /api/users/:id/roles", () => {
+  // GET /api/users/:id does NOT include `roles` — only the list endpoint
+  // returns the aggregated role names via array_agg. To verify role changes
+  // we re-list and look up the target user.
+  async function getUserIds(rootToken: string): Promise<{ id: number; username: string }[]> {
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${rootToken}` },
+    });
+    return listRes.json<{ id: number; username: string }[]>();
+  }
+
+  async function getRolesFor(rootToken: string, userId: number): Promise<string[]> {
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/api/users",
+      headers: { authorization: `Bearer ${rootToken}` },
+    });
+    const found = listRes.json<{ id: number; roles: string[] }[]>().find((u) => u.id === userId);
+    if (!found) throw new Error(`user ${userId} missing from list response`);
+    return found.roles;
+  }
+
+  it("superuser can replace a candidate's roles with interviewer → 200 and roles take effect", async () => {
+    // given: candidate1 currently has roles=["candidate"]
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const cand = allUsers.find((u) => u.username === "candidate1")!;
+
+    // when: root reassigns roles to ["interviewer"]
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${cand.id}/roles`,
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: { roleNames: ["interviewer"] },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(200);
+    // verify role list now contains exactly ["interviewer"]
+    const updatedRoles = await getRolesFor(rootToken, cand.id);
+    expect(updatedRoles).toEqual(["interviewer"]);
+    expect(updatedRoles).not.toContain("candidate");
+  });
+
+  it("superuser can assign multiple roles (interviewer + problem_setter) → 200", async () => {
+    // given
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const cand = allUsers.find((u) => u.username === "candidate1")!;
+
+    // when
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${cand.id}/roles`,
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: { roleNames: ["interviewer", "problem_setter"] },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(200);
+    const updatedRoles = await getRolesFor(rootToken, cand.id);
+    expect(updatedRoles.sort()).toEqual(["interviewer", "problem_setter"]);
+  });
+
+  it("superuser can clear roles by passing an empty array → 200", async () => {
+    // given: alice has ["interviewer"]
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const alice = allUsers.find((u) => u.username === "alice")!;
+
+    // when: clear all roles
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${alice.id}/roles`,
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: { roleNames: [] },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(200);
+    expect(await getRolesFor(rootToken, alice.id)).toEqual([]);
+  });
+
+  it("rejects unassignable role names (candidate or root) → 400", async () => {
+    // given
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const cand = allUsers.find((u) => u.username === "candidate1")!;
+
+    // when: try to assign "root" (privilege escalation attempt)
+    const elevateRes = await app.inject({
+      method: "PUT",
+      url: `/api/users/${cand.id}/roles`,
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: { roleNames: ["root"] },
+    });
+    // when: try to assign "candidate" (also disallowed by service contract)
+    const candidateRes = await app.inject({
+      method: "PUT",
+      url: `/api/users/${cand.id}/roles`,
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: { roleNames: ["candidate"] },
+    });
+
+    // expect: both rejected without mutating state
+    expect(elevateRes.statusCode).toBe(400);
+    expect(candidateRes.statusCode).toBe(400);
+  });
+
+  it("rejects roleNames missing or wrong type → 400", async () => {
+    // given
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const cand = allUsers.find((u) => u.username === "candidate1")!;
+
+    // when: missing payload
+    const missing = await app.inject({
+      method: "PUT",
+      url: `/api/users/${cand.id}/roles`,
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: {},
+    });
+    // when: roleNames is not an array
+    const wrongType = await app.inject({
+      method: "PUT",
+      url: `/api/users/${cand.id}/roles`,
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: { roleNames: "interviewer" },
+    });
+
+    // expect
+    expect(missing.statusCode).toBe(400);
+    expect(wrongType.statusCode).toBe(400);
+  });
+
+  it("interviewer cannot reassign roles → 403", async () => {
+    // given
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const aliceToken = await loginAs(app, "alice", "Test@1234");
+    const allUsers = await getUserIds(rootToken);
+    const cand = allUsers.find((u) => u.username === "candidate1")!;
+
+    // when
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${cand.id}/roles`,
+      headers: { authorization: `Bearer ${aliceToken}` },
+      payload: { roleNames: ["interviewer"] },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("candidate cannot reassign roles → 403", async () => {
+    // given
+    const candToken = await loginAs(app, "candidate1", "Cand@1234");
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const alice = allUsers.find((u) => u.username === "alice")!;
+
+    // when: candidate attempts to demote alice
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${alice.id}/roles`,
+      headers: { authorization: `Bearer ${candToken}` },
+      payload: { roleNames: [] },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("cannot reassign roles of a superuser → 403", async () => {
+    // given
+    const rootToken = await loginAs(app, "root", "Root@1234");
+    const allUsers = await getUserIds(rootToken);
+    const root = allUsers.find((u) => u.username === "root")!;
+
+    // when: even root cannot mutate another superuser's roles via this endpoint
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/users/${root.id}/roles`,
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: { roleNames: ["interviewer"] },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("non-existent user → 404", async () => {
+    // given
+    const rootToken = await loginAs(app, "root", "Root@1234");
+
+    // when
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/users/999999/roles",
+      headers: { authorization: `Bearer ${rootToken}` },
+      payload: { roleNames: ["interviewer"] },
+    });
+
+    // expect
+    expect(res.statusCode).toBe(404);
+  });
+});

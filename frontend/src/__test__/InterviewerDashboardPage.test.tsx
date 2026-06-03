@@ -433,6 +433,84 @@ describe("InterviewerDashboardPage()", () => {
     await waitFor(() => expect(mockAssignExamToCandidates).toHaveBeenCalledWith(42, [4]));
   });
 
+  it("assignments tab: shows error message when assignExamToCandidates rejects", async () => {
+    // given
+    mockGetExamSessions.mockResolvedValue([]);
+    mockAssignExamToCandidates.mockRejectedValue({ message: "分發失敗" });
+    setupAuthStore();
+    setupInterviewerStore([], [mockTemplate], [pendingCandidate]);
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "考試分發" }));
+    await userEvent.selectOptions(screen.getByLabelText("考試模板"), "42");
+    await userEvent.click(screen.getByRole("checkbox", { name: /Pending Candidate/ }));
+    await userEvent.click(screen.getByRole("button", { name: /確認分發/ }));
+
+    // expect
+    await waitFor(() => expect(screen.getByText("分發失敗")).toBeInTheDocument());
+  });
+
+  it("assignments tab: shows empty state when all candidates have active or ended sessions", async () => {
+    // given: every candidate is in_progress or submitted
+    mockGetExamSessions.mockResolvedValue([
+      sessionForCandidate(activeCandidate, "in_progress", "Running Test"),
+      sessionForCandidate(endedCandidate, "submitted", "Finished Test"),
+    ]);
+    mockGetSessionResult.mockResolvedValue(mockNotStartedResult);
+    setupAuthStore();
+    setupInterviewerStore([], [mockTemplate], [activeCandidate, endedCandidate]);
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "考試分發" }));
+
+    // expect
+    expect(screen.getByText("目前沒有考生可分發")).toBeInTheDocument();
+  });
+
+  it("records tab: shows empty state when no exam sessions exist", async () => {
+    // given
+    mockGetExamSessions.mockResolvedValue([]);
+    setupAuthStore();
+    setupInterviewerStore([], [], []);
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+    // when
+    await userEvent.click(screen.getByRole("button", { name: "考試紀錄" }));
+
+    // expect
+    expect(screen.getByText("目前沒有考試紀錄")).toBeInTheDocument();
+  });
+
+  it("candidates tab: onSaved triggers loadDashboardData and closes the dialog", async () => {
+    // given
+    mockGetUsers.mockResolvedValue(mockUserSummaries);
+    mockUpdateUser.mockResolvedValue({ ...pendingCandidate, displayName: "Updated Name" });
+    mockGetUserPassword.mockResolvedValue({ password: "Test@1234" });
+    setupAuthStore();
+    setupInterviewerStore([], [], [pendingCandidate]);
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: "考生帳號" }));
+    await userEvent.click(screen.getByRole("button", { name: "編輯" }));
+
+    // when: submit the dialog (placeholder = candidate.username since label has no htmlFor)
+    const displayNameInput = screen.getByPlaceholderText(pendingCandidate.username);
+    await userEvent.clear(displayNameInput);
+    await userEvent.type(displayNameInput, "Updated Name");
+    await userEvent.click(screen.getByRole("button", { name: "儲存" }));
+
+    // expect: loadDashboardData called again (getExamSessions called twice: mount + onSaved)
+    await waitFor(() => expect(mockGetExamSessions).toHaveBeenCalledTimes(2));
+    // dialog closed
+    expect(screen.queryByRole("button", { name: "儲存" })).not.toBeInTheDocument();
+  });
+
   // ── Data fetching ─────────────────────────────────────────────────────────
 
   it("fetches sessions, templates, and users on mount", async () => {

@@ -6,16 +6,16 @@
 
 目前的引擎為 `sio2project/isolate`，配合每語言的 rootfs 目錄樹與可選的 seccomp 包裝器。舊版 Docker/gVisor 執行路徑已不再是生產程式碼的一部分。
 
-| 項目 | 目前行為 |
-| --- | --- |
-| 引擎 | `createSandboxEngine()` 回傳 `IsolateEngine` |
-| Rootfs | `RootfsResolver` 預設解析 `/var/lib/oct/rootfs/<language>` |
-| 本地 Rootfs | `make build-isolate-rootfs` 在 `/tmp/oct-rootfs` 下提取已啟用的語言映像 |
-| Kubernetes Rootfs | `worker/puller` 在每個節點解包 OCI 映像並原子性地交換符號連結 |
-| 隔離 | isolate cgroups、chroot、box ID、每次執行的工作目錄 |
-| Seccomp | `oct-seccomp-wrapper` + `isolate-seccomp.policy`，從 `SECCOMP_BUNDLE_DIR` 掛載 |
-| 並發 | RabbitMQ `prefetch=1`；透過增加 Worker 程序/Pod 進行水平擴展 |
-| 可觀測性 | `HEALTH_PORT`（預設 `8080`）上的 `/healthz` 與 `/metrics` |
+| 項目              | 目前行為                                                                       |
+| ----------------- | ------------------------------------------------------------------------------ |
+| 引擎              | `createSandboxEngine()` 回傳 `IsolateEngine`                                   |
+| Rootfs            | `RootfsResolver` 預設解析 `/var/lib/oct/rootfs/<language>`                     |
+| 本地 Rootfs       | `make build-isolate-rootfs` 在 `/tmp/oct-rootfs` 下提取已啟用的語言映像        |
+| Kubernetes Rootfs | `worker/puller` 在每個節點解包 OCI 映像並原子性地交換符號連結                  |
+| 隔離              | isolate cgroups、chroot、box ID、每次執行的工作目錄                            |
+| Seccomp           | `oct-seccomp-wrapper` + `isolate-seccomp.policy`，從 `SECCOMP_BUNDLE_DIR` 掛載 |
+| 並發              | RabbitMQ `prefetch=1`；透過增加 Worker 程序/Pod 進行水平擴展                   |
+| 可觀測性          | `HEALTH_PORT`（預設 `8080`）上的 `/healthz` 與 `/metrics`                      |
 
 ## 目錄結構
 
@@ -54,12 +54,12 @@ worker/
 
 ## RabbitMQ 協定
 
-| 名稱 | 類型 | 用途 |
-| --- | --- | --- |
-| `judge.tasks` | durable queue | 後端至 Worker 的任務佇列 |
-| `judge.results` | fanout exchange | Worker 至後端的結果事件 |
-| `judge.results.backend` | durable queue | 後端消費者綁定 |
-| `judge.dlq` | durable queue | 任務傳遞失敗的死信佇列 |
+| 名稱                    | 類型            | 用途                     |
+| ----------------------- | --------------- | ------------------------ |
+| `judge.tasks`           | durable queue   | 後端至 Worker 的任務佇列 |
+| `judge.results`         | fanout exchange | Worker 至後端的結果事件  |
+| `judge.results.backend` | durable queue   | 後端消費者綁定           |
+| `judge.dlq`             | durable queue   | 任務傳遞失敗的死信佇列   |
 
 任務訊息：
 
@@ -118,15 +118,16 @@ make verify-language LANG=python3
 
 ## 環境變數
 
-| 變數 | 用途 |
-| --- | --- |
-| `RABBITMQ_URL` | RabbitMQ 連線字串 |
-| `DATABASE_URL` | PostgreSQL 連線字串 |
-| `HOST_WORK_DIR` | 用於編譯與測試案例檔案的主機/工作目錄 |
-| `ROOTFS_BASE_DIR` | 語言 rootfs 目錄樹的根目錄 |
-| `SECCOMP_BUNDLE_DIR` | 包含 `seccomp-wrapper` 與 `seccomp.policy` 的目錄 |
-| `ISOLATE_BOX_ID` | 可選的 isolate box ID 覆蓋值 |
-| `HEALTH_PORT` | 健康/指標 HTTP 埠號 |
+| 變數                 | 用途                                                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `RABBITMQ_URL`       | RabbitMQ 連線字串                                                                                                      |
+| `DATABASE_URL`       | PostgreSQL 連線字串                                                                                                    |
+| `HOST_WORK_DIR`      | 用於編譯與測試案例檔案的主機/工作目錄，預設 `/var/lib/oct/judge`；正式環境應使用 Worker 專用目錄，不要使用 public temp |
+| `ROOTFS_BASE_DIR`    | 語言 rootfs 目錄樹的根目錄                                                                                             |
+| `ISOLATE_BIN_PATH`   | isolate 執行檔絕對路徑，預設 `/usr/local/bin/isolate`；拒絕相對路徑以避免 PATH lookup                                  |
+| `SECCOMP_BUNDLE_DIR` | 包含 `seccomp-wrapper` 與 `seccomp.policy` 的目錄                                                                      |
+| `ISOLATE_BOX_ID`     | 可選的 isolate box ID 覆蓋值                                                                                           |
+| `HEALTH_PORT`        | 健康/指標 HTTP 埠號                                                                                                    |
 
 ## 指標
 

@@ -248,6 +248,56 @@ describe("ProblemFormPage()", () => {
       expect(mockCreateProblem).not.toHaveBeenCalled();
     });
 
+    it("shows inline error and does not call API when description is empty on submit", async () => {
+      // given
+      const user = userEvent.setup();
+      setupAuthStore();
+      renderCreate();
+
+      // when
+      await user.type(screen.getByPlaceholderText("輸入題目名稱"), "Problem without statement");
+      await user.click(screen.getByRole("button", { name: "儲存題目" }));
+
+      // expect
+      expect(screen.getByText("請輸入題目描述")).toBeInTheDocument();
+      expect(mockCreateProblem).not.toHaveBeenCalled();
+    });
+
+    it("requires at least one public testcase before creating a problem", async () => {
+      // given
+      const user = userEvent.setup();
+      setupAuthStore();
+      renderCreate();
+
+      // when
+      await user.type(screen.getByPlaceholderText("輸入題目名稱"), "Hidden only");
+      await user.type(screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."), "Statement");
+      await user.click(screen.getByRole("button", { name: "+ 新增測資" }));
+      await user.click(screen.getByRole("button", { name: "儲存題目" }));
+
+      // expect
+      expect(screen.getByText("至少需要 1 筆公開測資")).toBeInTheDocument();
+      expect(mockCreateProblem).not.toHaveBeenCalled();
+    });
+
+    it("requires at least one hidden testcase before creating a problem", async () => {
+      // given
+      const user = userEvent.setup();
+      setupAuthStore();
+      renderCreate();
+
+      // when
+      await user.type(screen.getByPlaceholderText("輸入題目名稱"), "Public only");
+      await user.type(screen.getByPlaceholderText("以 Markdown 撰寫題目描述..."), "Statement");
+      await user.click(screen.getByRole("button", { name: "+ 新增測資" }));
+      await user.click(screen.getByRole("button", { name: "隱藏" }));
+      await user.click(screen.getByRole("button", { name: "儲存題目" }));
+
+      // expect
+      expect(screen.getByText("至少需要 1 筆隱藏測資")).toBeInTheDocument();
+      expect(mockCreateProblem).not.toHaveBeenCalled();
+    });
+
     // Happy path: create problem (requires title, description, ≥1 public and ≥1 hidden testcase)
     it("calls createProblem with correct data and navigates on success", async () => {
       // given
@@ -329,6 +379,27 @@ describe("ProblemFormPage()", () => {
 
       // expect
       expect(screen.getByRole("button", { name: "公開" })).toBeInTheDocument();
+    });
+
+    it("uploads input and output testcase files and previews their contents", async () => {
+      // given
+      const user = userEvent.setup();
+      setupAuthStore();
+      renderCreate();
+      await user.click(screen.getByRole("button", { name: "+ 新增測資" }));
+      const inputFile = new File(["1 2 3\n"], "sample.in", { type: "text/plain" });
+      const outputFile = new File(["6\n"], "sample.out", { type: "text/plain" });
+      const fileInputs = document.querySelectorAll<HTMLInputElement>('input[type="file"]');
+
+      // when
+      await user.upload(fileInputs[0]!, inputFile);
+      await user.upload(fileInputs[1]!, outputFile);
+
+      // expect
+      expect(await screen.findByText("sample.in")).toBeInTheDocument();
+      expect(screen.getByText("1 2 3")).toBeInTheDocument();
+      expect(await screen.findByText("sample.out")).toBeInTheDocument();
+      expect(screen.getByText("6")).toBeInTheDocument();
     });
 
     // Negative: API failure
@@ -421,6 +492,54 @@ describe("ProblemFormPage()", () => {
           expect.objectContaining({ title: "Two Sum Updated" }),
         ),
       );
+      expect(mockNavigate).toHaveBeenCalledWith("/problem-setter");
+    });
+
+    it("deletes removed existing testcases before navigating on edit submit", async () => {
+      // given
+      const user = userEvent.setup();
+      setupAuthStore();
+      mockGetProblemById.mockResolvedValue(mockProblemDetail);
+      mockUpdateProblem.mockResolvedValue(mockProblemDetail);
+      mockDeleteTestcase.mockResolvedValue(undefined);
+      renderEdit(1);
+      await screen.findByText("測資 #1");
+
+      // when
+      await user.click(screen.getAllByRole("button", { name: "刪除" })[0]!);
+      await user.click(screen.getByRole("button", { name: "確定" }));
+      await user.click(screen.getByRole("button", { name: "儲存題目" }));
+
+      // expect
+      await waitFor(() => expect(mockDeleteTestcase).toHaveBeenCalledWith(1, 10));
+      expect(mockAddTestcase).not.toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith("/problem-setter");
+    });
+
+    it("adds new testcase rows on edit submit without deleting existing rows", async () => {
+      // given
+      const user = userEvent.setup();
+      setupAuthStore();
+      mockGetProblemById.mockResolvedValue(mockProblemDetail);
+      mockUpdateProblem.mockResolvedValue(mockProblemDetail);
+      mockAddTestcase.mockResolvedValue({ id: 12 });
+      renderEdit(1);
+      await screen.findByText("測資 #1");
+
+      // when
+      await user.click(screen.getByRole("button", { name: "+ 新增測資" }));
+      await user.click(screen.getByRole("button", { name: "儲存題目" }));
+
+      // expect
+      await waitFor(() =>
+        expect(mockAddTestcase).toHaveBeenCalledWith(1, {
+          orderIndex: 2,
+          isPublic: false,
+          inputData: "",
+          expectedOutput: "",
+        }),
+      );
+      expect(mockDeleteTestcase).not.toHaveBeenCalled();
       expect(mockNavigate).toHaveBeenCalledWith("/problem-setter");
     });
 

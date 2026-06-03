@@ -10,6 +10,23 @@ import {
 import type { ExamSession, ExamTemplate, UserSummary } from "../types";
 import { getAssignableCandidates } from "../utils/assignmentEligibility";
 
+interface ApiMessageError {
+  response?: {
+    data?: {
+      message?: string;
+    };
+  };
+  message?: string;
+}
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === "object") {
+    const apiError = err as ApiMessageError;
+    return apiError.response?.data?.message ?? apiError.message ?? fallback;
+  }
+  return fallback;
+}
+
 export default function TemplateAssignPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -63,19 +80,14 @@ export default function TemplateAssignPage() {
   }
 
   async function handleAssign() {
-    if (selectedIds.size === 0) {
-      setError("請至少選擇一位考生");
-      return;
-    }
     setSubmitting(true);
     setError(null);
     try {
       await assignExamToCandidates(templateId, Array.from(selectedIds));
       setSuccess(true);
       setTimeout(() => navigate("/interviewer"), 1500);
-    } catch (err: any) {
-      const msg = err.response?.data?.message || err.message || "分配失敗";
-      setError(msg);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "分配失敗"));
     } finally {
       setSubmitting(false);
     }
@@ -87,6 +99,23 @@ export default function TemplateAssignPage() {
         <NavBar homeHref="/interviewer" />
         <main className="max-w-2xl mx-auto px-4 py-8">
           <p className="text-center py-12 text-slate-400">載入中...</p>
+        </main>
+      </div>
+    );
+  }
+
+  if (error && !template) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <NavBar homeHref="/interviewer" />
+        <main className="max-w-2xl mx-auto px-4 py-8">
+          <p className="text-center py-12 text-red-500">{error}</p>
+          <button
+            onClick={() => navigate("/interviewer")}
+            className="block mx-auto text-sm text-blue-600 hover:underline"
+          >
+            返回考試管理
+          </button>
         </main>
       </div>
     );

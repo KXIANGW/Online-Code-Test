@@ -147,14 +147,48 @@ describe("TemplateAssignPage()", () => {
   });
 
   it("shows 找不到此考試模板 when template not found", async () => {
+    // given
     mockListExamTemplates.mockResolvedValue([]);
+
+    // when
     renderPage("999");
+
+    // expect
     expect(await screen.findByText("找不到此考試模板")).toBeInTheDocument();
   });
 
+  it("shows a load error when one of the required data requests fails", async () => {
+    // given
+    mockGetUsers.mockRejectedValue(new Error("users unavailable"));
+
+    // when
+    renderPage();
+
+    // expect
+    expect(await screen.findByText("資料載入失敗")).toBeInTheDocument();
+  });
+
   it("assign button is disabled when no candidate selected", async () => {
+    // given
+    renderPage();
+
+    // when
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+    // expect
+    expect(screen.getByRole("button", { name: /確認分配/ })).toBeDisabled();
+  });
+
+  it("shows an empty candidate message when no candidate accounts are available", async () => {
+    // given
+    mockGetUsers.mockResolvedValue([]);
+
+    // when
     renderPage();
     await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+
+    // expect
+    expect(screen.getByText("目前沒有考生帳號")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /確認分配/ })).toBeDisabled();
   });
 
@@ -177,16 +211,72 @@ describe("TemplateAssignPage()", () => {
   });
 
   it("shows error when assignExamToCandidates rejects", async () => {
+    // given
     mockAssignExamToCandidates.mockRejectedValue(new Error("Assignment failed"));
     renderPage();
     await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
 
     const user = userEvent.setup();
+
+    // when
     await user.click(screen.getByRole("checkbox", { name: /Alice Chen/ }));
     await user.click(screen.getByRole("button", { name: /確認分配/ }));
 
+    // expect
     await waitFor(() => expect(screen.getByText("Assignment failed")).toBeInTheDocument());
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("shows backend response message when assignment API rejects with structured data", async () => {
+    // given
+    mockAssignExamToCandidates.mockRejectedValue({
+      response: { data: { message: "Candidate already has a pending exam" } },
+    });
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+    const user = userEvent.setup();
+
+    // when
+    await user.click(screen.getByRole("checkbox", { name: /Alice Chen/ }));
+    await user.click(screen.getByRole("button", { name: /確認分配/ }));
+
+    // expect
+    await waitFor(() =>
+      expect(screen.getByText("Candidate already has a pending exam")).toBeInTheDocument(),
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("shows fallback message when assignment API rejects with an invalid error shape", async () => {
+    // given
+    mockAssignExamToCandidates.mockRejectedValue(null);
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+    const user = userEvent.setup();
+
+    // when
+    await user.click(screen.getByRole("checkbox", { name: /Alice Chen/ }));
+    await user.click(screen.getByRole("button", { name: /確認分配/ }));
+
+    // expect
+    await waitFor(() => expect(screen.getByText("分配失敗")).toBeInTheDocument());
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("deselects a candidate when their checkbox is clicked a second time", async () => {
+    // given
+    renderPage();
+    await waitFor(() => expect(screen.queryByText("載入中...")).not.toBeInTheDocument());
+    const user = userEvent.setup();
+    const checkbox = screen.getByRole("checkbox", { name: /Alice Chen/ });
+
+    // when: select then deselect
+    await user.click(checkbox);
+    expect(screen.getByRole("button", { name: /確認分配.*1/ })).not.toBeDisabled();
+    await user.click(checkbox);
+
+    // expect: button disabled again (selectedIds is empty)
+    expect(screen.getByRole("button", { name: /確認分配.*0/ })).toBeDisabled();
   });
 
   it("hides in-progress and ended candidates but shows pending candidate template", async () => {

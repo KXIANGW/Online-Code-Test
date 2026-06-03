@@ -35,7 +35,7 @@ const pyhSpec: LanguageSpec = {
 //      exit code.
 //   3. Fires "close" asynchronously so awaited Promises resolve in order.
 function buildFakeSpawner(
-  responses: Array<{ exitCode: number; sideEffect?: () => Promise<void> | void }>
+  responses: Array<{ exitCode: number; sideEffect?: () => Promise<void> | void }>,
 ): { spawner: IsolateSpawner; calls: string[][] } {
   const calls: string[][] = [];
   let i = 0;
@@ -115,10 +115,18 @@ describe("IsolateEngine.compile", () => {
     expect(calls[2]).toContain("--cleanup");
     // run args must override /usr / /lib / /bin etc. with the language rootfs
     // and writable-bind the candidate work dir at /code.
-    expect(calls[1]?.some((arg) => arg.startsWith("--dir=/usr=") && arg.includes("/cpp17/usr"))).toBe(true);
-    expect(calls[1]?.some((arg) => arg.startsWith("--dir=/lib=") && arg.includes("/cpp17/lib"))).toBe(true);
-    expect(calls[1]?.some((arg) => arg.startsWith("--dir=/code=") && arg.endsWith(":rw"))).toBe(true);
-    expect(calls[1]).toEqual(expect.arrayContaining(["/usr/bin/g++", "solution.cpp", "-o", "solution"]));
+    expect(
+      calls[1]?.some((arg) => arg.startsWith("--dir=/usr=") && arg.includes("/cpp17/usr")),
+    ).toBe(true);
+    expect(
+      calls[1]?.some((arg) => arg.startsWith("--dir=/lib=") && arg.includes("/cpp17/lib")),
+    ).toBe(true);
+    expect(calls[1]?.some((arg) => arg.startsWith("--dir=/code=") && arg.endsWith(":rw"))).toBe(
+      true,
+    );
+    expect(calls[1]).toEqual(
+      expect.arrayContaining(["/usr/bin/g++", "solution.cpp", "-o", "solution"]),
+    );
   });
 
   it("returns success=false with stderr when isolate reports non-zero exit", async () => {
@@ -129,7 +137,10 @@ describe("IsolateEngine.compile", () => {
         sideEffect: async () => {
           await fs.writeFile(path.join(workDir, "meta.txt"), "status:RE\nexitcode:1\n");
           await fs.writeFile(path.join(workDir, "stdout.txt"), "");
-          await fs.writeFile(path.join(workDir, "stderr.txt"), "error: undefined reference to foo\n");
+          await fs.writeFile(
+            path.join(workDir, "stderr.txt"),
+            "error: undefined reference to foo\n",
+          );
         },
       },
       { exitCode: 0 },
@@ -169,7 +180,14 @@ describe("IsolateEngine.runOne", () => {
         sideEffect: async () => {
           await fs.writeFile(
             path.join(workDir, "meta.txt"),
-            ["status:OK", "exitcode:0", "time:0.020", "time-wall:0.025", "max-rss:1024", "cg-mem:2048"].join("\n")
+            [
+              "status:OK",
+              "exitcode:0",
+              "time:0.020",
+              "time-wall:0.025",
+              "max-rss:1024",
+              "cg-mem:2048",
+            ].join("\n"),
           );
           await fs.writeFile(path.join(workDir, "stdout.txt"), "42\n");
           await fs.writeFile(path.join(workDir, "stderr.txt"), "");
@@ -200,7 +218,9 @@ describe("IsolateEngine.runOne", () => {
 
     // Run-phase args (calls[1]) bind-mount work dir rw at /code (so isolate
     // can write stdout.txt / stderr.txt) and include the user run cmd.
-    expect(calls[1]?.some((arg) => arg.startsWith("--dir=/code=") && arg.endsWith(":rw"))).toBe(true);
+    expect(calls[1]?.some((arg) => arg.startsWith("--dir=/code=") && arg.endsWith(":rw"))).toBe(
+      true,
+    );
     expect(calls[1]).toContain("/code/solution");
   });
 
@@ -212,7 +232,7 @@ describe("IsolateEngine.runOne", () => {
         sideEffect: async () => {
           await fs.writeFile(
             path.join(workDir, "meta.txt"),
-            ["status:TO", "time:1.000", "time-wall:1.200", "killed:1"].join("\n")
+            ["status:TO", "time:1.000", "time-wall:1.200", "killed:1"].join("\n"),
           );
           await fs.writeFile(path.join(workDir, "stdout.txt"), "");
           await fs.writeFile(path.join(workDir, "stderr.txt"), "");
@@ -246,7 +266,9 @@ describe("IsolateEngine.runOne", () => {
         sideEffect: async () => {
           await fs.writeFile(
             path.join(workDir, "meta.txt"),
-            ["status:SG", "exitsig:9", "cg-oom-killed:1", "cg-mem:65536", "time-wall:0.300"].join("\n")
+            ["status:SG", "exitsig:9", "cg-oom-killed:1", "cg-mem:65536", "time-wall:0.300"].join(
+              "\n",
+            ),
           );
           await fs.writeFile(path.join(workDir, "stdout.txt"), "");
           await fs.writeFile(path.join(workDir, "stderr.txt"), "");
@@ -300,9 +322,7 @@ describe("IsolateEngine.runOne", () => {
     });
 
     // 1. /etc/oct gets bound at /oct-seccomp inside the sandbox.
-    expect(calls[1]).toEqual(
-      expect.arrayContaining(["--dir=/oct-seccomp=/etc/oct"])
-    );
+    expect(calls[1]).toEqual(expect.arrayContaining(["--dir=/oct-seccomp=/etc/oct"]));
     // 2. The candidate command is prefixed with the wrapper invocation.
     const runIdx = calls[1]!.indexOf("--run");
     expect(runIdx).toBeGreaterThan(-1);
@@ -359,7 +379,10 @@ describe("IsolateEngine.runOne", () => {
       {
         exitCode: 0,
         sideEffect: async () => {
-          await fs.writeFile(path.join(workDir, "meta.txt"), "status:OK\nexitcode:0\ntime-wall:0.05\n");
+          await fs.writeFile(
+            path.join(workDir, "meta.txt"),
+            "status:OK\nexitcode:0\ntime-wall:0.05\n",
+          );
           await fs.writeFile(path.join(workDir, "stdout.txt"), big);
           await fs.writeFile(path.join(workDir, "stderr.txt"), "");
         },
@@ -403,7 +426,7 @@ describe("IsolateEngine.runOne", () => {
         timeLimitMs: 1000,
         memoryLimitMb: 64,
         outputLimitKb: 64,
-      })
+      }),
     ).rejects.toBeInstanceOf(SandboxSystemError);
   });
 
@@ -429,7 +452,7 @@ describe("IsolateEngine.runOne", () => {
         timeLimitMs: 1000,
         memoryLimitMb: 64,
         outputLimitKb: 64,
-      })
+      }),
     ).rejects.toBeInstanceOf(SandboxSystemError);
   });
 
@@ -440,9 +463,9 @@ describe("IsolateEngine.runOne", () => {
       spawner,
     });
 
-    await expect(
-      engine.compile({ spec: cppSpec, hostWorkDir: workDir })
-    ).rejects.toBeInstanceOf(SandboxSystemError);
+    await expect(engine.compile({ spec: cppSpec, hostWorkDir: workDir })).rejects.toBeInstanceOf(
+      SandboxSystemError,
+    );
   });
 
   it("propagates RootfsNotReadyError so caller marks system error", async () => {
@@ -460,7 +483,7 @@ describe("IsolateEngine.runOne", () => {
         timeLimitMs: 1000,
         memoryLimitMb: 64,
         outputLimitKb: 64,
-      })
+      }),
     ).rejects.toThrow(/Language rootfs not ready/);
   });
 
@@ -511,6 +534,12 @@ describe("IsolateEngine default behavior", () => {
     // tests which inject an explicit resolver. This test guards the default
     // construction path doesn't throw.
     expect(typeof engine.runOne).toBe("function");
+  });
+
+  it("rejects relative isolate binary paths to avoid PATH-based command lookup", () => {
+    expect(() => new IsolateEngine({ isolateBinPath: "isolate" })).toThrow(
+      "isolateBinPath must be an absolute path",
+    );
   });
 });
 

@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import { randomInt } from "node:crypto";
 import { encryptPassword, decryptPassword } from "./crypto.service";
 import { db } from "../db/client";
 import { users, userRoles, roles } from "../db/schema";
@@ -329,10 +330,13 @@ export async function getUserPassword(
 }
 
 function generatePassword(length: number): string {
+  // Use crypto.randomInt instead of Math.random — the latter is a non-CSPRNG
+  // and was flagged by Sonar (typescript:S2245). Candidate passwords are
+  // displayed once and used to log in, so they must be unpredictable.
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$";
   let result = "";
   for (let i = 0; i < length; i++) {
-    result += chars[Math.floor(Math.random() * chars.length)];
+    result += chars[randomInt(0, chars.length)];
   }
   return result;
 }

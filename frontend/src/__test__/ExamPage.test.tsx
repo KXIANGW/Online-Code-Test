@@ -261,17 +261,24 @@ describe("ExamPage", () => {
   });
 
   it("renders live remaining time when exam is in progress", async () => {
-    const oneHourFromNow = new Date(Date.now() + 3_600_500).toISOString();
+    // given: pin Date.now so calculateTimeLeft is deterministic regardless of CI speed
+    const frozenNow = Date.now();
+    const dateSpy = vi.spyOn(Date, "now").mockReturnValue(frozenNow);
+
     mockGetExamSession.mockResolvedValue({
       ...mockExamPageSession,
       status: "in_progress",
-      actualStartAt: new Date().toISOString(),
-      expiresAt: oneHourFromNow,
+      actualStartAt: new Date(frozenNow).toISOString(),
+      expiresAt: new Date(frozenNow + 3_600_000).toISOString(),
     });
 
+    // when
     await renderExamPage();
 
+    // expect
     expect(screen.getByLabelText("倒數計時")).toHaveTextContent("01:00:00");
+
+    dateSpy.mockRestore();
   });
 
   it("renders problem description panel with first problem by default", async () => {
@@ -685,6 +692,43 @@ describe("ExamPage", () => {
         expect.any(Error),
       ),
     );
+    errorSpy.mockRestore();
+  });
+
+  it("keeps the editor usable after a saveExamDraft rejection — failure must not block editing", async () => {
+    // FR-4.2 AC3: Redis 暫時不可用 → UI 不阻斷編輯，使用者仍能繼續輸入。
+    // given — in_progress session + cpp17 has pre-existing code so switching language
+    //         triggers a saveExamDraft sync (same path as the existing logging test).
+    mockGetExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "in_progress",
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    localStorage.setItem("oct:draft:42:1:cpp17", "int main() {}");
+    mockSaveExamDraft.mockRejectedValue(new Error("503 Service Unavailable"));
+    // The existing handler logs to console.error; suppress to keep test output clean.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await renderExamPage();
+    const select = screen.getByLabelText("語言") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("python3"));
+
+    // when — switch language to trigger the rejecting Redis save
+    fireEvent.change(select, { target: { value: "cpp17" } });
+    await waitFor(() => expect(errorSpy).toHaveBeenCalled());
+
+    // when — user keeps typing after the failure
+    const editorAfter = screen.getByLabelText("Code editor") as HTMLTextAreaElement;
+    fireEvent.change(editorAfter, { target: { value: "int main() { return 0; }" } });
+
+    // expect — editor still accepts input (value updates, no fatal overlay)
+    expect(editorAfter.value).toBe("int main() { return 0; }");
+    expect(
+      screen.queryByText("無法載入考試，請重新整理頁面或聯繫面試官。"),
+    ).not.toBeInTheDocument();
+    // expect — language selector remains operable as a second usability check
+    expect(select).not.toBeDisabled();
+
     errorSpy.mockRestore();
   });
 
@@ -1501,5 +1545,137 @@ describe("ExamPage", () => {
 
     // expect — problem 1 history is empty (submission belonged to problem 2)
     expect(screen.getByText("尚無提交記錄")).toBeInTheDocument();
+  });
+
+  it("shows error message when sessionId is not a valid integer (NaN)", async () => {
+    // given / when: render with a non-numeric route param
+    render(
+      <MemoryRouter initialEntries={["/exam/not-a-number"]}>
+        <Routes>
+          <Route path="/exam/:id" element={<ExamPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    // expect
+    expect(screen.getByText("無效的考試連結。")).toBeInTheDocument();
+  });
+
+  it("formal judge_result sets isFinalSubmission on the matching submission", async () => {
+    // given
+    await renderExamPage();
+    fireEvent.change(screen.getByLabelText("Code editor"), {
+      target: { value: "print('submit')" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    await waitFor(() =>
+      expect(mockCreateSubmission).toHaveBeenCalledWith(
+        42,
+        expect.objectContaining({ type: "formal" }),
+      ),
+    );
+
+    // when — formal judge_result arrives
+    act(() => {
+      realtimeHandler?.({
+        type: "judge_result",
+        submissionId: 9002,
+        examSessionProblemId: 101,
+        sessionId: 42,
+        status: "done",
+        verdict: "AC",
+        runtimeMs: 50,
+        memoryKb: 2048,
+        judgedAt: "2026-01-01T00:20:00.000Z",
+        submissionType: "formal",
+        score: 100,
+        testcaseResults: [],
+      });
+    });
+
+    // expect: history tab shows the formal submission marked as final
+    fireEvent.click(screen.getByRole("tab", { name: "提交記錄" }));
+    await waitFor(() => expect(screen.getByText("最終提交")).toBeInTheDocument());
+  });
+
+  it("testcase button shows red styling for non-AC verdict and green for AC verdict", async () => {
+    // given: two public testcases — Case 1 active by default (dark), Case 2 not active
+    mockGetPublicTestcases.mockResolvedValue([
+      { id: 1, orderIndex: 1, inputData: "1", expectedOutput: "2" } satisfies PublicTestcase,
+      { id: 2, orderIndex: 2, inputData: "3", expectedOutput: "4" } satisfies PublicTestcase,
+    ]);
+    await renderExamPage();
+    await waitFor(() => expect(mockGetPublicTestcases).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText("Code editor"), { target: { value: "print(1)" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(mockCreateSubmission).toHaveBeenCalled());
+
+    // when — judge_result: tc1 = AC, tc2 = WA
+    act(() => {
+      realtimeHandler?.({
+        type: "judge_result",
+        submissionId: 9001,
+        examSessionProblemId: 101,
+        sessionId: 42,
+        status: "done",
+        verdict: "WA",
+        runtimeMs: 10,
+        memoryKb: 512,
+        judgedAt: "2026-01-01T00:10:02.000Z",
+        submissionType: "simple",
+        score: 0,
+        testcaseResults: [
+          {
+            id: 1,
+            testcaseId: 1,
+            orderIndex: 1,
+            isPublic: true,
+            verdict: "AC",
+            runtimeMs: 5,
+            memoryKb: 256,
+          },
+          {
+            id: 2,
+            testcaseId: 2,
+            orderIndex: 2,
+            isPublic: true,
+            verdict: "WA",
+            runtimeMs: 10,
+            memoryKb: 512,
+          },
+        ],
+      });
+    });
+
+    // switch back to testcases tab (Run switches it to output)
+    fireEvent.click(screen.getByRole("tab", { name: "測試資料" }));
+
+    // Case 1 is active (dark), Case 2 is inactive — check their styling
+    // click Case 2 to make Case 1 inactive so its AC colour is visible
+    fireEvent.click(await screen.findByRole("button", { name: "Case 2" }));
+
+    // expect: now Case 1 (AC, not active) is green, Case 2 (WA, active) is dark
+    const case1 = screen.getByRole("button", { name: "Case 1" });
+    const case2 = screen.getByRole("button", { name: "Case 2" });
+    expect(case1.className).toMatch(/green/);
+    expect(case2.className).toMatch(/slate-900/);
+  });
+
+  it("shows expired overlay when exam time has run out", async () => {
+    // given: expiresAt is in the past so timeLeft === 0
+    mockGetExamSession.mockResolvedValue({
+      ...mockExamPageSession,
+      status: "in_progress",
+      actualStartAt: new Date(Date.now() - 7_200_000).toISOString(),
+      expiresAt: new Date(Date.now() - 1_000).toISOString(),
+    });
+
+    // when
+    await renderExamPage();
+
+    // expect
+    expect(screen.getByLabelText("考試時間已到")).toBeInTheDocument();
+    expect(screen.getByText("考試時間已到")).toBeInTheDocument();
   });
 });

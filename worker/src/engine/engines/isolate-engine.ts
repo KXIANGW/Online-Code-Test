@@ -9,7 +9,10 @@ import { RootfsResolver, RootfsNotReadyError } from "../rootfs-resolver";
 // failure). Judge consumer routes these to system_error rather than a
 // verdict so a broken sandbox doesn't silently grade every submission WA.
 export class SandboxSystemError extends Error {
-  constructor(message: string, public readonly stderr?: string) {
+  constructor(
+    message: string,
+    public readonly stderr?: string,
+  ) {
     super(message);
     this.name = "SandboxSystemError";
   }
@@ -38,15 +41,20 @@ const COMPILE_TIME_SEC = 30;
 // Isolate doesn't inherit the host PATH after chroot, so bare command names
 // like "g++" or "python3" won't resolve. Apply a Debian-/Alpine-friendly
 // default; languages can still override via spec.run.env.PATH.
-const DEFAULT_CHROOT_PATH =
-  "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+const DEFAULT_CHROOT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+const DEFAULT_ISOLATE_BIN_PATH = "/usr/local/bin/isolate";
+const DEFAULT_ISOLATE_FIRST_UID = 60000;
 
 // Process abstraction so unit tests can inject a fake spawn(). The default
-// implementation calls child_process.spawn on the host "isolate" binary.
+// implementation calls child_process.spawn on the configured isolate binary.
 export type IsolateSpawner = (args: string[]) => ChildProcess;
 
-const defaultSpawner: IsolateSpawner = (args) =>
-  spawn("isolate", args, { stdio: ["ignore", "pipe", "pipe"] });
+function makeDefaultSpawner(isolateBinPath: string): IsolateSpawner {
+  if (!isolateBinPath.startsWith("/")) {
+    throw new Error("isolateBinPath must be an absolute path");
+  }
+  return (args) => spawn(isolateBinPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+}
 
 export interface IsolateSeccompPolicy {
   // Host directory containing two files:
@@ -68,6 +76,7 @@ export interface IsolateEngineOptions {
   // we enable Pod-internal concurrency.
   boxId?: number;
   spawner?: IsolateSpawner;
+  isolateBinPath?: string;
   seccomp?: IsolateSeccompPolicy;
 }
 
@@ -96,22 +105,27 @@ export class IsolateEngine implements SandboxEngine {
   private readonly resolver: RootfsResolver;
   private readonly boxId: number;
   private readonly spawner: IsolateSpawner;
+  private readonly workDirOwnerUid: number;
+  private readonly workDirOwnerGid: number;
   private readonly seccomp?: IsolateSeccompPolicy;
 
   constructor(options: IsolateEngineOptions = {}) {
     this.resolver = options.rootfsResolver ?? new RootfsResolver();
     this.boxId = options.boxId ?? 0;
-    this.spawner = options.spawner ?? defaultSpawner;
+    this.spawner =
+      options.spawner ?? makeDefaultSpawner(options.isolateBinPath ?? DEFAULT_ISOLATE_BIN_PATH);
+    this.workDirOwnerUid = DEFAULT_ISOLATE_FIRST_UID + this.boxId;
+    this.workDirOwnerGid = this.workDirOwnerUid;
     this.seccomp = options.seccomp;
   }
 
   async compile(task: CompileTask): Promise<CompileResult> {
     if (!task.spec.compile) return { success: true };
     try {
-      // isolate runs each box under a private high UID (>=60000); the host
-      // work directory must be world-writable so the candidate can produce
-      // the compiled binary / stdout / stderr files.
-      await prepareSandboxWorkDir(task.hostWorkDir);
+      await prepareSandboxWorkDir(task.hostWorkDir, {
+        ownerUid: this.workDirOwnerUid,
+        ownerGid: this.workDirOwnerGid,
+      });
       const result = await this.runInIsolate({
         spec: task.spec,
         hostWorkDir: task.hostWorkDir,
@@ -136,7 +150,7 @@ export class IsolateEngine implements SandboxEngine {
       };
     } catch (err) {
       if (err instanceof RootfsNotReadyError) throw err; // surface as system error
-      if (err instanceof SandboxSystemError) throw err;  // surface as system error
+      if (err instanceof SandboxSystemError) throw err; // surface as system error
       return {
         success: false,
         errorLog: err instanceof Error ? err.message : String(err),
@@ -146,7 +160,10 @@ export class IsolateEngine implements SandboxEngine {
 
   async runOne(task: RunTask): Promise<RunOneResult> {
     try {
-      await prepareSandboxWorkDir(task.hostWorkDir);
+      await prepareSandboxWorkDir(task.hostWorkDir, {
+        ownerUid: this.workDirOwnerUid,
+        ownerGid: this.workDirOwnerGid,
+      });
       await fs.writeFile(path.join(task.hostWorkDir, STDIN_FILE), task.inputData);
 
       const cmd = task.spec.run.entrypointPath
@@ -213,7 +230,7 @@ export class IsolateEngine implements SandboxEngine {
     if (initResult.exitCode !== 0) {
       throw new SandboxSystemError(
         `isolate --init failed (exit=${initResult.exitCode}): ${initResult.stderr.trim()}`,
-        initResult.stderr
+        initResult.stderr,
       );
     }
 
@@ -230,26 +247,20 @@ export class IsolateEngine implements SandboxEngine {
       if (runResult.exitCode > 1 && metaIsEmpty) {
         throw new SandboxSystemError(
           `isolate --run failed (exit=${runResult.exitCode}): ${runResult.stderr.trim()}`,
-          runResult.stderr
+          runResult.stderr,
         );
       }
 
       return { exitCode: runResult.exitCode, meta, stdout, stderr };
     } finally {
-      await this.runIsolate([`--box-id=${this.boxId}`, "--cg", "--cleanup"]).catch(
-        () => undefined
-      );
+      await this.runIsolate([`--box-id=${this.boxId}`, "--cg", "--cleanup"]).catch(() => undefined);
     }
   }
 
-  private buildRunArgs(
-    args: RunIsolateArgs,
-    rootfs: string,
-    metaPath: string
-  ): string[] {
+  private buildRunArgs(args: RunIsolateArgs, rootfs: string, metaPath: string): string[] {
     const memKb = args.memoryLimitMb * 1024;
     const timeSec = (args.timeLimitMs / 1000).toFixed(3);
-    const wallSec = (((args.wallTimeLimitMs ?? args.timeLimitMs * 2) / 1000)).toFixed(3);
+    const wallSec = ((args.wallTimeLimitMs ?? args.timeLimitMs * 2) / 1000).toFixed(3);
 
     const env: Record<string, string> = { PATH: DEFAULT_CHROOT_PATH, ...(args.spec.run.env ?? {}) };
     const envArgs: string[] = [];
@@ -327,9 +338,7 @@ export class IsolateEngine implements SandboxEngine {
     return this.runIsolateCapturingStderr(args).then((r) => r.exitCode);
   }
 
-  private runIsolateCapturingStderr(
-    args: string[]
-  ): Promise<{ exitCode: number; stderr: string }> {
+  private runIsolateCapturingStderr(args: string[]): Promise<{ exitCode: number; stderr: string }> {
     return new Promise((resolve, reject) => {
       const child = this.spawner(args);
       let stderr = "";
