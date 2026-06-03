@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 .PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images isolate-rootfs dev test coverage help \
-        demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls EndtoEnd
+        demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls EndtoEnd grafana-k8s-cm
 
 help:
 	@echo "Online Code Test"
@@ -97,6 +97,9 @@ DEMO_FIXTURE ?= ac.py
 # Baseline replica count brought up by `make demo-up`. The autoscale demo
 # starts at 1 worker and lets scale-watcher fan out to MAX (default 5).
 WORKER_REPLICAS ?= 1
+
+grafana-k8s-cm: ## Regenerate k8s/15-grafana-dashboards.yaml from infra/grafana/dashboards/*.json
+	@python3 infra/grafana/gen-k8s-dashboards-cm.py
 
 demo-up: bootstrap isolate-rootfs
 	WORKER_REPLICAS=$(WORKER_REPLICAS) docker compose up -d --build --wait \

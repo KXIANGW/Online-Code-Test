@@ -1,0 +1,1525 @@
+# GENERATED from infra/grafana/dashboards/*.json by infra/grafana/gen-k8s-dashboards-cm.py
+# DO NOT EDIT BY HAND — run `make grafana-k8s-cm` after changing a dashboard.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: oct
+data:
+  01-judge-pipeline.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": false,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [
+        {
+          "title": "Load Balancing & Resilience",
+          "type": "link",
+          "url": "/d/oct-lb-resilience",
+          "icon": "external link"
+        },
+        {
+          "title": "API RED Overview",
+          "type": "link",
+          "url": "/d/oct-api-red",
+          "icon": "external link"
+        }
+      ],
+      "liveNow": true,
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Queue depth (judge.tasks)",
+          "id": 1,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 0
+          },
+          "targets": [
+            {
+              "expr": "sum(rabbitmq_queue_messages{queue=\"judge.tasks\"})",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 5
+                  },
+                  {
+                    "color": "red",
+                    "value": 20
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Judge in-flight",
+          "id": 2,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 6,
+            "y": 0
+          },
+          "targets": [
+            {
+              "expr": "sum(judge_in_flight)",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 5
+                  },
+                  {
+                    "color": "red",
+                    "value": 10
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Worker replicas",
+          "id": 3,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 12,
+            "y": 0
+          },
+          "targets": [
+            {
+              "expr": "count(count by (worker) (judge_worker_info))",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Submit API p95 (s)",
+          "id": 4,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 18,
+            "y": 0
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{route=~\".*submissions\"}[1m])) by (le))",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "decimals": 3,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 2
+                  },
+                  {
+                    "color": "red",
+                    "value": 5
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Queue depth vs worker replicas (scaling correlation)",
+          "id": 5,
+          "description": "When the queue backs up, KEDA/HPA should scale workers; the two lines should track each other.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 4
+          },
+          "targets": [
+            {
+              "expr": "sum(rabbitmq_queue_messages{queue=\"judge.tasks\"})",
+              "refId": "A",
+              "legendFormat": "queue depth",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            },
+            {
+              "expr": "count(count by (worker) (judge_worker_info))",
+              "refId": "B",
+              "legendFormat": "worker replicas",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 15
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "worker replicas"
+                },
+                "properties": [
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Verdict rate (per second)",
+          "id": 6,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 4
+          },
+          "targets": [
+            {
+              "expr": "sum by (verdict) (rate(judge_verdicts_total[1m]))",
+              "refId": "A",
+              "legendFormat": "{{verdict}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 70,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Judge p50 / p95 / p99 by language (s)",
+          "id": 7,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 12
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(judge_duration_seconds_bucket[1m])) by (le, language))",
+              "refId": "p50",
+              "legendFormat": "p50 {{language}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(judge_duration_seconds_bucket[1m])) by (le, language))",
+              "refId": "p95",
+              "legendFormat": "p95 {{language}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(judge_duration_seconds_bucket[1m])) by (le, language))",
+              "refId": "p99",
+              "legendFormat": "p99 {{language}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 5
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Submission created vs completed (per s)",
+          "id": 8,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 12
+          },
+          "targets": [
+            {
+              "expr": "sum by (type) (rate(submission_created_total[1m]))",
+              "refId": "A",
+              "legendFormat": "created {{type}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            },
+            {
+              "expr": "sum by (type) (rate(submission_completed_total[1m]))",
+              "refId": "B",
+              "legendFormat": "completed {{type}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Sandbox peak memory p95 by language (MB)",
+          "id": 9,
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 20
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(judge_memory_max_bytes_bucket[1m])) by (le, language)) / 1024 / 1024",
+              "refId": "A",
+              "legendFormat": "{{language}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "decmbytes",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 15
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Worker pool CPU %",
+          "id": 10,
+          "description": "Per-worker process CPU (prom-client default metric); portable across compose and k3s.",
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 20
+          },
+          "targets": [
+            {
+              "expr": "sum by (worker) (rate(process_cpu_seconds_total{job=\"worker\"}[1m])) * 100",
+              "refId": "A",
+              "legendFormat": "{{worker}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Worker pool memory (MB)",
+          "id": 11,
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 20
+          },
+          "targets": [
+            {
+              "expr": "process_resident_memory_bytes{job=\"worker\"} / 1024 / 1024",
+              "refId": "A",
+              "legendFormat": "{{worker}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "decmbytes",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10
+              }
+            }
+          }
+        },
+        {
+          "type": "piechart",
+          "title": "Verdict totals (cumulative)",
+          "id": 12,
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 28
+          },
+          "targets": [
+            {
+              "expr": "sum by (verdict) (last_over_time(judge_verdicts_total[1h]))",
+              "refId": "A",
+              "legendFormat": "{{verdict}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "pieType": "donut",
+            "legend": {
+              "displayMode": "table",
+              "values": [
+                "value"
+              ]
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Worker desired vs current replicas (KEDA / HPA)",
+          "id": 13,
+          "description": "k3s only — sourced from kube-state-metrics. Shows KEDA scaling the worker pool against the judge queue.",
+          "gridPos": {
+            "h": 8,
+            "w": 16,
+            "x": 8,
+            "y": 28
+          },
+          "targets": [
+            {
+              "expr": "max(kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"oct\", horizontalpodautoscaler=~\".*worker.*\"})",
+              "refId": "A",
+              "legendFormat": "desired",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            },
+            {
+              "expr": "max(kube_horizontalpodautoscaler_status_current_replicas{namespace=\"oct\", horizontalpodautoscaler=~\".*worker.*\"})",
+              "refId": "B",
+              "legendFormat": "current",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "stepAfter": true
+              }
+            }
+          }
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 39,
+      "tags": [
+        "oct",
+        "judge",
+        "scaling"
+      ],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-15m",
+        "to": "now"
+      },
+      "timezone": "browser",
+      "title": "OCT · Judge Pipeline & Scaling",
+      "uid": "oct-judge-pipeline",
+      "version": 1,
+      "weekStart": ""
+    }
+  02-lb-resilience.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": false,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [
+        {
+          "title": "Judge Pipeline & Scaling",
+          "type": "link",
+          "url": "/d/oct-judge-pipeline",
+          "icon": "external link"
+        },
+        {
+          "title": "API RED Overview",
+          "type": "link",
+          "url": "/d/oct-api-red",
+          "icon": "external link"
+        }
+      ],
+      "liveNow": true,
+      "panels": [
+        {
+          "type": "text",
+          "title": "How to read this board / node-down drill",
+          "id": 1,
+          "gridPos": {
+            "h": 4,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "options": {
+            "mode": "markdown",
+            "content": "**Traffic path:** external IKM nginx (`upstream oct_frontend`, round-robin over the ikmlab + 9105 node entry ports) → NodePort 31000 → kube-proxy → frontend pod → backend ClusterIP → backend pod.\n\n**Is traffic going through the LB?** The *Backend request rate by node* panel should show ~50/50 across both nodes. All traffic on one node = not load-balanced.\n\n**Node-down drill:** `kubectl cordon <node>` then delete that node's pods (or power it off). Expect: that node's request rate → 0, the survivor absorbs it, *5xx ratio* stays flat, pods reschedule, replicas recover. The external nginx ejecting the dead upstream is what you see as the per-node traffic shift (k3s-only board; panels backed by kube-state-metrics show *No data* under docker-compose)."
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Backend pods Ready",
+          "id": 2,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 4
+          },
+          "targets": [
+            {
+              "expr": "sum(kube_pod_status_ready{namespace=\"oct\", condition=\"true\", pod=~\"backend.*\"})",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "green",
+                    "value": 2
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Frontend pods Ready",
+          "id": 3,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 6,
+            "y": 4
+          },
+          "targets": [
+            {
+              "expr": "sum(kube_pod_status_ready{namespace=\"oct\", condition=\"true\", pod=~\"frontend.*\"})",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "green",
+                    "value": 2
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Nodes Ready",
+          "id": 4,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 12,
+            "y": 4
+          },
+          "targets": [
+            {
+              "expr": "sum(kube_node_status_condition{condition=\"Ready\", status=\"true\"})",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Backend total req/s",
+          "id": 5,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 18,
+            "y": 4
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(http_request_duration_seconds_count{job=\"backend\"}[1m]))",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Backend request rate by node (LB distribution)",
+          "id": 6,
+          "description": "Proves round-robin spread across nodes. On node-down, the dead node's series drops to 0 and the survivor absorbs the load.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "targets": [
+            {
+              "expr": "sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m]))",
+              "refId": "A",
+              "legendFormat": "{{node}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 30,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Backend request rate by pod",
+          "id": 7,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "targets": [
+            {
+              "expr": "sum by (pod) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m]))",
+              "refId": "A",
+              "legendFormat": "{{pod}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 20
+              }
+            }
+          }
+        },
+        {
+          "type": "state-timeline",
+          "title": "Pod Ready by node (backend / frontend)",
+          "id": 8,
+          "description": "Each row is a pod; gaps/red show the pod going NotReady when its node is cut, then rescheduling.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 16
+          },
+          "targets": [
+            {
+              "expr": "kube_pod_status_ready{namespace=\"oct\", condition=\"true\", pod=~\"backend.*|frontend.*\"}",
+              "refId": "A",
+              "legendFormat": "{{pod}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "showValue": "never",
+            "mergeValues": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "custom": {
+                "fillOpacity": 80
+              }
+            }
+          }
+        },
+        {
+          "type": "state-timeline",
+          "title": "Node Ready",
+          "id": 9,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 16
+          },
+          "targets": [
+            {
+              "expr": "kube_node_status_condition{condition=\"Ready\", status=\"true\"}",
+              "refId": "A",
+              "legendFormat": "{{node}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "showValue": "never",
+            "mergeValues": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "custom": {
+                "fillOpacity": 80
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Replicas: desired vs available (backend / frontend)",
+          "id": 10,
+          "description": "Available dips when a node dies and recovers as pods reschedule — demonstrates self-healing.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 24
+          },
+          "targets": [
+            {
+              "expr": "kube_deployment_spec_replicas{namespace=\"oct\", deployment=~\"backend|frontend\"}",
+              "refId": "A",
+              "legendFormat": "desired {{deployment}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            },
+            {
+              "expr": "kube_deployment_status_replicas_available{namespace=\"oct\", deployment=~\"backend|frontend\"}",
+              "refId": "B",
+              "legendFormat": "available {{deployment}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "stepAfter": true
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "5xx error ratio by node",
+          "id": 11,
+          "description": "Should stay near zero during the node-down drill — proves the LB reroutes without user-visible errors.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 24
+          },
+          "targets": [
+            {
+              "expr": "sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\", status=\"5xx\"}[1m])) / clamp_min(sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m])), 1)",
+              "refId": "A",
+              "legendFormat": "{{node}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 20
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Global p95 latency (during drill)",
+          "id": 12,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 32
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"backend\"}[1m])) by (le))",
+              "refId": "A",
+              "legendFormat": "p95",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "WebSocket connections by pod",
+          "id": 13,
+          "description": "Live judge-result push connections; shows clients re-balancing after a pod is lost.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 32
+          },
+          "targets": [
+            {
+              "expr": "sum by (instance) (ws_active_connections)",
+              "refId": "A",
+              "legendFormat": "{{instance}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10
+              }
+            }
+          }
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 39,
+      "tags": [
+        "oct",
+        "lb",
+        "resilience"
+      ],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-15m",
+        "to": "now"
+      },
+      "timezone": "browser",
+      "title": "OCT · Load Balancing & Resilience",
+      "uid": "oct-lb-resilience",
+      "version": 1,
+      "weekStart": ""
+    }
+  03-api-red.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": false,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [
+        {
+          "title": "Judge Pipeline & Scaling",
+          "type": "link",
+          "url": "/d/oct-judge-pipeline",
+          "icon": "external link"
+        },
+        {
+          "title": "Load Balancing & Resilience",
+          "type": "link",
+          "url": "/d/oct-lb-resilience",
+          "icon": "external link"
+        }
+      ],
+      "liveNow": true,
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Total traffic (req/s)",
+          "id": 1,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 0
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(http_request_duration_seconds_count{job=\"backend\"}[1m]))",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps"
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Global error ratio (5xx)",
+          "id": 2,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 6,
+            "y": 0
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(http_request_duration_seconds_count{job=\"backend\", status=\"5xx\"}[5m])) / clamp_min(sum(rate(http_request_duration_seconds_count{job=\"backend\"}[5m])), 1)",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 0.01
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.05
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Global p95 (s)",
+          "id": 3,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 12,
+            "y": 0
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"backend\"}[1m])) by (le))",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "decimals": 3,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 5
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Active WS connections",
+          "id": 4,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 18,
+            "y": 0
+          },
+          "targets": [
+            {
+              "expr": "sum(ws_active_connections)",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Traffic by route (req/s)",
+          "id": 5,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 4
+          },
+          "targets": [
+            {
+              "expr": "sum by (route) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m]))",
+              "refId": "A",
+              "legendFormat": "{{route}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 15,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Error rate by route (4xx / 5xx)",
+          "id": 6,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 4
+          },
+          "targets": [
+            {
+              "expr": "sum by (route, status) (rate(http_request_duration_seconds_count{job=\"backend\", status=~\"4xx|5xx\"}[1m]))",
+              "refId": "A",
+              "legendFormat": "{{status}} {{route}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 15
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Latency p95 by route (s)",
+          "id": 7,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 12
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"backend\"}[1m])) by (le, route))",
+              "refId": "A",
+              "legendFormat": "{{route}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 5
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Request rate by backend replica",
+          "id": 8,
+          "description": "Per-instance request rate (instance = pod hostname in k3s) — confirms the BFF traffic is spread across replicas.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 12
+          },
+          "targets": [
+            {
+              "expr": "sum by (instance) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m]))",
+              "refId": "A",
+              "legendFormat": "{{instance}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "oct-prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10
+              }
+            }
+          }
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 39,
+      "tags": [
+        "oct",
+        "red",
+        "api"
+      ],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-15m",
+        "to": "now"
+      },
+      "timezone": "browser",
+      "title": "OCT · API RED Overview",
+      "uid": "oct-api-red",
+      "version": 1,
+      "weekStart": ""
+    }
