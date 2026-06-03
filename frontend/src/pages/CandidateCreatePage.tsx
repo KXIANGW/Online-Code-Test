@@ -11,7 +11,6 @@ interface CreatedAccount {
   username: string;
   displayName: string | null;
   password: string;
-  error?: string;
 }
 
 function generatePassword(length = 12) {
@@ -114,22 +113,19 @@ export default function CandidateCreatePage() {
   // ── Result panel ──────────────────────────────────────────────────────────
 
   if (results !== null) {
-    const succeeded = results.filter((r) => !r.error);
-    const failed = results.filter((r) => r.error);
-
     return (
       <div className="min-h-screen bg-slate-50">
         <NavBar homeHref="/interviewer" />
         <main className="max-w-2xl mx-auto px-4 py-8">
           <h1 className="text-xl font-semibold text-slate-800 mb-6">建立結果</h1>
 
-          {succeeded.length > 0 && (
+          {results.length > 0 && (
             <section className="mb-6">
               <h2 className="text-sm font-semibold text-green-700 mb-3">
-                ✓ 成功建立 {succeeded.length} 個帳號
+                ✓ 成功建立 {results.length} 個帳號
               </h2>
               <div className="space-y-2">
-                {succeeded.map((acc) => (
+                {results.map((acc) => (
                   <div
                     key={acc.username}
                     className="bg-white rounded-xl border border-slate-200 p-4 font-mono text-sm space-y-1"
@@ -145,25 +141,6 @@ export default function CandidateCreatePage() {
                       <span className="text-slate-500">密碼：</span>
                       <span className="text-blue-600 select-all">{acc.password}</span>
                     </p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {failed.length > 0 && (
-            <section className="mb-6">
-              <h2 className="text-sm font-semibold text-red-600 mb-3">
-                ✗ 建立失敗 {failed.length} 個帳號
-              </h2>
-              <div className="space-y-2">
-                {failed.map((acc) => (
-                  <div
-                    key={acc.username}
-                    className="bg-red-50 rounded-xl border border-red-200 p-4 text-sm"
-                  >
-                    <p className="font-semibold text-red-700">{acc.username}</p>
-                    <p className="text-red-500 text-xs mt-1">{acc.error}</p>
                   </div>
                 ))}
               </div>

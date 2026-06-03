@@ -80,10 +80,6 @@ export default function TemplateAssignPage() {
   }
 
   async function handleAssign() {
-    if (selectedIds.size === 0) {
-      setError("請至少選擇一位考生");
-      return;
-    }
     setSubmitting(true);
     setError(null);
     try {
