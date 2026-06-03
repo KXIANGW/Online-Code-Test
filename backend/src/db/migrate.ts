@@ -1,15 +1,17 @@
 import { Pool } from "pg";
 import { env } from "../env";
 
+interface MigrationPool {
+  query(sql: string): Promise<unknown>;
+}
+
 // Schema is managed by /infra/postgres/*.sql init scripts (mounted at
 // /docker-entrypoint-initdb.d/). This file only ensures pgcrypto is present
 // as a safety net for environments where init scripts may not have run.
-async function main() {
-  const pool = new Pool({ connectionString: env.DATABASE_URL });
-  try {
-    console.log("[migrate] ensuring pgcrypto extension...");
-    await pool.query("CREATE EXTENSION IF NOT EXISTS pgcrypto;");
-    await pool.query(`
+export async function runMigrations(pool: MigrationPool): Promise<void> {
+  console.log("[migrate] ensuring pgcrypto extension...");
+  await pool.query("CREATE EXTENSION IF NOT EXISTS pgcrypto;");
+  await pool.query(`
       DO $$
       BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'submission_type') THEN
@@ -17,7 +19,7 @@ async function main() {
         END IF;
       END $$;
     `);
-    await pool.query(`
+  await pool.query(`
       DO $$
       BEGIN
         IF to_regclass('public.submissions') IS NOT NULL THEN
@@ -26,15 +28,42 @@ async function main() {
         END IF;
       END $$;
     `);
-    await pool.query(`
+  await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'violation_type') THEN
+          CREATE TYPE violation_type AS ENUM (
+            'fullscreen_exit',
+            'tab_switch',
+            'window_blur',
+            'paste',
+            'copy'
+          );
+        END IF;
+      END $$;
+    `);
+  await pool.query(`
+      CREATE TABLE IF NOT EXISTS exam_violations (
+        id          BIGSERIAL PRIMARY KEY,
+        session_id  BIGINT NOT NULL REFERENCES exam_sessions(id) ON DELETE CASCADE,
+        type        violation_type NOT NULL,
+        detail      TEXT,
+        occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+  await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_exam_violations_session_id
+        ON exam_violations(session_id, occurred_at);
+    `);
+  await pool.query(`
       ALTER TABLE users
         ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES users(id);
     `);
-    await pool.query(`
+  await pool.query(`
       ALTER TABLE users
         ADD COLUMN IF NOT EXISTS encrypted_password TEXT;
     `);
-    await pool.query(`
+  await pool.query(`
       CREATE TABLE IF NOT EXISTS exams (
         id               BIGSERIAL   PRIMARY KEY,
         title            VARCHAR(255) NOT NULL,
@@ -45,7 +74,7 @@ async function main() {
         deleted_at       TIMESTAMPTZ
       );
     `);
-    await pool.query(`
+  await pool.query(`
       CREATE TABLE IF NOT EXISTS exam_problems (
         id           BIGSERIAL   PRIMARY KEY,
         exam_id      BIGINT      NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
@@ -57,11 +86,11 @@ async function main() {
         UNIQUE (exam_id, problem_id)
       );
     `);
-    await pool.query(`
+  await pool.query(`
       ALTER TABLE exam_sessions
         ADD COLUMN IF NOT EXISTS exam_id BIGINT REFERENCES exams(id);
     `);
-    await pool.query(`
+  await pool.query(`
       DO $$
       DECLARE
         r RECORD;
@@ -104,21 +133,29 @@ async function main() {
         END IF;
       END $$;
     `);
-    await pool.query(`
+  await pool.query(`
       ALTER TABLE exam_sessions
         ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ;
     `);
-    await pool.query(`
+  await pool.query(`
       ALTER TABLE exam_sessions
         DROP COLUMN IF EXISTS duration_minutes;
     `);
-    console.log("[migrate] done.");
+  console.log("[migrate] done.");
+}
+
+async function main() {
+  const pool = new Pool({ connectionString: env.DATABASE_URL });
+  try {
+    await runMigrations(pool);
   } finally {
     await pool.end();
   }
 }
 
-main().catch((err) => {
-  console.error("[migrate] failed:", err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("[migrate] failed:", err);
+    process.exit(1);
+  });
+}
