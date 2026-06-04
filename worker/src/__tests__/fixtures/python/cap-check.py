@@ -30,7 +30,7 @@ try:
         results.append("IP_LINK_SET_SUCCEEDED")
     else:
         results.append("ip_link_set_blocked")
-except (PermissionError, OSError, FileNotFoundError):
+except OSError:
     results.append("ip_link_set_blocked")
 
 print("\n".join(results))

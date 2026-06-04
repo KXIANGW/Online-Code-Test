@@ -568,7 +568,6 @@ export default function ExamPage() {
 
         {/* Drag divider */}
         <div
-          role="button"
           tabIndex={0}
           onMouseDown={handleDividerMouseDown}
           onKeyDown={() => {}}
@@ -652,7 +651,6 @@ export default function ExamPage() {
 
           {/* Vertical drag divider */}
           <div
-            role="button"
             tabIndex={0}
             onMouseDown={handleVertDividerMouseDown}
             onKeyDown={() => {}}
