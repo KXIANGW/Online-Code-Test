@@ -567,11 +567,10 @@ export default function ExamPage() {
         </aside>
 
         {/* Drag divider */}
-        <div
-          tabIndex={0}
+        <button
+          type="button"
           onMouseDown={handleDividerMouseDown}
-          onKeyDown={() => {}}
-          className="w-1 shrink-0 bg-slate-200 hover:bg-blue-400 active:bg-blue-500 cursor-col-resize transition-colors select-none"
+          className="w-1 shrink-0 bg-slate-200 hover:bg-blue-400 active:bg-blue-500 cursor-col-resize transition-colors select-none border-0 p-0 focus:outline-none"
           aria-label="調整面板寬度"
         />
 
@@ -650,11 +649,10 @@ export default function ExamPage() {
           </div>
 
           {/* Vertical drag divider */}
-          <div
-            tabIndex={0}
+          <button
+            type="button"
             onMouseDown={handleVertDividerMouseDown}
-            onKeyDown={() => {}}
-            className="h-1 shrink-0 bg-slate-200 hover:bg-blue-400 active:bg-blue-500 cursor-row-resize transition-colors select-none"
+            className="h-1 shrink-0 bg-slate-200 hover:bg-blue-400 active:bg-blue-500 cursor-row-resize transition-colors select-none border-0 p-0 focus:outline-none"
             aria-label="調整底部面板高度"
           />
 
