@@ -69,7 +69,16 @@ interface BatchCandidate {
 }
 
 async function batchCreateCandidates(token: string, count: number): Promise<BatchCandidate[]> {
-  return httpRequest<BatchCandidate[]>("POST", "/users/batch", { count }, token);
+  const BATCH_LIMIT = 100;
+  const results: BatchCandidate[] = [];
+  let remaining = count;
+  while (remaining > 0) {
+    const batch = Math.min(remaining, BATCH_LIMIT);
+    const chunk = await httpRequest<BatchCandidate[]>("POST", "/users/batch", { count: batch }, token);
+    results.push(...chunk);
+    remaining -= batch;
+  }
+  return results;
 }
 
 interface CandidateLookup {
