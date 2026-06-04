@@ -388,53 +388,50 @@ export default function AdminDashboardPage() {
       <Dialog
         open={editingUser !== null}
         onClose={() => setEditingUser(null)}
-        className="relative z-50"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       >
-        <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-        <div className="fixed inset-0 flex items-center justify-center p-4">
-          <DialogPanel className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl">
-            <DialogTitle className="text-lg font-semibold text-slate-900">編輯角色</DialogTitle>
-            {editingUser && <p className="mt-1 text-sm text-slate-500">{editingUser.username}</p>}
+        <DialogPanel className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl">
+          <DialogTitle className="text-lg font-semibold text-slate-900">編輯角色</DialogTitle>
+          {editingUser && <p className="mt-1 text-sm text-slate-500">{editingUser.username}</p>}
 
-            <div className="mt-5 flex flex-col gap-3">
-              {EDITABLE_ROLES.map((r) => (
-                <label
-                  key={r.key}
-                  className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={pendingRoles.includes(r.key)}
-                    onChange={() => handleTogglePendingRole(r.key)}
-                    className={`h-4 w-4 rounded border-slate-300 ${r.checkboxColor} focus:ring-2`}
-                  />
-                  <span>
-                    {r.key}（{r.label}）
-                  </span>
-                </label>
-              ))}
-            </div>
+          <div className="mt-5 flex flex-col gap-3">
+            {EDITABLE_ROLES.map((r) => (
+              <label
+                key={r.key}
+                className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={pendingRoles.includes(r.key)}
+                  onChange={() => handleTogglePendingRole(r.key)}
+                  className={`h-4 w-4 rounded border-slate-300 ${r.checkboxColor} focus:ring-2`}
+                />
+                <span>
+                  {r.key}（{r.label}）
+                </span>
+              </label>
+            ))}
+          </div>
 
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setEditingUser(null)}
-                disabled={savingRoles}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveRoles}
-                disabled={savingRoles}
-                className="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-40"
-              >
-                {savingRoles ? "儲存中..." : "儲存"}
-              </button>
-            </div>
-          </DialogPanel>
-        </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setEditingUser(null)}
+              disabled={savingRoles}
+              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveRoles}
+              disabled={savingRoles}
+              className="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-40"
+            >
+              {savingRoles ? "儲存中..." : "儲存"}
+            </button>
+          </div>
+        </DialogPanel>
       </Dialog>
     </div>
   );

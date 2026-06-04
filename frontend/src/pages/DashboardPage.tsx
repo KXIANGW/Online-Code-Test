@@ -221,42 +221,39 @@ export default function DashboardPage() {
       <Dialog
         open={pendingSessionId !== null}
         onClose={() => setPendingSessionId(null)}
-        className="relative z-50"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       >
-        <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
-        <div className="fixed inset-0 flex items-center justify-center p-4">
-          <DialogPanel className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full space-y-5">
-            <div className="space-y-2">
-              <DialogTitle className="text-lg font-semibold text-slate-800">
-                進入考試前請確認
-              </DialogTitle>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                本系統為維護考試公平性，開始考試後將啟用以下監控機制：
-              </p>
-              <ul className="text-sm text-slate-600 space-y-1 list-disc list-inside">
-                <li>強制全螢幕模式，離開將觸發警告並記錄</li>
-                <li>偵測切換分頁或切換至其他應用程式</li>
-                <li>偵測在編輯器中貼入外部程式碼</li>
-                <li>偵測複製題目內容</li>
-              </ul>
-              <p className="text-xs text-slate-400">所有異常行為將即時傳送給面試官。</p>
-            </div>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setPendingSessionId(null)}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => void handleConfirmFullscreen()}
-                className="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                同意並開始考試
-              </button>
-            </div>
-          </DialogPanel>
-        </div>
+        <DialogPanel className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full space-y-5">
+          <div className="space-y-2">
+            <DialogTitle className="text-lg font-semibold text-slate-800">
+              進入考試前請確認
+            </DialogTitle>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              本系統為維護考試公平性，開始考試後將啟用以下監控機制：
+            </p>
+            <ul className="text-sm text-slate-600 space-y-1 list-disc list-inside">
+              <li>強制全螢幕模式，離開將觸發警告並記錄</li>
+              <li>偵測切換分頁或切換至其他應用程式</li>
+              <li>偵測在編輯器中貼入外部程式碼</li>
+              <li>偵測複製題目內容</li>
+            </ul>
+            <p className="text-xs text-slate-400">所有異常行為將即時傳送給面試官。</p>
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={() => setPendingSessionId(null)}
+              className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={() => void handleConfirmFullscreen()}
+              className="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              同意並開始考試
+            </button>
+          </div>
+        </DialogPanel>
       </Dialog>
     </div>
   );
