@@ -8,7 +8,7 @@ interface NavBarProps {
   homeHref?: string;
 }
 
-export function NavBar({ homeHref }: NavBarProps) {
+export function NavBar({ homeHref }: Readonly<NavBarProps>) {
   const { isSuperuser, permissions } = useAuthStore((s) => ({
     isSuperuser: s.isSuperuser,
     permissions: s.permissions ?? [],

@@ -47,9 +47,8 @@ export class Puller {
       logger:
         options.logger ??
         ((level, msg) => {
-          console[level === "error" ? "error" : level === "warn" ? "warn" : "log"](
-            `[puller] ${msg}`
-          );
+          const method = level === "error" ? "error" : level === "warn" ? "warn" : "log";
+          console[method](`[puller] ${msg}`);
         }),
     };
   }

@@ -25,7 +25,10 @@ export function useJudgeSocket(
 
       socket.addEventListener("open", () => {
         socket?.send(JSON.stringify({ type: "subscribe", sessionId }));
-        if (hasConnected) void onReconnect?.();
+        if (hasConnected) {
+          const reconnectPromise = onReconnect?.();
+          if (reconnectPromise) reconnectPromise.catch(() => {});
+        }
         hasConnected = true;
       });
 

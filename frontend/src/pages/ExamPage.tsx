@@ -39,6 +39,64 @@ const MONACO_LANG: Record<string, string> = {
   java21: "java",
 };
 
+function buildInitialDraftState(
+  orderedProblems: ExamSessionProblem[],
+  enabledLangs: Language[],
+  sessionId: number,
+  defaultLang: string,
+  enabledLanguageIds: Set<string>,
+): { initialCodes: Record<string, string>; initialLangs: Record<number, string> } {
+  const initialCodes: Record<string, string> = {};
+  const initialLangs: Record<number, string> = {};
+  for (const p of orderedProblems) {
+    for (const lang of enabledLangs) {
+      const lsKey = STORAGE_KEYS.draftKey(sessionId, p.problemId, lang.language);
+      const code = localStorage.getItem(lsKey);
+      if (code !== null) {
+        initialCodes[`${p.problemId}:${lang.language}`] = code;
+      }
+    }
+    const lastLang = localStorage.getItem(STORAGE_KEYS.langKey(sessionId, p.problemId));
+    initialLangs[p.problemId] =
+      lastLang && enabledLanguageIds.has(lastLang) ? lastLang : defaultLang;
+  }
+  return { initialCodes, initialLangs };
+}
+
+function findMissingProblemIds(
+  orderedProblems: ExamSessionProblem[],
+  enabledLangs: Language[],
+  initialCodes: Record<string, string>,
+): number[] {
+  return orderedProblems
+    .filter((p) =>
+      enabledLangs.every((lang) => initialCodes[`${p.problemId}:${lang.language}`] === undefined),
+    )
+    .map((p) => p.problemId);
+}
+
+async function restoreRedisDrafts(
+  sessionId: number,
+  missingIds: number[],
+  enabledLanguageIds: Set<string>,
+  setCodes: React.Dispatch<React.SetStateAction<Record<string, string>>>,
+): Promise<void> {
+  try {
+    const drafts = await getExamDrafts(sessionId);
+    for (const [key, code] of Object.entries(drafts)) {
+      const colonIdx = key.indexOf(":");
+      const pid = Number(key.slice(0, colonIdx));
+      const lang = key.slice(colonIdx + 1);
+      if (!missingIds.includes(pid)) continue;
+      if (!enabledLanguageIds.has(lang)) continue;
+      setCodes((prev) => ({ ...prev, [`${pid}:${lang}`]: code }));
+      localStorage.setItem(STORAGE_KEYS.draftKey(sessionId, pid, lang), code);
+    }
+  } catch {
+    // Redis restore failed — draft code may be missing, editor will be empty
+  }
+}
+
 type BottomTab = "testcases" | "output" | "history";
 
 export default function ExamPage() {
@@ -118,6 +176,8 @@ export default function ExamPage() {
         const enabledLangs = langs.filter((l) => l.isEnabled !== false);
         const enabledLanguageIds = new Set(enabledLangs.map((lang) => lang.language));
         const orderedProblems = [...sessionProblems].sort((a, b) => a.orderIndex - b.orderIndex);
+        const defaultLang = enabledLangs[0]?.language ?? "";
+
         setProblems(orderedProblems);
         setLanguages(enabledLangs);
         setSessionStatus(session.status);
@@ -125,54 +185,19 @@ export default function ExamPage() {
         if (session.expiresAt) setExpiresAt(session.expiresAt);
         if (orderedProblems.length > 0) setActiveProblemId(orderedProblems[0].problemId);
 
-        const defaultLang = enabledLangs[0]?.language ?? "";
-        // codes keyed by "${problemId}:${language}"
-        const initialCodes: Record<string, string> = {};
-        const initialLangs: Record<number, string> = {};
-
-        for (const p of orderedProblems) {
-          // Restore code for each enabled language from per-language localStorage keys
-          for (const lang of enabledLangs) {
-            const lsKey = STORAGE_KEYS.draftKey(sessionId, p.problemId, lang.language);
-            const code = localStorage.getItem(lsKey);
-            if (code !== null) {
-              initialCodes[`${p.problemId}:${lang.language}`] = code;
-            }
-          }
-          // Restore the last-used language from a separate key
-          const lastLang = localStorage.getItem(STORAGE_KEYS.langKey(sessionId, p.problemId));
-          initialLangs[p.problemId] =
-            lastLang && enabledLanguageIds.has(lastLang) ? lastLang : defaultLang;
-        }
-
+        const { initialCodes, initialLangs } = buildInitialDraftState(
+          orderedProblems,
+          enabledLangs,
+          sessionId,
+          defaultLang,
+          enabledLanguageIds,
+        );
         setCodes(initialCodes);
         setSelectedLangs(initialLangs);
 
-        // Restore from Redis for problems with no localStorage data for any language
-        const missingIds = orderedProblems
-          .filter((p) =>
-            enabledLangs.every(
-              (lang) => initialCodes[`${p.problemId}:${lang.language}`] === undefined,
-            ),
-          )
-          .map((p) => p.problemId);
-
+        const missingIds = findMissingProblemIds(orderedProblems, enabledLangs, initialCodes);
         if (missingIds.length > 0 && session.status === "in_progress") {
-          try {
-            // drafts: Record<"problemId:language", code>
-            const drafts = await getExamDrafts(sessionId);
-            for (const [key, code] of Object.entries(drafts)) {
-              const colonIdx = key.indexOf(":");
-              const pid = Number(key.slice(0, colonIdx));
-              const lang = key.slice(colonIdx + 1);
-              if (!missingIds.includes(pid)) continue;
-              if (!enabledLanguageIds.has(lang)) continue;
-              setCodes((prev) => ({ ...prev, [`${pid}:${lang}`]: code }));
-              localStorage.setItem(STORAGE_KEYS.draftKey(sessionId, pid, lang), code);
-            }
-          } catch {
-            // Redis restore failed — draft code may be missing, editor will be empty
-          }
+          await restoreRedisDrafts(sessionId, missingIds, enabledLanguageIds, setCodes);
         }
       } catch {
         setLoadError("無法載入考試，請重新整理頁面或聯繫面試官。");
@@ -543,9 +568,11 @@ export default function ExamPage() {
 
         {/* Drag divider */}
         <div
+          role="button"
+          tabIndex={0}
           onMouseDown={handleDividerMouseDown}
+          onKeyDown={() => {}}
           className="w-1 shrink-0 bg-slate-200 hover:bg-blue-400 active:bg-blue-500 cursor-col-resize transition-colors select-none"
-          role="separator"
           aria-label="調整面板寬度"
         />
 
@@ -625,9 +652,11 @@ export default function ExamPage() {
 
           {/* Vertical drag divider */}
           <div
+            role="button"
+            tabIndex={0}
             onMouseDown={handleVertDividerMouseDown}
+            onKeyDown={() => {}}
             className="h-1 shrink-0 bg-slate-200 hover:bg-blue-400 active:bg-blue-500 cursor-row-resize transition-colors select-none"
-            role="separator"
             aria-label="調整底部面板高度"
           />
 
@@ -695,13 +724,12 @@ export default function ExamPage() {
                       {currentTestcases.map((tc, idx) => {
                         const result = activePublicResults.find((r) => r.testcaseId === tc.id);
                         const isActive = idx === activeCaseIdx;
-                        const verdictColor = isActive
-                          ? "bg-slate-900 text-white border-transparent"
-                          : result?.verdict === "AC"
-                            ? "border-green-400 text-green-600 hover:bg-green-50"
-                            : result
-                              ? "border-red-400 text-red-500 hover:bg-red-50"
-                              : "border-slate-200 text-slate-600 hover:bg-slate-50";
+                        let verdictColor = "border-slate-200 text-slate-600 hover:bg-slate-50";
+                        if (isActive) verdictColor = "bg-slate-900 text-white border-transparent";
+                        else if (result?.verdict === "AC")
+                          verdictColor = "border-green-400 text-green-600 hover:bg-green-50";
+                        else if (result)
+                          verdictColor = "border-red-400 text-red-500 hover:bg-red-50";
                         return (
                           <button
                             key={tc.id}

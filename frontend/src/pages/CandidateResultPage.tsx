@@ -180,7 +180,7 @@ export default function CandidateResultPage() {
                 </span>
               </div>
               <p className="text-sm text-slate-600">
-                總分：
+                總分：{" "}
                 <span className="font-medium text-slate-900">
                   {result.totalScore} / {result.maxScore}
                 </span>

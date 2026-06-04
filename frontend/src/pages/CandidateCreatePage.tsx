@@ -62,7 +62,7 @@ export default function CandidateCreatePage() {
     try {
       const res: CreateUserResponse = await createUser({
         username: singleForm.username.trim(),
-        displayName: singleForm.displayName || undefined,
+        displayName: singleForm.displayName ? singleForm.displayName : undefined,
         password: singleForm.password,
         roleNames: ["candidate"],
       });
@@ -209,10 +209,14 @@ export default function CandidateCreatePage() {
         {mode === "single" ? (
           <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">
+              <label
+                htmlFor="single-username"
+                className="block text-xs font-semibold text-slate-500 mb-1"
+              >
                 帳號 (Username) *
               </label>
               <input
+                id="single-username"
                 type="text"
                 aria-label="帳號"
                 value={singleForm.username}
@@ -221,21 +225,30 @@ export default function CandidateCreatePage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">
+              <label
+                htmlFor="single-display-name"
+                className="block text-xs font-semibold text-slate-500 mb-1"
+              >
                 顯示名稱 (Display Name)
               </label>
               <input
+                id="single-display-name"
                 type="text"
-                aria-label="顯示名稱"
                 value={singleForm.displayName}
                 onChange={(e) => setSingleForm({ ...singleForm, displayName: e.target.value })}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">密碼 *</label>
+              <label
+                htmlFor="single-password"
+                className="block text-xs font-semibold text-slate-500 mb-1"
+              >
+                密碼 *
+              </label>
               <div className="flex gap-2">
                 <input
+                  id="single-password"
                   type="text"
                   aria-label="密碼"
                   value={singleForm.password}

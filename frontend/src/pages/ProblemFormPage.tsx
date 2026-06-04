@@ -13,7 +13,7 @@ import {
   addTestcase,
   deleteTestcase,
 } from "../api/client";
-import type { Difficulty, Testcase } from "../types";
+import type { Difficulty } from "../types";
 import { ROUTES } from "../config/routes";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
+    reader.onerror = () => reject(reader.error ?? new Error("FileReader error"));
     reader.readAsText(file);
   });
 }
@@ -47,12 +47,12 @@ function TestcaseCard({
   onTogglePublic,
   onFileUpload,
   onDelete,
-}: {
+}: Readonly<{
   row: TestcaseRow;
   onTogglePublic: () => void;
   onFileUpload: (field: "input" | "output", file: File) => void;
   onDelete: () => void;
-}) {
+}>) {
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLInputElement>(null);
 
@@ -189,7 +189,7 @@ export default function ProblemFormPage() {
         setTimeLimitMs(problem.timeLimitMs);
         setMemoryLimitMb(problem.memoryLimitMb);
         setDescriptionMd(problem.descriptionMd);
-        const rows: TestcaseRow[] = (problem.testcases as Testcase[]).map((tc) => ({
+        const rows: TestcaseRow[] = problem.testcases.map((tc) => ({
           id: tc.id,
           orderIndex: tc.orderIndex,
           isPublic: tc.isPublic,
@@ -234,17 +234,47 @@ export default function ProblemFormPage() {
     });
   }
 
+  function validateCreateForm(): typeof errors {
+    const newErrors: typeof errors = {};
+    if (!title.trim()) newErrors.title = "請輸入題目名稱";
+    if (!descriptionMd.trim()) newErrors.description = "請輸入題目描述";
+    const pubCount = testcases.filter((tc) => tc.isPublic).length;
+    const hidCount = testcases.filter((tc) => !tc.isPublic).length;
+    if (pubCount === 0) newErrors.testcases = "至少需要 1 筆公開測資";
+    else if (hidCount === 0) newErrors.testcases = "至少需要 1 筆隱藏測資";
+    return newErrors;
+  }
+
+  async function saveEditedProblem(problemId: number) {
+    await updateProblem(problemId, {
+      title: title.trim(),
+      descriptionMd,
+      difficulty,
+      timeLimitMs,
+      memoryLimitMb,
+    });
+
+    const currentIds = new Set(testcases.filter((tc) => tc.id !== undefined).map((tc) => tc.id!));
+    for (const oid of originalTcIds) {
+      if (!currentIds.has(oid)) await deleteTestcase(problemId, oid);
+    }
+    for (const tc of testcases) {
+      if (tc.id === undefined) {
+        await addTestcase(problemId, {
+          orderIndex: tc.orderIndex,
+          isPublic: tc.isPublic,
+          inputData: tc.inputData,
+          expectedOutput: tc.outputData,
+        });
+      }
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
     if (!isEdit) {
-      const newErrors: typeof errors = {};
-      if (!title.trim()) newErrors.title = "請輸入題目名稱";
-      if (!descriptionMd.trim()) newErrors.description = "請輸入題目描述";
-      const pubCount = testcases.filter((tc) => tc.isPublic).length;
-      const hidCount = testcases.filter((tc) => !tc.isPublic).length;
-      if (pubCount === 0) newErrors.testcases = "至少需要 1 筆公開測資";
-      else if (hidCount === 0) newErrors.testcases = "至少需要 1 筆隱藏測資";
+      const newErrors = validateCreateForm();
       if (Object.keys(newErrors).length > 0) {
         setErrors(newErrors);
         return;
@@ -255,37 +285,7 @@ export default function ProblemFormPage() {
     setSaving(true);
     try {
       if (isEdit) {
-        const problemId = Number(id);
-
-        await updateProblem(problemId, {
-          title: title.trim(),
-          descriptionMd,
-          difficulty,
-          timeLimitMs,
-          memoryLimitMb,
-        });
-
-        // Delete removed testcases
-        const currentIds = new Set(
-          testcases.filter((tc) => tc.id !== undefined).map((tc) => tc.id!),
-        );
-        for (const oid of originalTcIds) {
-          if (!currentIds.has(oid)) {
-            await deleteTestcase(problemId, oid);
-          }
-        }
-
-        // Add new testcases (those without an id)
-        for (const tc of testcases) {
-          if (tc.id === undefined) {
-            await addTestcase(problemId, {
-              orderIndex: tc.orderIndex,
-              isPublic: tc.isPublic,
-              inputData: tc.inputData,
-              expectedOutput: tc.outputData,
-            });
-          }
-        }
+        await saveEditedProblem(Number(id));
       } else {
         await createProblem({
           title: title.trim(),
@@ -301,7 +301,6 @@ export default function ProblemFormPage() {
           })),
         });
       }
-
       navigate(ROUTES.PROBLEM_SETTER);
     } catch (err) {
       const detail = axios.isAxiosError(err)
@@ -346,8 +345,14 @@ export default function ProblemFormPage() {
             <h2 className="text-base font-semibold text-slate-800">基本資訊</h2>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">題目名稱</label>
+              <label
+                htmlFor="problem-title"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                題目名稱
+              </label>
               <input
+                id="problem-title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="輸入題目名稱"
@@ -380,10 +385,14 @@ export default function ProblemFormPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label
+                  htmlFor="time-limit"
+                  className="block text-sm font-medium text-slate-700 mb-1"
+                >
                   時間限制 (ms)
                 </label>
                 <input
+                  id="time-limit"
                   type="number"
                   min={1}
                   value={timeLimitMs}
@@ -392,10 +401,14 @@ export default function ProblemFormPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label
+                  htmlFor="memory-limit"
+                  className="block text-sm font-medium text-slate-700 mb-1"
+                >
                   記憶體限制 (MB)
                 </label>
                 <input
+                  id="memory-limit"
                   type="number"
                   min={1}
                   value={memoryLimitMb}
@@ -474,7 +487,7 @@ export default function ProblemFormPage() {
             <div className="space-y-3">
               {testcases.map((tc, i) => (
                 <TestcaseCard
-                  key={i}
+                  key={tc.orderIndex}
                   row={tc}
                   onTogglePublic={() => togglePublic(i)}
                   onFileUpload={(field, file) => handleFileUpload(i, field, file)}

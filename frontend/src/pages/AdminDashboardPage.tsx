@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Dialog, DialogPanel, DialogTitle } from "@headlessui/react";
 import { NavBar } from "../components/NavBar";
 import { createUser, deleteUser, getUsers, updateUserRoles } from "../api/client";
 import { CreateUserRequest } from "../types";
@@ -23,7 +24,7 @@ interface UserRow {
 
 const initialUsers: UserRow[] = [];
 
-function RolePill({ role }: { role: UserRole }) {
+function RolePill({ role }: Readonly<{ role: UserRole }>) {
   const config = ROLE_CONFIG_MAP[role];
   return (
     <span
@@ -92,7 +93,7 @@ export default function AdminDashboardPage() {
     );
   }
 
-  function handleCreateUser(event: React.FormEvent<HTMLFormElement>) {
+  async function handleCreateUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!username || !password) {
       alert("帳號或密碼不能為空!");
@@ -110,36 +111,34 @@ export default function AdminDashboardPage() {
       roleNames: roleNames,
     };
 
-    createUser(req)
-      .then((response) => {
-        setUsers((current) => [
-          {
-            id: response.id,
-            username: response.username,
-            displayName: response.displayName ?? response.username,
-            isSuperuser: false,
-            roles: roleNames,
-          },
-          ...current,
-        ]);
-        setUsername("");
-        setPassword("");
-        setDisplayName("");
-        setRoleNames([]);
-      })
-      .catch(() => {
-        alert("建立使用者失敗，請稍後再試。");
-      });
+    try {
+      const response = await createUser(req);
+      setUsers((current) => [
+        {
+          id: response.id,
+          username: response.username,
+          displayName: response.displayName ?? response.username,
+          isSuperuser: false,
+          roles: roleNames,
+        },
+        ...current,
+      ]);
+      setUsername("");
+      setPassword("");
+      setDisplayName("");
+      setRoleNames([]);
+    } catch {
+      alert("建立使用者失敗，請稍後再試。");
+    }
   }
 
-  function handleDeleteUser(id: number) {
-    deleteUser(id)
-      .then(() => {
-        setUsers((current) => current.filter((user) => user.id !== id));
-      })
-      .catch(() => {
-        alert("刪除使用者失敗，請稍後再試。");
-      });
+  async function handleDeleteUser(id: number) {
+    try {
+      await deleteUser(id);
+      setUsers((current) => current.filter((user) => user.id !== id));
+    } catch {
+      alert("刪除使用者失敗，請稍後再試。");
+    }
   }
 
   function handleOpenEditRoles(user: UserRow) {
@@ -153,20 +152,22 @@ export default function AdminDashboardPage() {
     );
   }
 
-  function handleSaveRoles() {
+  async function handleSaveRoles() {
     if (!editingUser) return;
     setSavingRoles(true);
-    updateUserRoles(editingUser.id, pendingRoles)
-      .then(() => {
-        setUsers((current) =>
-          current.map((u) => (u.id === editingUser.id ? { ...u, roles: pendingRoles } : u)),
-        );
-        setEditingUser(null);
-      })
-      .catch(() => {
-        alert("更新角色失敗，請稍後再試。");
-      })
-      .finally(() => setSavingRoles(false));
+    try {
+      await updateUserRoles(editingUser.id, pendingRoles);
+      const savedId = editingUser.id;
+      const savedRoles = pendingRoles;
+      setUsers((current) =>
+        current.map((u) => (u.id === savedId ? { ...u, roles: savedRoles } : u)),
+      );
+      setEditingUser(null);
+    } catch {
+      alert("更新角色失敗，請稍後再試。");
+    } finally {
+      setSavingRoles(false);
+    }
   }
 
   return (
@@ -180,15 +181,16 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {loading ? (
+        {loading && (
           <div className="rounded-3xl border border-slate-200 bg-white px-6 py-8 text-center text-slate-600 shadow-sm">
             讀取中，請稍候...
           </div>
-        ) : error ? (
+        )}
+        {!loading && error && (
           <div className="rounded-3xl border border-rose-200 bg-rose-50 px-6 py-6 text-base text-rose-700 shadow-sm">
             {error}
           </div>
-        ) : null}
+        )}
 
         <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-slate-100 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
@@ -312,8 +314,11 @@ export default function AdminDashboardPage() {
           </div>
           <form className="space-y-4" onSubmit={handleCreateUser}>
             <div>
-              <label className="block text-sm font-medium text-slate-700">使用者名稱</label>
+              <label htmlFor="create-username" className="block text-sm font-medium text-slate-700">
+                使用者名稱
+              </label>
               <input
+                id="create-username"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
@@ -321,8 +326,11 @@ export default function AdminDashboardPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">密碼</label>
+              <label htmlFor="create-password" className="block text-sm font-medium text-slate-700">
+                密碼
+              </label>
               <input
+                id="create-password"
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -331,8 +339,14 @@ export default function AdminDashboardPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">顯示名稱</label>
+              <label
+                htmlFor="create-display-name"
+                className="block text-sm font-medium text-slate-700"
+              >
+                顯示名稱
+              </label>
               <input
+                id="create-display-name"
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
@@ -371,16 +385,16 @@ export default function AdminDashboardPage() {
         </section>
       </main>
 
-      {editingUser && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          role="dialog"
-          aria-modal="true"
-          aria-label="編輯角色"
-        >
-          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-slate-900">編輯角色</h2>
-            <p className="mt-1 text-sm text-slate-500">{editingUser.username}</p>
+      <Dialog
+        open={editingUser !== null}
+        onClose={() => setEditingUser(null)}
+        className="relative z-50"
+      >
+        <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-slate-900">編輯角色</DialogTitle>
+            {editingUser && <p className="mt-1 text-sm text-slate-500">{editingUser.username}</p>}
 
             <div className="mt-5 flex flex-col gap-3">
               {EDITABLE_ROLES.map((r) => (
@@ -419,9 +433,9 @@ export default function AdminDashboardPage() {
                 {savingRoles ? "儲存中..." : "儲存"}
               </button>
             </div>
-          </div>
+          </DialogPanel>
         </div>
-      )}
+      </Dialog>
     </div>
   );
 }

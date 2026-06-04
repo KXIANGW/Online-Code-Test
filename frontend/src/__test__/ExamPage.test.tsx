@@ -1199,13 +1199,13 @@ describe("ExamPage", () => {
     // given
     await renderExamPage();
     // expect
-    expect(screen.getByRole("separator", { name: "調整面板寬度" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "調整面板寬度" })).toBeInTheDocument();
   });
 
   it("dragging the divider updates the left panel width", async () => {
     // given
     await renderExamPage();
-    const divider = screen.getByRole("separator", { name: "調整面板寬度" });
+    const divider = screen.getByRole("button", { name: "調整面板寬度" });
     const panel = screen.getByLabelText("題目描述") as HTMLElement;
     const initialWidth = parseInt(panel.style.width);
 
@@ -1222,7 +1222,7 @@ describe("ExamPage", () => {
   it("clamps left panel width to minimum 240px", async () => {
     // given
     await renderExamPage();
-    const divider = screen.getByRole("separator", { name: "調整面板寬度" });
+    const divider = screen.getByRole("button", { name: "調整面板寬度" });
     const panel = screen.getByLabelText("題目描述") as HTMLElement;
 
     // when: drag far to the left
@@ -1237,7 +1237,7 @@ describe("ExamPage", () => {
   it("clamps left panel width to maximum 700px", async () => {
     // given
     await renderExamPage();
-    const divider = screen.getByRole("separator", { name: "調整面板寬度" });
+    const divider = screen.getByRole("button", { name: "調整面板寬度" });
     const panel = screen.getByLabelText("題目描述") as HTMLElement;
 
     // when: drag far to the right
@@ -1255,13 +1255,13 @@ describe("ExamPage", () => {
     // given
     await renderExamPage();
     // expect
-    expect(screen.getByRole("separator", { name: "調整底部面板高度" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "調整底部面板高度" })).toBeInTheDocument();
   });
 
   it("dragging vertical divider upward increases bottom panel height", async () => {
     // given
     await renderExamPage();
-    const divider = screen.getByRole("separator", { name: "調整底部面板高度" });
+    const divider = screen.getByRole("button", { name: "調整底部面板高度" });
     const panel = screen.getByLabelText("底部面板") as HTMLElement;
     const initialHeight = parseInt(panel.style.height); // default 208
 
@@ -1277,7 +1277,7 @@ describe("ExamPage", () => {
   it("dragging vertical divider downward decreases bottom panel height", async () => {
     // given
     await renderExamPage();
-    const divider = screen.getByRole("separator", { name: "調整底部面板高度" });
+    const divider = screen.getByRole("button", { name: "調整底部面板高度" });
     const panel = screen.getByLabelText("底部面板") as HTMLElement;
     const initialHeight = parseInt(panel.style.height);
 
@@ -1293,7 +1293,7 @@ describe("ExamPage", () => {
   it("clamps bottom panel height to minimum 80px", async () => {
     // given
     await renderExamPage();
-    const divider = screen.getByRole("separator", { name: "調整底部面板高度" });
+    const divider = screen.getByRole("button", { name: "調整底部面板高度" });
     const panel = screen.getByLabelText("底部面板") as HTMLElement;
 
     // when: drag far downward
@@ -1308,7 +1308,7 @@ describe("ExamPage", () => {
   it("clamps bottom panel height to maximum 600px", async () => {
     // given
     await renderExamPage();
-    const divider = screen.getByRole("separator", { name: "調整底部面板高度" });
+    const divider = screen.getByRole("button", { name: "調整底部面板高度" });
     const panel = screen.getByLabelText("底部面板") as HTMLElement;
 
     // when: drag far upward

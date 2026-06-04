@@ -198,7 +198,7 @@ export class IsolateEngine implements SandboxEngine {
       }
 
       return {
-        verdict: verdict as Verdict,
+        verdict,
         stdout,
         stderr,
         runtimeMs: classification.runtimeMs,

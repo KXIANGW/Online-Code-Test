@@ -2,7 +2,7 @@ import bcrypt from "bcrypt";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/client";
 import { users, userRoles, rolePermissions, permissions } from "../db/schema";
-import { eq, isNull, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { UnauthorizedError } from "../errors";
 
 export async function login(

@@ -8,7 +8,7 @@ results = []
 try:
     socket.sethostname("hacked")
     results.append("SETHOSTNAME_SUCCEEDED")
-except (PermissionError, OSError):
+except OSError:
     results.append("sethostname_blocked")
 
 # CAP_NET_RAW: required to open a raw (packet-capture) socket
@@ -16,7 +16,7 @@ try:
     s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0800))
     s.close()
     results.append("RAW_SOCKET_SUCCEEDED")
-except (PermissionError, OSError):
+except OSError:
     results.append("raw_socket_blocked")
 
 # CAP_NET_ADMIN: required to manipulate network interfaces

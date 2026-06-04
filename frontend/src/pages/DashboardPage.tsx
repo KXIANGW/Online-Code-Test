@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { Dialog, DialogPanel, DialogTitle } from "@headlessui/react";
 import { useExamStore } from "../stores/examStore";
 import type { ExamSession } from "../types";
 import { useEffect, useState } from "react";
@@ -14,12 +15,12 @@ function SectionCard({
   badge,
   badgeColor = "bg-slate-100 text-slate-600",
   children,
-}: {
+}: Readonly<{
   title: string;
   badge?: string | number;
   badgeColor?: string;
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <section className="bg-white rounded-xl border border-slate-200">
       <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-100">
@@ -35,7 +36,7 @@ function SectionCard({
   );
 }
 
-function EmptyState({ message }: { message: string }) {
+function EmptyState({ message }: Readonly<{ message: string }>) {
   return <p className="text-sm text-slate-400 text-center py-6">{message}</p>;
 }
 
@@ -44,12 +45,12 @@ function ExamSessionCard({
   onResume,
   onRequestStart,
   onViewResult,
-}: {
+}: Readonly<{
   session: ExamSession;
   onResume: (sessionId: number) => void;
   onRequestStart: (sessionId: number) => void;
   onViewResult: (sessionId: number) => void;
-}) {
+}>) {
   const timeLeft = useExamTimer(session.expiresAt);
   const title = session.examTitle || `考試 #${session.id}`;
 
@@ -217,18 +218,18 @@ export default function DashboardPage() {
       </main>
 
       {/* 全螢幕同意 Modal */}
-      {pendingSessionId !== null && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="fullscreen-modal-title"
-        >
-          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full mx-4 space-y-5">
+      <Dialog
+        open={pendingSessionId !== null}
+        onClose={() => setPendingSessionId(null)}
+        className="relative z-50"
+      >
+        <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full space-y-5">
             <div className="space-y-2">
-              <h2 id="fullscreen-modal-title" className="text-lg font-semibold text-slate-800">
+              <DialogTitle className="text-lg font-semibold text-slate-800">
                 進入考試前請確認
-              </h2>
+              </DialogTitle>
               <p className="text-sm text-slate-600 leading-relaxed">
                 本系統為維護考試公平性，開始考試後將啟用以下監控機制：
               </p>
@@ -254,9 +255,9 @@ export default function DashboardPage() {
                 同意並開始考試
               </button>
             </div>
-          </div>
+          </DialogPanel>
         </div>
-      )}
+      </Dialog>
     </div>
   );
 }

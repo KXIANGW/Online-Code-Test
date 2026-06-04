@@ -1,2 +1,2 @@
 while True:
-    pass
+    pass  # intentional infinite loop to test TLE enforcement

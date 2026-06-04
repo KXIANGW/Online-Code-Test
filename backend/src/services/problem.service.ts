@@ -7,12 +7,13 @@ import {
   examProblems,
   languageDefaults,
 } from "../db/schema";
-import { eq, isNull, sql, and, inArray } from "drizzle-orm";
+import { eq, isNull, and, inArray } from "drizzle-orm";
 import { BadRequestError, ForbiddenError, NotFoundError, ConflictError } from "../errors";
 import type { FastifyJWT } from "@fastify/jwt";
 import { cacheGet, cacheSet, cacheDel } from "../db/redis";
 
 type CurrentUser = FastifyJWT["user"];
+type Difficulty = "easy" | "medium" | "hard";
 
 // ── Types for raw cache payload ───────────────────────────────────────────────
 
@@ -110,7 +111,7 @@ export async function listProblems(currentUser: CurrentUser) {
     {
       id: number;
       title: string;
-      difficulty: "easy" | "medium" | "hard";
+      difficulty: Difficulty;
       timeLimitMs: number;
       memoryLimitMb: number;
       createdAt: string;

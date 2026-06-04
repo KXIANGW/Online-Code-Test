@@ -21,7 +21,7 @@ export function EditCandidateDialog({
   candidate,
   onClose,
   onSaved,
-}: EditCandidateDialogProps) {
+}: Readonly<EditCandidateDialogProps>) {
   const [displayName, setDisplayName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -81,8 +81,14 @@ export function EditCandidateDialog({
           </DialogTitle>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">顯示名稱</label>
+              <label
+                htmlFor="edit-display-name"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                顯示名稱
+              </label>
               <input
+                id="edit-display-name"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder={candidate?.username ?? ""}
@@ -94,8 +100,14 @@ export function EditCandidateDialog({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">新密碼</label>
+              <label
+                htmlFor="edit-new-password"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                新密碼
+              </label>
               <input
+                id="edit-new-password"
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
@@ -106,8 +118,14 @@ export function EditCandidateDialog({
 
             {newPassword && (
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">確認新密碼</label>
+                <label
+                  htmlFor="edit-confirm-password"
+                  className="block text-sm font-medium text-slate-700 mb-1"
+                >
+                  確認新密碼
+                </label>
                 <input
+                  id="edit-confirm-password"
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}

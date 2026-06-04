@@ -5,14 +5,12 @@ import { z } from "zod";
 // Minimal subset of the Worker's language schema — the puller only cares about
 // id (target subdir name), image (registry coordinates) and enabled flag.
 // Other Worker-specific fields are tolerated but ignored.
-const PullerLanguageSchema = z
-  .object({
-    id: z.string().min(1),
-    image: z.string().min(1),
-    rootfsPath: z.string().optional(),
-    enabled: z.boolean(),
-  })
-  .passthrough();
+const PullerLanguageSchema = z.looseObject({
+  id: z.string().min(1),
+  image: z.string().min(1),
+  rootfsPath: z.string().optional(),
+  enabled: z.boolean(),
+});
 
 const LanguagesFileSchema = z.object({
   version: z.literal(1),
