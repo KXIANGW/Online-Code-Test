@@ -1,9 +1,8 @@
 import bcrypt from "bcrypt";
-import { pool } from "../../db/client";
-import { db } from "../../db/client";
+import { pool, db } from "../../db/client";
 import { redis } from "../../db/redis";
 import { users, userRoles, roles } from "../../db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
 /**

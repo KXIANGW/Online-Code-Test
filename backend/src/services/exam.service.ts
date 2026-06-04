@@ -360,6 +360,115 @@ export async function listExamTemplates(currentUser: CurrentUser) {
 // 部分 3：分配考試給多位面試者 (Batch Assignment)
 // ──────────────────────────────────────────────────────────────────────────────
 
+async function assertCandidatesAccess(currentUser: CurrentUser, candidateIds: number[]) {
+  for (const candidateId of candidateIds) {
+    const { createdBy: candidateCreatedBy } = await assertCandidateExists(candidateId);
+    if (!currentUser.isSuperuser && candidateCreatedBy !== currentUser.id) throw ForbiddenError();
+  }
+}
+
+async function buildPendingSessionMap(candidateIds: number[]): Promise<Map<number, number>> {
+  const existingSessions = await db
+    .select({
+      id: examSessions.id,
+      candidateId: examSessions.candidateId,
+      status: examSessions.status,
+    })
+    .from(examSessions)
+    .where(
+      and(
+        inArray(examSessions.candidateId, candidateIds),
+        inArray(examSessions.status, ["not_started", "in_progress", "submitted", "expired"]),
+      ),
+    );
+
+  const sessionsByCandidateId = new Map<number, typeof existingSessions>();
+  for (const session of existingSessions) {
+    const sessions = sessionsByCandidateId.get(session.candidateId) ?? [];
+    sessions.push(session);
+    sessionsByCandidateId.set(session.candidateId, sessions);
+  }
+
+  const pendingMap = new Map<number, number>();
+  for (const candidateId of candidateIds) {
+    const sessions = sessionsByCandidateId.get(candidateId) ?? [];
+    if (sessions.some((s) => s.status === "in_progress"))
+      throw ConflictError("考生正在考試中，不能更換模板");
+    if (sessions.some((s) => s.status === "submitted" || s.status === "expired"))
+      throw ConflictError("考生已完成考試，不能再分發模板");
+    const pending = sessions.find((s) => s.status === "not_started");
+    if (pending) pendingMap.set(candidateId, pending.id);
+  }
+  return pendingMap;
+}
+
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+interface TemplateProblemRow {
+  problemId: number;
+  orderIndex: number;
+  scoreWeight: number;
+}
+
+async function executeAssignmentTransaction(
+  tx: DbTransaction,
+  candidateIds: number[],
+  pendingSessionByCandidateId: Map<number, number>,
+  examId: number,
+  maxScore: number,
+  templateProblems: TemplateProblemRow[],
+  createdBy: number,
+): Promise<number[]> {
+  const sessionIds: number[] = [];
+  for (const candidateId of candidateIds) {
+    const pendingSessionId = pendingSessionByCandidateId.get(candidateId);
+    if (pendingSessionId !== undefined) {
+      await tx
+        .update(examSessions)
+        .set({
+          examId,
+          maxScore,
+          totalScore: 0,
+          actualStartAt: null,
+          expiresAt: null,
+          submittedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(examSessions.id, pendingSessionId));
+      await tx
+        .delete(examSessionProblems)
+        .where(eq(examSessionProblems.examSessionId, pendingSessionId));
+      await tx.insert(examSessionProblems).values(
+        templateProblems.map((p) => ({
+          examSessionId: pendingSessionId,
+          problemId: p.problemId,
+          orderIndex: p.orderIndex,
+          scoreWeight: p.scoreWeight,
+          score: 0,
+        })),
+      );
+      sessionIds.push(pendingSessionId);
+      continue;
+    }
+    const sessionRows = await tx
+      .insert(examSessions)
+      .values({ examId, candidateId, createdBy, maxScore, totalScore: 0 })
+      .returning();
+    const session = sessionRows[0]!;
+    await tx.insert(examSessionProblems).values(
+      templateProblems.map((p) => ({
+        examSessionId: session.id,
+        problemId: p.problemId,
+        orderIndex: p.orderIndex,
+        scoreWeight: p.scoreWeight,
+        score: 0,
+      })),
+    );
+    sessionIds.push(session.id);
+  }
+  return sessionIds;
+}
+
 /**
  * 核心重構：把指定考卷批次分派給多個面試者帳號（Junction 批次寫入）
  */
@@ -388,117 +497,21 @@ export async function assignExamToCandidates(
   const maxScore = templateProblems.reduce((sum, p) => sum + p.scoreWeight, 0);
 
   // 3. 校驗所有面試者帳號狀態
-  for (const candidateId of data.candidateIds) {
-    const { createdBy: candidateCreatedBy } = await assertCandidateExists(candidateId);
-    if (!currentUser.isSuperuser && candidateCreatedBy !== currentUser.id) throw ForbiddenError();
-  }
+  await assertCandidatesAccess(currentUser, data.candidateIds);
 
-  const existingSessions = await db
-    .select({
-      id: examSessions.id,
-      candidateId: examSessions.candidateId,
-      status: examSessions.status,
-    })
-    .from(examSessions)
-    .where(
-      and(
-        inArray(examSessions.candidateId, data.candidateIds),
-        inArray(examSessions.status, ["not_started", "in_progress", "submitted", "expired"]),
-      ),
-    );
-
-  const sessionsByCandidateId = new Map<number, typeof existingSessions>();
-  for (const session of existingSessions) {
-    const sessions = sessionsByCandidateId.get(session.candidateId) ?? [];
-    sessions.push(session);
-    sessionsByCandidateId.set(session.candidateId, sessions);
-  }
-
-  const pendingSessionByCandidateId = new Map<number, number>();
-  for (const candidateId of data.candidateIds) {
-    const sessions = sessionsByCandidateId.get(candidateId) ?? [];
-    if (sessions.some((session) => session.status === "in_progress")) {
-      throw ConflictError("考生正在考試中，不能更換模板");
-    }
-    if (
-      sessions.some((session) => session.status === "submitted" || session.status === "expired")
-    ) {
-      throw ConflictError("考生已完成考試，不能再分發模板");
-    }
-
-    const pendingSession = sessions.find((session) => session.status === "not_started");
-    if (pendingSession) {
-      pendingSessionByCandidateId.set(candidateId, pendingSession.id);
-    }
-  }
+  const pendingSessionByCandidateId = await buildPendingSessionMap(data.candidateIds);
 
   // 4. 利用 Transaction 執行全成功或全失敗的批次指派
   const changedSessionIds = await db.transaction(async (tx) => {
-    const sessionIds: number[] = [];
-
-    for (const candidateId of data.candidateIds) {
-      const pendingSessionId = pendingSessionByCandidateId.get(candidateId);
-      if (pendingSessionId !== undefined) {
-        await tx
-          .update(examSessions)
-          .set({
-            examId: examTemplate.id,
-            maxScore,
-            totalScore: 0,
-            actualStartAt: null,
-            expiresAt: null,
-            submittedAt: null,
-            updatedAt: new Date(),
-          })
-          .where(eq(examSessions.id, pendingSessionId));
-
-        await tx
-          .delete(examSessionProblems)
-          .where(eq(examSessionProblems.examSessionId, pendingSessionId));
-
-        await tx.insert(examSessionProblems).values(
-          templateProblems.map((p) => ({
-            examSessionId: pendingSessionId,
-            problemId: p.problemId,
-            orderIndex: p.orderIndex,
-            scoreWeight: p.scoreWeight,
-            score: 0,
-          })),
-        );
-
-        sessionIds.push(pendingSessionId);
-        continue;
-      }
-
-      // 插入 Exam Session
-      const sessionRows = await tx
-        .insert(examSessions)
-        .values({
-          examId: examTemplate.id,
-          candidateId: candidateId,
-          createdBy: currentUser.id,
-          maxScore,
-          totalScore: 0,
-        })
-        .returning();
-
-      const session = sessionRows[0]!;
-
-      // 將考卷題目快照實體化到該面試者的 session problems 中
-      await tx.insert(examSessionProblems).values(
-        templateProblems.map((p) => ({
-          examSessionId: session.id,
-          problemId: p.problemId,
-          orderIndex: p.orderIndex,
-          scoreWeight: p.scoreWeight,
-          score: 0,
-        })),
-      );
-
-      sessionIds.push(session.id);
-    }
-
-    return sessionIds;
+    return executeAssignmentTransaction(
+      tx,
+      data.candidateIds,
+      pendingSessionByCandidateId,
+      examTemplate.id,
+      maxScore,
+      templateProblems,
+      currentUser.id,
+    );
   });
 
   return getSessionDtosByIds(changedSessionIds);

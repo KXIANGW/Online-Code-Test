@@ -1,7 +1,6 @@
 import { db } from "../db/client";
 import {
   examSessionProblems,
-  examSessions,
   languageDefaults,
   problems,
   problemTestcases,

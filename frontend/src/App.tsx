@@ -28,11 +28,11 @@ function RoleBasedRoute({
   children,
   requiredPermission,
   onlyAdmin = false,
-}: {
+}: Readonly<{
   children: ReactNode;
   requiredPermission?: Permission;
   onlyAdmin?: boolean;
-}) {
+}>) {
   const { token, isSuperuser, permissions } = useAuthStore((s) => ({
     token: s.token,
     isSuperuser: s.isSuperuser,

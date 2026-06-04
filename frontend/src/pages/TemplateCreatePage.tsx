@@ -105,23 +105,53 @@ export default function TemplateCreatePage() {
     );
   }
 
-  async function handleSubmit() {
-    if (!title.trim()) {
-      setSubmitError("請填寫考試標題");
-      return;
-    }
-
-    if (mode === "manual") {
-      if (selectedProblems.length === 0) {
-        setSubmitError("請至少選擇一個題目");
-        return;
-      }
-    } else {
+  function validateForm(): string | null {
+    if (!title.trim()) return "請填寫考試標題";
+    if (mode === "manual" && selectedProblems.length === 0) return "請至少選擇一個題目";
+    if (mode !== "manual") {
       const total = distribution.easy + distribution.medium + distribution.hard;
-      if (total === 0) {
-        setSubmitError("請至少在難度分佈中填寫一題");
-        return;
-      }
+      if (total === 0) return "請至少在難度分佈中填寫一題";
+    }
+    return null;
+  }
+
+  async function submitManualTemplate() {
+    const req: CreateExamTemplateManualRequest = {
+      title: title.trim(),
+      durationMinutes,
+      problems: selectedProblems.map((sp, idx) => ({
+        problemId: sp.problemId,
+        scoreWeight: sp.scoreWeight,
+        orderIndex: idx + 1,
+      })),
+    };
+    if (isEditMode && templateId !== null) {
+      await updateExamTemplate(templateId, req);
+    } else {
+      await createExamTemplateManual(req);
+    }
+  }
+
+  async function submitRandomTemplate() {
+    const finalDist: RandomDistribution = {};
+    if (distribution.easy > 0) finalDist.easy = distribution.easy;
+    if (distribution.medium > 0) finalDist.medium = distribution.medium;
+    if (distribution.hard > 0) finalDist.hard = distribution.hard;
+
+    const req: CreateExamTemplateRandomRequest = {
+      title: title.trim(),
+      durationMinutes,
+      distribution: finalDist,
+      scoreWeight: randomScoreWeight,
+    };
+    await createExamTemplateRandom(req);
+  }
+
+  async function handleSubmit() {
+    const validationError = validateForm();
+    if (validationError) {
+      setSubmitError(validationError);
+      return;
     }
 
     setSubmitting(true);
@@ -129,36 +159,10 @@ export default function TemplateCreatePage() {
 
     try {
       if (mode === "manual" || isEditMode) {
-        const req: CreateExamTemplateManualRequest = {
-          title: title.trim(),
-          durationMinutes,
-          problems: selectedProblems.map((sp, idx) => ({
-            problemId: sp.problemId,
-            scoreWeight: sp.scoreWeight,
-            orderIndex: idx + 1,
-          })),
-        };
-        if (isEditMode && templateId !== null) {
-          await updateExamTemplate(templateId, req);
-        } else {
-          await createExamTemplateManual(req);
-        }
+        await submitManualTemplate();
       } else {
-        const finalDist: RandomDistribution = {};
-        if (distribution.easy > 0) finalDist.easy = distribution.easy;
-        if (distribution.medium > 0) finalDist.medium = distribution.medium;
-        if (distribution.hard > 0) finalDist.hard = distribution.hard;
-
-        const req: CreateExamTemplateRandomRequest = {
-          title: title.trim(),
-          durationMinutes,
-          distribution: finalDist,
-          scoreWeight: randomScoreWeight,
-        };
-        await createExamTemplateRandom(req);
+        await submitRandomTemplate();
       }
-
-      // Invalidate store so dashboard re-fetches on next mount
       setTemplates([]);
       navigate(ROUTES.INTERVIEWER);
     } catch (err: any) {
@@ -201,10 +205,15 @@ export default function TemplateCreatePage() {
             <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
               <h2 className="font-medium text-slate-800">基本設定</h2>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">考試標題</label>
+                <label
+                  htmlFor="template-title"
+                  className="block text-sm font-medium text-slate-700 mb-1"
+                >
+                  考試標題
+                </label>
                 <input
+                  id="template-title"
                   type="text"
-                  aria-label="考試標題"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="例如：後端工程師初試卷"
@@ -212,10 +221,14 @@ export default function TemplateCreatePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label
+                  htmlFor="template-duration"
+                  className="block text-sm font-medium text-slate-700 mb-1"
+                >
                   測驗時長（分鐘）
                 </label>
                 <input
+                  id="template-duration"
                   type="number"
                   aria-label="測驗時長"
                   min={1}
@@ -324,12 +337,15 @@ export default function TemplateCreatePage() {
                     ))}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                    <label
+                      htmlFor="score-weight"
+                      className="block text-sm font-medium text-slate-700 mb-1"
+                    >
                       每題配分
                     </label>
                     <input
+                      id="score-weight"
                       type="number"
-                      aria-label="每題配分"
                       min={1}
                       value={randomScoreWeight}
                       onChange={(e) => setRandomScoreWeight(Number(e.target.value))}
@@ -354,13 +370,10 @@ export default function TemplateCreatePage() {
                   disabled={submitting}
                   className="px-8 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all shadow-lg shadow-blue-100"
                 >
-                  {submitting
-                    ? isEditMode
-                      ? "更新中..."
-                      : "建立中..."
-                    : isEditMode
-                      ? "更新模板"
-                      : "建立模板"}
+                  {(() => {
+                    if (submitting) return isEditMode ? "更新中..." : "建立中...";
+                    return isEditMode ? "更新模板" : "建立模板";
+                  })()}
                 </button>
               </div>
             </div>

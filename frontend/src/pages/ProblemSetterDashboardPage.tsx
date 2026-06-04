@@ -9,7 +9,7 @@ import { ROUTES } from "../config/routes";
 
 type DifficultyFilter = Difficulty | "all";
 
-function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
+function DifficultyBadge({ difficulty }: Readonly<{ difficulty: Difficulty }>) {
   return (
     <span
       className={`text-xs font-medium px-2 py-0.5 rounded-full ${DIFFICULTY_BADGE_COLOR[difficulty]}`}
@@ -76,15 +76,16 @@ export default function ProblemSetterDashboardPage() {
           </button>
         </div>
 
-        {loading ? (
+        {loading && (
           <div className="rounded-3xl border border-slate-200 bg-white px-6 py-8 text-center text-slate-600 shadow-sm">
             讀取中，請稍候...
           </div>
-        ) : error ? (
+        )}
+        {!loading && error && (
           <div className="rounded-3xl border border-rose-200 bg-rose-50 px-6 py-6 text-base text-rose-700 shadow-sm">
             {error}
           </div>
-        ) : null}
+        )}
 
         <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-slate-100 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">

@@ -135,7 +135,7 @@ export default function ExamResultPage() {
               </div>
               <div className="flex gap-6 text-sm text-slate-600">
                 <span>
-                  總分：
+                  總分：{" "}
                   <span className="font-medium text-slate-800">
                     {result.totalScore} / {result.maxScore}
                   </span>

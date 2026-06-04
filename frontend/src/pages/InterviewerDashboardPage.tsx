@@ -51,7 +51,7 @@ const RECORD_TABS: { value: RecordTab; label: string }[] = [
   { value: "ended", label: "已結束" },
 ];
 
-function StatusBadge({ status }: { status: ExamStatus }) {
+function StatusBadge({ status }: Readonly<{ status: ExamStatus }>) {
   return (
     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLOR[status]}`}>
       {STATUS_LABEL[status]}
@@ -67,7 +67,7 @@ const VIOLATION_LABEL: Record<string, string> = {
   copy: "複製題目",
 };
 
-function SessionCard({ result }: { result: SessionResult }) {
+function SessionCard({ result }: Readonly<{ result: SessionResult }>) {
   const navigate = useNavigate();
   const name = result.candidate.displayName ?? result.candidate.username;
   const [violations, setViolations] = useState<ExamViolation[] | null>(null);
@@ -129,11 +129,11 @@ function SessionCard({ result }: { result: SessionResult }) {
 
       {showViolations && (
         <div className="mt-3 pt-3 border-t border-slate-100">
-          {loadingViolations ? (
-            <p className="text-xs text-slate-400">載入中…</p>
-          ) : violations === null || violations.length === 0 ? (
+          {loadingViolations && <p className="text-xs text-slate-400">載入中…</p>}
+          {!loadingViolations && (violations === null || violations.length === 0) && (
             <p className="text-xs text-slate-400">無異常行為紀錄</p>
-          ) : (
+          )}
+          {!loadingViolations && violations !== null && violations.length > 0 && (
             <div className="space-y-1">
               <p className="text-xs font-semibold text-slate-500 mb-1">
                 共 {violations.length} 筆異常行為
@@ -258,12 +258,13 @@ export default function InterviewerDashboardPage() {
     await loadDashboardData();
   }
 
-  const filteredRecords =
-    recordTab === "all"
-      ? results
-      : recordTab === "ended"
-        ? results.filter((r) => r.status === "submitted" || r.status === "expired")
-        : results.filter((r) => r.status === recordTab);
+  function getFilteredRecords(): typeof results {
+    if (recordTab === "all") return results;
+    if (recordTab === "ended")
+      return results.filter((r) => r.status === "submitted" || r.status === "expired");
+    return results.filter((r) => r.status === recordTab);
+  }
+  const filteredRecords = getFilteredRecords();
   const assignableCandidates = getAssignableCandidates(candidates, assignmentSessions);
 
   return (
@@ -418,7 +419,9 @@ export default function InterviewerDashboardPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => void handleDeleteTemplate(t.id)}
+                                  onClick={() => {
+                                    handleDeleteTemplate(t.id);
+                                  }}
                                   className="text-xs font-medium text-red-500 hover:text-red-700"
                                 >
                                   刪除
@@ -497,6 +500,7 @@ export default function InterviewerDashboardPage() {
                           return (
                             <label
                               key={candidate.id}
+                              aria-label={`選擇考生 ${name}`}
                               className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
                             >
                               <span>

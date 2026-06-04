@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "child_process";
 import fs from "fs-extra";
 import path from "path";
 import { prepareSandboxWorkDir, truncateUtf8 } from "../sandbox";
-import { classifyVerdict, parseIsolateMeta, type Verdict } from "../meta-parser";
+import { classifyVerdict, parseIsolateMeta } from "../meta-parser";
 import { RootfsResolver, RootfsNotReadyError } from "../rootfs-resolver";
 
 // Isolate itself failed to set up / tear down the sandbox (vs. candidate
@@ -198,7 +198,7 @@ export class IsolateEngine implements SandboxEngine {
       }
 
       return {
-        verdict: verdict as Verdict,
+        verdict,
         stdout,
         stderr,
         runtimeMs: classification.runtimeMs,

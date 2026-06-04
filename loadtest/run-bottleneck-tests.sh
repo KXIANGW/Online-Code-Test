@@ -54,22 +54,22 @@ fi
 # ── Seed helpers ─────────────────────────────────────────────────────────────
 
 seed_submit() {
-  echo "[bottleneck] seeding submit tokens via seed.ts ..."
+  echo "[bottleneck] seeding submit tokens via seed.ts (N=${VUS}) ..."
   if [[ "$DRY_RUN" == "true" ]]; then
-    echo "[bottleneck] dry-run: BASE_URL=${BASE_URL} npx tsx seed.ts"
+    echo "[bottleneck] dry-run: N=${VUS} BASE_URL=${BASE_URL} npx tsx seed.ts"
     return
   fi
-  ( cd "${LOADTEST_DIR}" && BASE_URL="$BASE_URL" npx tsx seed.ts )
+  ( cd "${LOADTEST_DIR}" && N="$VUS" BASE_URL="$BASE_URL" npx tsx seed.ts )
   echo "[bottleneck] submit seed complete → ${LOADTEST_DIR}/.session-tokens.json"
 }
 
 seed_start() {
-  echo "[bottleneck] seeding start tokens via seed-start.ts ..."
+  echo "[bottleneck] seeding start tokens via seed-start.ts (N=${VUS}) ..."
   if [[ "$DRY_RUN" == "true" ]]; then
-    echo "[bottleneck] dry-run: BASE_URL=${BASE_URL} npx tsx seed-start.ts"
+    echo "[bottleneck] dry-run: N=${VUS} BASE_URL=${BASE_URL} npx tsx seed-start.ts"
     return
   fi
-  ( cd "${LOADTEST_DIR}" && BASE_URL="$BASE_URL" npx tsx seed-start.ts )
+  ( cd "${LOADTEST_DIR}" && N="$VUS" BASE_URL="$BASE_URL" npx tsx seed-start.ts )
   echo "[bottleneck] start seed complete → ${LOADTEST_DIR}/.start-tokens.json"
 }
 

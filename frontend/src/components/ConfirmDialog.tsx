@@ -20,7 +20,7 @@ export function ConfirmDialog({
   danger = true,
   onConfirm,
   onCancel,
-}: ConfirmDialogProps) {
+}: Readonly<ConfirmDialogProps>) {
   return (
     <Dialog open={open} onClose={onCancel} className="relative z-50">
       <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
