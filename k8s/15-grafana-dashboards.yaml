@@ -1314,7 +1314,7 @@ data:
               },
               "targets": [
                 {
-                  "expr": "sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\", status=\"5xx\"}[1m])) / clamp_min(sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m])), 1)",
+                  "expr": "(sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\", status=\"5xx\"}[1m])) or (sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m])) * 0)) / clamp_min(sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m])), 1)",
                   "refId": "A",
                   "legendFormat": "{{node}}",
                   "datasource": {
@@ -1491,7 +1491,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(rate(http_request_duration_seconds_count{job=\"backend\", status=\"5xx\"}[5m])) / clamp_min(sum(rate(http_request_duration_seconds_count{job=\"backend\"}[5m])), 1)",
+              "expr": "(sum(rate(http_request_duration_seconds_count{job=\"backend\", status=\"5xx\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_request_duration_seconds_count{job=\"backend\"}[5m])), 1)",
               "refId": "A",
               "datasource": {
                 "type": "prometheus",

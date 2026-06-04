@@ -210,7 +210,7 @@
           "description": "Should stay near zero during the node-down drill — proves the LB reroutes without user-visible errors.",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
           "targets": [
-            { "expr": "sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\", status=\"5xx\"}[1m])) / clamp_min(sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m])), 1)", "refId": "A", "legendFormat": "{{node}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
+            { "expr": "(sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\", status=\"5xx\"}[1m])) or (sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m])) * 0)) / clamp_min(sum by (node) (rate(http_request_duration_seconds_count{job=\"backend\"}[1m])), 1)", "refId": "A", "legendFormat": "{{node}}", "datasource": { "type": "prometheus", "uid": "oct-prometheus" } }
           ],
           "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 20 } } }
         },
