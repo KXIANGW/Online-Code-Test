@@ -173,44 +173,44 @@ Dashboard：http://localhost:3001/d/oct-demo/oct-demo-e28094-100-concurrent
 **執行（headless 驅動腳本，會自動建帳號、提交、輪詢 verdict）**：
 
 ```bash
-make demo-malicious                                 # 本地
-OCT_ADMIN_PASSWORD='...' make demo-malicious ENV=prod   # k3s 生產（root 登入）
+make demo-malicious                                      # 本地
+OCT_ADMIN_PASSWORD='...' make demo-malicious ENV=prod    # k3s 生產（root 登入）
 ```
 
-腳本會印出 `fixture -> verdict` 對照表。**現場講解**：同時開 Grafana **API RED** 板，指出連續提交惡意程式期間 `Global error ratio (5xx)` 維持 0%、`Global p95` 沒飆 → 證明壞 code 被關在判題沙箱，污染不到 BFF。
-
-> 也可改用 UI 現場操作：以 interviewer 建一個 candidate → 用 candidate 登入 → 在編輯器貼上各 fixture 提交 → 看 verdict。（superuser/root 本身不能交題，務必用 candidate 帳號提交。）UI 手動建立的帳號清理見下方 `--include-loadtest` 或手動指定。
-
-> **統一規則**：以下測試指令不加 = 本地、加 `ENV=prod` = 打 k3s 生產 server。
-> 差別只在本地需先 `make demo-up` 起 stack（或用 `make demo-100` 一鍵）；k3s 已部署、由真 KEDA 自動擴縮，直接 seed + load 即可。`ENV=prod` 須先 `export OCT_ADMIN_PASSWORD='...'`。
+腳本會印出 `fixture -> verdict` 對照表：全部為 TLE/MLE/RE/WA、無 AC、無系統 5xx 即為佐證（惡意 code 被關在判題沙箱，污染不到主系統）。注意 superuser/root 本身不能交題，腳本一律以建立出的 candidate 帳號提交。
 
 ### Demo B — 高並發提交不塞車（KEDA 自動擴縮）
 
 **證明**：100 人同時提交，靠 RabbitMQ 緩衝 + KEDA 把 worker 從 1 擴到 5 來消化，submit API 維持可用。
 
-```bash
-# 本地（一鍵：起 stack + seed + scale-watcher + k6 burst）
-make demo-100
-
-# k3s 生產（測試指令同上，只多 ENV=prod；無需 up/watch，KEDA 真實擴縮）
-export OCT_ADMIN_PASSWORD='...'
-make demo-seed ENV=prod
-make demo-load ENV=prod
-```
-
-**現場講解**：開 **Judge Pipeline & Scaling** 板，指出 (1) `judge.tasks` 佇列深度先升後被吸收清空；(2) worker pod 數 1→5；(3) submit API p95 維持。結論：突發 100 人同時交沒有塞車也沒當機。
-
 ### Demo C — 耗資源程式碼的整體韌性
 
 **證明**：把提交內容換成會 TLE 的程式，worker CPU 飽和，但 backend / 前端仍正常 → 判題負載被隔離在 worker pool。
 
+### 壓測流程指令（local / prod）
+
+**統一規則**：測試指令不加 = 本地、加 `ENV=prod` = 打 k3s 生產 server。本地多一步起 stack；k3s 已部署、由真 KEDA 自動擴縮，直接 seed + load 即可。`ENV=prod` 須先 `export OCT_ADMIN_PASSWORD='...'`。
+
+**本地（docker-compose，`scale-watcher` 模擬擴縮）**：
+
 ```bash
-# 沿用 Demo B 的 stack / k3s 與 seed，改灌 TLE 工作負載
-make demo-load DEMO_FIXTURE=tle.py              # 本地
-make demo-load ENV=prod DEMO_FIXTURE=tle.py     # k3s
+make demo-100                                   # B：一鍵 起 stack + seed + watcher + k6 burst
+make demo-load DEMO_FIXTURE=tle.py              # C：沿用同一 stack 與 seed，改灌 TLE
+make clean-accounts-apply INCLUDE_LOADTEST=1    # 清掉本次建立的帳號
+make demo-down                                  # 收 stack + 清 session tokens
 ```
 
-**現場講解**：開 **Load Balancing & Resilience** 板，指出 backend / 前端服務在 worker 飽和期間仍維持回應 → 一個面試者交了耗資源的爛 code，不會拖垮別人的考試。
+**生產 k3s（直接打 https://ikmlab.cs.nthu.edu.tw/online_code_test ，真 KEDA 擴縮）**：
+
+```bash
+export OCT_ADMIN_PASSWORD='...'                  # root 密碼，勿寫進檔案
+make demo-seed ENV=prod DEMO_N=30                # 建應試者 + 考場（生產建議 N=20~30）
+make demo-load ENV=prod DEMO_VUS=30              # B：高並發提交
+make demo-load ENV=prod DEMO_VUS=30 DEMO_FIXTURE=tle.py   # C：耗資源提交
+make clean-accounts-apply ENV=prod INCLUDE_LOADTEST=1     # 清掉本次建立的帳號
+```
+
+> 現場講解講稿、以及每段對應「該看 Grafana 哪幾張圖 / 哪個 panel」整理在本機 `tmp_node.md`（個人筆記，未納入版控）。
 
 ### 測試帳號清理（重要）
 
