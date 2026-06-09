@@ -204,11 +204,26 @@ make demo-down                                  # 收 stack + 清 session tokens
 
 ```bash
 export OCT_ADMIN_PASSWORD='...'                  # root 密碼，勿寫進檔案
-make demo-seed ENV=prod DEMO_N=30                # 建應試者 + 考場（生產建議 N=20~30）
-make demo-load ENV=prod DEMO_VUS=30              # B：高並發提交
-make demo-load ENV=prod DEMO_VUS=30 DEMO_FIXTURE=tle.py   # C：耗資源提交
+make demo-seed ENV=prod DEMO_N=60                # 建應試者 + 考場
+make demo-load ENV=prod DEMO_VUS=60 DEMO_FIXTURE=tle.py   # 高並發 + 耗資源（TLE）
 make clean-accounts-apply ENV=prod INCLUDE_LOADTEST=1     # 清掉本次建立的帳號
 ```
+
+> N 太小（如 20）佇列會在新 worker pod Ready 前就被單一 worker 排空，只看得到 KEDA `desired` 升、看不到實際副本爬上去；`N=60 VUS=60` 可看到實際副本 **1→5**。
+> ⚠ 實測：冷啟動的新 worker pod 有相當比例提交回 `system_error` / `CE`（語言 rootfs / isolate box 在新 pod 上尚未就緒的疑慮），原本的暖 worker 才正常回 TLE。要在 demo 呈現「乾淨擴縮」前，先在 server 上查新 worker pod 日誌確認此問題。
+
+**壓測即時觀測（直接查 Prometheus，不必盯 Grafana）**：
+
+```bash
+G='https://ikmlab.cs.nthu.edu.tw/online_code_test/grafana/api/datasources/proxy/uid/oct-prometheus/api/v1/query'
+q(){ curl -s -u "root:$OCT_ADMIN_PASSWORD" "$G" --data-urlencode "query=$1"; echo; }
+q 'sum(rabbitmq_queue_messages{queue="judge.tasks"})'                          # 佇列深度：應衝高再排空
+q 'count(count by (worker)(judge_worker_info))'                               # worker 實際副本：1→5
+q 'max(kube_horizontalpodautoscaler_status_desired_replicas{namespace="oct",horizontalpodautoscaler=~".*worker.*"})'  # KEDA desired
+q 'sum(judge_verdicts_total{verdict="TLE"})'                                   # TLE 累計：應達 N
+```
+
+對應 Grafana **Judge Pipeline & Scaling**（`/d/oct-judge-pipeline`）：Queue depth、Worker replicas、Worker desired vs current (KEDA/HPA)、Verdict rate；主系統健康看 **API RED** 的 5xx ratio 應全程 0%。
 
 > 現場講解講稿、以及每段對應「該看 Grafana 哪幾張圖 / 哪個 panel」整理在本機 `tmp_node.md`（個人筆記，未納入版控）。
 
