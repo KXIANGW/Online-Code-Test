@@ -32,7 +32,7 @@ export default defineConfig({
         "src/server.ts",
         "node_modules/**",
       ],
-      reporter: ["text", "lcov"],
+      reporter: ["text", "lcov", "json-summary"],
       thresholds: {
         statements: 85,
         branches: 85,
