@@ -28,7 +28,7 @@ export default defineConfig({
         "node_modules/**",
         "dist/**",
       ],
-      reporter: ["text", "lcov"],
+      reporter: ["text", "lcov", "json-summary"],
       thresholds: {
         statements: 85,
         branches: 85,

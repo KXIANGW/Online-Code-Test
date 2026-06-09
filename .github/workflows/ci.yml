@@ -25,6 +25,13 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run coverage
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-frontend
+          path: frontend/coverage/coverage-summary.json
+          retention-days: 7
       - run: npm run build
 
   backend:
@@ -107,6 +114,13 @@ jobs:
           TEST_RABBITMQ_URL: amqp://guest:guest@localhost:5672
         run: npm run coverage
 
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend
+          path: backend/coverage/coverage-summary.json
+          retention-days: 7
       - run: npm run build
 
   worker:
@@ -128,6 +142,13 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run coverage
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-worker
+          path: worker/coverage/coverage-summary.json
+          retention-days: 7
       - run: npm run build
 
   worker-puller:
@@ -149,7 +170,52 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run coverage
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-worker-puller
+          path: worker/puller/coverage/coverage-summary.json
+          retention-days: 7
       - run: npm run build
+
+  coverage-summary:
+    name: Coverage Summary
+    needs: [frontend, backend, worker, worker-puller]
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          path: coverage-reports/
+
+      - name: Generate combined coverage summary
+        run: |
+          node - << 'SCRIPT'
+          const fs = require('fs');
+          const modules = [
+            { name: 'Frontend',      file: 'coverage-reports/coverage-frontend/coverage-summary.json' },
+            { name: 'Backend',       file: 'coverage-reports/coverage-backend/coverage-summary.json' },
+            { name: 'Worker',        file: 'coverage-reports/coverage-worker/coverage-summary.json' },
+            { name: 'Worker Puller', file: 'coverage-reports/coverage-worker-puller/coverage-summary.json' },
+          ];
+          const fmt = n => n.toFixed(1) + '%';
+          const icon = n => n >= 85 ? '✅' : '❌';
+          const rows = modules.map(({ name, file }) => {
+            if (!fs.existsSync(file)) return `| ${name} | — | — | — | — |`;
+            const t = JSON.parse(fs.readFileSync(file, 'utf8')).total;
+            return `| ${name} | ${fmt(t.lines.pct)} ${icon(t.lines.pct)} | ${fmt(t.statements.pct)} ${icon(t.statements.pct)} | ${fmt(t.branches.pct)} ${icon(t.branches.pct)} | ${fmt(t.functions.pct)} ${icon(t.functions.pct)} |`;
+          });
+          const md = [
+            '## 📊 Code Coverage Summary',
+            '',
+            '| Module | Lines | Statements | Branches | Functions |',
+            '|--------|-------|------------|----------|-----------|',
+            ...rows,
+          ].join('\n');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + '\n');
+          SCRIPT
 
   e2e:
     name: E2E — API + Browser tests
