@@ -216,15 +216,26 @@ docker compose -f docker-compose.sonar.yml --profile scan run --rm scanner
 
 執行 scanner 前需要先在 SonarQube UI 產生 `SONAR_TOKEN`。完整流程請看 [docs/Sonar_RUN.md](docs/Sonar_RUN.md)。
 
-## 示範負載測試
+## 示範與壓測
+
+所有示範 / 壓測指令集中在 **[loadtest/](loadtest/)**（`loadtest/Makefile`）。`make -C loadtest help` 看完整選單，步驟、Grafana 觀察重點與講稿在 [loadtest/README.md](loadtest/README.md#安全與穩定性示範demo-abc)。針對需求的三項 Advanced Requirement：
+
+| Demo | 證明什麼 | 一鍵指令 |
+| --- | --- | --- |
+| **A 惡意程式碼隔離** | 上傳的惡意 / 濫用程式碼被沙箱關住（TLE/MLE/RE/WA），主系統不受影響、不外洩 | `make demo-malicious` |
+| **B 高並發提交不塞車** | 100 人同時提交，靠 MQ 緩衝 + KEDA 自動擴縮消化，不當機 | `make demo-100`（本地）／`make -C loadtest demo-load ENV=prod`（k3s） |
+| **C 耗資源程式碼韌性** | 大量 TLE 提交跑滿上限，判題負載被隔離在 worker，其他服務仍正常 | `make -C loadtest demo-load DEMO_FIXTURE=tle.py`（加 `ENV=prod` 打 k3s） |
+
+兩種壓測對象：**本地** docker-compose（`scale-watcher` 模擬擴縮）與**生產 k3s**（`ENV=prod`，真 KEDA 自動擴縮，需先 `export OCT_ADMIN_PASSWORD=...`），搭配生產 Grafana 觀察。
+
+**測試帳號清理**：Demo A / 生產 seed 建立的帳號會記進 `loadtest/.demo-accounts.json`（manifest）；清理只依 manifest 比對，**不會誤刪先前殘留的帳號**。
 
 ```bash
-make demo-100        # 啟動 stack、產生 100 位應試者資料、執行 watcher 與 k6 burst test
-make demo-urls       # 列印 Grafana、Prometheus、RabbitMQ、cAdvisor 等觀測網址
-make demo-down       # 停止 stack、刪除 volumes、清理負載測試狀態
+make clean-accounts            # dry-run：先看會刪什麼
+make clean-accounts-apply      # 確認後才真的刪（生產加 ENV=prod INCLUDE_LOADTEST=1）
 ```
 
-示範設定、k6 腳本與 Grafana 預期行為請參閱 [loadtest/README.md](loadtest/README.md)。
+> `DELETE` 為**軟刪除**（設 `deletedAt`）：帳號列表會看不到，但資料列與壓測產生的提交 / 考場仍留在 DB；要物理清除需在 server 端進 postgres。
 
 ## 元件文件
 
@@ -236,5 +247,5 @@ make demo-down       # 停止 stack、刪除 volumes、清理負載測試狀態
 | [worker/puller/README.md](worker/puller/README.md) | Kubernetes Worker 使用的每節點語言 rootfs 拉取器 |
 | [infra/postgres/README.md](infra/postgres/README.md) | PostgreSQL schema、seed data、scenario data 與測試資料庫設定 |
 | [infra/redis/README.md](infra/redis/README.md) | Redis cache、草稿與 WebSocket pub/sub 行為 |
-| [loadtest/README.md](loadtest/README.md) | 100 人並發提交示範與 autoscaling 監視器 |
+| [loadtest/README.md](loadtest/README.md) | 示範與壓測：Demo A 惡意程式碼隔離、Demo B/C 本地與 k3s 壓測、KEDA 監視器、測試帳號清理 |
 | [docs/Sonar_RUN.md](docs/Sonar_RUN.md) | SonarQube 環境架設、coverage 匯入、scanner 與 quality gate |
