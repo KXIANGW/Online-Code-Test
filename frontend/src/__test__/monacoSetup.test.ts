@@ -31,9 +31,7 @@ describe("configureMonaco", () => {
     configureMonaco();
 
     // expect
-    expect(
-      (self as unknown as { MonacoEnvironment: MonacoEnv }).MonacoEnvironment,
-    ).toBeDefined();
+    expect((self as unknown as { MonacoEnvironment: MonacoEnv }).MonacoEnvironment).toBeDefined();
   });
 
   it("should provide a Worker from getWorker so language features run locally", async () => {
