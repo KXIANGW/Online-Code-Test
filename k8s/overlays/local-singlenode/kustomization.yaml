@@ -1,0 +1,78 @@
+# 單節點 k3s overlay — 用來在本機重現「同節點多個 worker pod 併發判題」的
+# isolate box-id 衝突 bug，並驗證修復。
+#
+# 與 server 差異（刻意精簡，只保留重現所需）：
+#   - 砍掉 nodeSelector(oct-role)：單節點不可能同時是 app/data/judge。
+#   - worker 靜態 replicas=3（不裝 KEDA；bug 是「同節點多 pod 併發」造成，
+#     與「誰觸發擴縮」無關）。worker 無 podAntiAffinity，3 個會共置同一節點。
+#   - 用本地已 build 的映像 oct-worker:latest / oct-backend:latest（跳過 ghcr）。
+#   - rootfs 直接指到本機 /tmp/oct-rootfs（已由 make isolate-rootfs 備好），
+#     跳過 language-puller DaemonSet。
+#   - 砍掉 frontend / prometheus / grafana / cadvisor / kube-state-metrics。
+#   - backend replicas=1（單節點下 podAntiAffinity 會卡住第 2 個 pod）。
+#
+# 用法（叢集起來後）：
+#   kubectl apply -k k8s/overlays/local-singlenode
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../00-namespace.yaml
+  - ../../01-secrets.yaml
+  - ../../02-configmaps.yaml
+  - ../../03-postgres-init-cm.yaml
+  - ../../04-postgres.yaml
+  - ../../05-rabbitmq.yaml
+  - ../../06-redis.yaml
+  - ../../07-backend.yaml
+  - ../../08-worker.yaml
+
+patches:
+  # 1) 拿掉所有 workload 的 nodeSelector（單節點）。
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+
+  # 2) worker：3 副本同節點共置、本地映像、rootfs 指到 /tmp/oct-rootfs。
+  - target:
+      kind: Deployment
+      name: worker
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: oct-worker:boxfix
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: remove
+        path: /spec/template/spec/imagePullSecrets
+      - op: replace
+        path: /spec/template/spec/volumes/0/hostPath/path
+        value: /tmp/oct-rootfs
+
+  # 3) backend：1 副本、本地映像。
+  - target:
+      kind: Deployment
+      name: backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: oct-backend:latest
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: remove
+        path: /spec/template/spec/imagePullSecrets
