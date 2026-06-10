@@ -216,26 +216,52 @@ docker compose -f docker-compose.sonar.yml --profile scan run --rm scanner
 
 執行 scanner 前需要先在 SonarQube UI 產生 `SONAR_TOKEN`。完整流程請看 [docs/Sonar_RUN.md](docs/Sonar_RUN.md)。
 
-## 示範與壓測
+## 示範與壓測（實體 demo runbook）
 
-所有示範 / 壓測指令集中在 **[loadtest/](loadtest/)**（`loadtest/Makefile`）。`make -C loadtest help` 看完整選單，步驟、Grafana 觀察重點與講稿在 [loadtest/README.md](loadtest/README.md#安全與穩定性示範demo-abc)。針對需求的三項 Advanced Requirement：
+對應需求三項 Advanced Requirement。每段可**直接複製**;**📊** 標的是該打開的 Grafana 板與要指的 panel。指令集中在 `loadtest/Makefile`（`make -C loadtest help`）。
 
-| Demo | 證明什麼 | 一鍵指令 |
-| --- | --- | --- |
-| **A 惡意程式碼隔離** | 上傳的惡意 / 濫用程式碼被沙箱關住（TLE/MLE/RE/WA），主系統不受影響、不外洩 | `make demo-malicious` |
-| **B 高並發提交不塞車** | 100 人同時提交，靠 MQ 緩衝 + KEDA 自動擴縮消化，不當機 | `make demo-100`（本地）／`make -C loadtest demo-load ENV=prod`（k3s） |
-| **C 耗資源程式碼韌性** | 大量 TLE 提交跑滿上限，判題負載被隔離在 worker，其他服務仍正常 | `make -C loadtest demo-load DEMO_FIXTURE=tle.py`（加 `ENV=prod` 打 k3s） |
+**生產 Grafana**（demo 對象 = 已部署的 k3s）：`https://ikmlab.cs.nthu.edu.tw/online_code_test/grafana/`
+三張板：`d/oct-api-red`（系統健康）、`d/oct-judge-pipeline`（佇列+擴縮）、`d/oct-lb-resilience`（跨節點分布）。每張板右上角設 **Last 15 min / refresh 5s**。
 
-兩種壓測對象：**本地** docker-compose（`scale-watcher` 模擬擴縮）與**生產 k3s**（`ENV=prod`，真 KEDA 自動擴縮，需先 `export OCT_ADMIN_PASSWORD=...`），搭配生產 Grafana 觀察。
-
-**測試帳號清理**：Demo A / 生產 seed 建立的帳號會記進 `loadtest/.demo-accounts.json`（manifest）；清理只依 manifest 比對，**不會誤刪先前殘留的帳號**。
-
+**前置（打 k3s 生產一次即可）**：
 ```bash
-make clean-accounts            # dry-run：先看會刪什麼
-make clean-accounts-apply      # 確認後才真的刪（生產加 ENV=prod INCLUDE_LOADTEST=1）
+export OCT_ADMIN_PASSWORD='<root 密碼>'
 ```
 
-> `DELETE` 為**軟刪除**（設 `deletedAt`）：帳號列表會看不到，但資料列與壓測產生的提交 / 考場仍留在 DB；要物理清除需在 server 端進 postgres。
+### Demo A — 惡意 / 濫用程式碼被沙箱隔離
+> 證明：上傳的惡意程式（無限迴圈 / 記憶體炸彈 / fork bomb / 對外連線 / 讀主機檔 / 提權 syscall）全被 isolate + seccomp 關住，回 TLE/MLE/RE/WA，**主系統不受影響、不外洩**。
+```bash
+make demo-malicious ENV=prod          # 本地去掉 ENV=prod
+```
+📊 **API RED**（`d/oct-api-red`）：提交期間 **Global error ratio (5xx) 維持 0%**、**Global p95** 不飆 → 壞 code 被關在判題沙箱，污染不到 BFF。腳本另印 `fixture → verdict` 對照表（全非 AC）。
+
+### Demo B — 高並發提交不塞車（KEDA 自動擴縮）
+> 證明：60 人同時提交，靠 RabbitMQ 緩衝 + KEDA 把 worker **1→5** 消化，submit API 維持可用。
+```bash
+make -C loadtest demo-seed ENV=prod DEMO_N=60
+make -C loadtest demo-load ENV=prod DEMO_VUS=60 DEMO_FIXTURE=tle.py
+```
+📊 **Judge Pipeline & Scaling**（`d/oct-judge-pipeline`）：
+- **Queue depth (judge.tasks)**：衝到 ~60 → 被吃回 0
+- **Worker replicas** / **Worker desired vs current (KEDA / HPA)**：**1 → 5**
+- **Submit API p95 (s)**：維持低 ·  **Verdict rate**：上升
+
+### Demo C — 耗資源程式碼的整體韌性
+> 證明：上一段那批 TLE 程式跑滿時限、worker CPU 飽和，但 backend / 前端**完全不受影響** → 判題重負載被隔離在 worker pool。（沿用 Demo B 同一次壓測,切到另一張板看即可。）
+
+📊 **Load Balancing & Resilience**（`d/oct-lb-resilience`）：
+- **5xx error ratio by node**：全程 **0%**
+- **Backend request rate by node / by pod**：照常服務 ·  **Global p95 latency**：穩定
+
+📊 **Judge Pipeline** 的 **Worker pool CPU %** 飽和、**Verdict totals** 全進 TLE。
+
+### 收尾清理（務必）
+```bash
+make clean-accounts-apply ENV=prod INCLUDE_LOADTEST=1   # 只刪本次建立的帳號（軟刪除）
+```
+> 只依 manifest 比對,**不會誤刪先前殘留帳號**。`DELETE` 為軟刪除;壓測產生的提交資料列仍留 DB,需 server 端進 postgres 才能物理清除。
+
+> 更深入的本地 docker-compose 流程與變數在 [loadtest/README.md](loadtest/README.md#安全與穩定性示範demo-abc)。
 
 ## 元件文件
 
