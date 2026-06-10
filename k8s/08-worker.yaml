@@ -91,6 +91,16 @@ spec:
               value: "runc"
             - name: NODE_ENV
               value: "production"
+            # Per-Pod-unique isolate box-id source. Each isolate box maps to a
+            # node-shared cgroup /sys/fs/cgroup/box-<id>; co-located workers must
+            # not share an id or their --init/--cleanup race ("Cannot remove
+            # control group box-0: Device or resource busy") → spurious
+            # CE/system_error once KEDA scales the pool. The worker derives the
+            # box-id from POD_IP's last octet (unique within the node /24 CIDR).
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
           ports:
             - containerPort: 8080
           readinessProbe:

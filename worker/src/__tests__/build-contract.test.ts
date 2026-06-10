@@ -55,6 +55,7 @@ describe("sandbox image build contract", () => {
     const repoRoot = path.resolve(__dirname, "../../..");
     const rootMakefile = fs.readFileSync(path.join(repoRoot, "Makefile"), "utf8");
     const workerMakefile = fs.readFileSync(path.join(repoRoot, "worker/Makefile"), "utf8");
+    const loadtestMakefile = fs.readFileSync(path.join(repoRoot, "loadtest/Makefile"), "utf8");
     const languagesYaml = fs.readFileSync(
       path.join(repoRoot, "worker/sandbox/languages.yaml"),
       "utf8",
@@ -68,7 +69,11 @@ describe("sandbox image build contract", () => {
     expect(rootMakefile).toContain("$(MAKE) -C worker build-sandbox-images");
     expect(rootMakefile).toContain("$(MAKE) -C worker build-isolate-rootfs");
     expect(rootMakefile).toContain("up: bootstrap isolate-rootfs");
-    expect(rootMakefile).toContain("demo-up: bootstrap isolate-rootfs");
+    // Demo targets now live in loadtest/Makefile (root delegates via
+    // `$(MAKE) -C loadtest $@`); demo-up there still prepares the isolate
+    // rootfs before bringing up the compose stack that runs the Worker.
+    expect(rootMakefile).toContain("$(MAKE) -C loadtest $@");
+    expect(loadtestMakefile).toContain("$(MAKE) -C $(ROOT) bootstrap isolate-rootfs");
     expect(workerMakefile).toMatch(/^build-language-images:/m);
     expect(workerMakefile).toContain("scripts/list-languages.mjs");
     // Legacy alias still resolves so existing callers don't break.

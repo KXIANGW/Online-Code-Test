@@ -1,7 +1,8 @@
 SHELL := /bin/bash
 
 .PHONY: bootstrap up up-build down logs ps clean rebuild psql sandbox-images isolate-rootfs dev test coverage help \
-        demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls EndtoEnd grafana-k8s-cm
+        demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls demo-malicious clean-accounts clean-accounts-apply \
+        EndtoEnd grafana-k8s-cm
 
 help:
 	@echo "Online Code Test"
@@ -20,14 +21,12 @@ help:
 	@echo "  make test           Run lint + test + build (mirrors CI)"
 	@echo "  make coverage       Run coverage for backend/frontend/worker/puller"
 	@echo ""
-	@echo "  Demo (Phase A+B+C — 100 concurrent observability):"
-	@echo "  make demo-up        Build sandbox rootfs, bring full stack + prom/grafana/cadvisor"
-	@echo "  make demo-seed      Provision 100 candidates + sessions (loadtest/seed.ts)"
-	@echo "  make demo-load      Run k6 burst of 100 concurrent submissions"
-	@echo "  make demo-watch     Run scale-watcher.sh (Ctrl-C to stop)"
-	@echo "  make demo-100       demo-up -> demo-seed -> watcher (bg) -> demo-load"
-	@echo "  make demo-down      docker compose down -v + remove session-tokens.json"
-	@echo "  make demo-urls      Print Grafana / Prometheus / RabbitMQ / cAdvisor URLs"
+	@echo "  Demo & load test (logic lives in loadtest/ — these delegate there):"
+	@echo "  make demo-100       Local one-shot: stack -> seed -> watcher -> k6 burst"
+	@echo "  make demo-down      Tear down local stack + remove session tokens"
+	@echo "  make demo-malicious Demo A: malicious-code isolation (sandbox + seccomp)"
+	@echo "  make clean-accounts Dry-run cleanup of demo-created accounts"
+	@echo "  make -C loadtest help   Full demo menu (local + k3s prod, Demo A/B/C)"
 	@echo "  make EndtoEnd       Run API+Browser E2E tests against real Docker services (make up first)"
 
 bootstrap:
@@ -81,77 +80,17 @@ isolate-rootfs:
 dev: bootstrap isolate-rootfs
 	docker compose up -d --build postgres rabbitmq redis backend worker
 
-# ── Demo: 100 concurrent observability ────────────────────────────────────
-# Pre-req:
-#   - .env exists (make bootstrap will create it).
-#   - The scenario problem PROBLEM_ID=1 from infra/postgres/10-scenarios.sql
-#     accepts an echo-style AC solution; if you swap it, also swap the
-#     fixtures source loadtest/fixtures/ac.py.
-#   - tsx (npx) on the host for `make demo-seed`. No global install needed.
-#   - 'jq' on the host for the scale-watcher.
-
-DEMO_VUS ?= 100
-DEMO_N ?= 100
-DEMO_BASE_URL ?= http://localhost:3000/api
-DEMO_FIXTURE ?= ac.py
-# Baseline replica count brought up by `make demo-up`. The autoscale demo
-# starts at 1 worker and lets scale-watcher fan out to MAX (default 5).
-WORKER_REPLICAS ?= 1
-
 grafana-k8s-cm: ## Regenerate k8s/15-grafana-dashboards.yaml from infra/grafana/dashboards/*.json
 	@python3 infra/grafana/gen-k8s-dashboards-cm.py
 
-demo-up: bootstrap isolate-rootfs
-	WORKER_REPLICAS=$(WORKER_REPLICAS) docker compose up -d --build --wait \
-	  --scale worker=$(WORKER_REPLICAS)
-
-demo-seed:
-	@v=$$(node -e 'console.log(parseInt(process.versions.node.split(".")[0]))' 2>/dev/null); \
-	  if [ -z "$$v" ] || [ "$$v" -lt 16 ]; then \
-	    echo "ERROR: seed.ts needs Node 16+ (tsx). Found: $$(node --version 2>/dev/null || echo none)." >&2; \
-	    echo "       Fix: 'nvm use' (the repo ships an .nvmrc) before running 'make demo-100'." >&2; \
-	    exit 1; \
-	  fi
-	cd loadtest && N=$(DEMO_N) BASE_URL=$(DEMO_BASE_URL) npx --yes tsx seed.ts
-
-demo-load:
-	docker run --rm --network oct_default \
-	  -v $(PWD)/loadtest:/scripts \
-	  -e BASE_URL=http://backend:3000/api \
-	  -e VUS=$(DEMO_VUS) \
-	  -e FIXTURE=$(DEMO_FIXTURE) \
-	  grafana/k6 run /scripts/k6-submit.js
-
-demo-watch:
-	./loadtest/scale-watcher.sh
-
-demo-100: demo-up
-	@echo "[demo-100] worker replicas: $(WORKER_REPLICAS) (scale-watcher will fan out to MAX=5)"
-	@$(MAKE) demo-seed
-	@echo "[demo-100] starting scale-watcher in background (logs -> /tmp/oct-scale-watcher.log)"
-	@nohup ./loadtest/scale-watcher.sh > /tmp/oct-scale-watcher.log 2>&1 &
-	@sleep 3
-	@$(MAKE) demo-load
-	@echo
-	@$(MAKE) demo-urls
-	@echo "[demo-100] watcher still running; 'pkill -f scale-watcher.sh' to stop."
-
-demo-down:
-	docker compose down -v
-	rm -f loadtest/.session-tokens.json
-	-pkill -f scale-watcher.sh 2>/dev/null || true
-
-demo-urls:
-	@echo "Frontend  : http://localhost:$${FRONTEND_PORT:-5173}"
-	@echo "Backend   : http://localhost:$${HOST_BACKEND_PORT:-3000}/api/health"
-	@echo "  metrics : http://localhost:$${HOST_BACKEND_PORT:-3000}/api/metrics"
-	@echo "Grafana   : http://localhost:$${HOST_GRAFANA_PORT:-3001}  (anonymous viewer; admin/oct_dev_grafana)"
-	@echo "  judge   : http://localhost:$${HOST_GRAFANA_PORT:-3001}/d/oct-judge-pipeline"
-	@echo "  lb      : http://localhost:$${HOST_GRAFANA_PORT:-3001}/d/oct-lb-resilience"
-	@echo "  red     : http://localhost:$${HOST_GRAFANA_PORT:-3001}/d/oct-api-red"
-	@echo "Prometheus: http://localhost:$${HOST_PROMETHEUS_PORT:-9090}/targets"
-	@echo "RabbitMQ  : http://localhost:$${HOST_RABBITMQ_MGMT_PORT:-15672}  (oct / oct_dev_password)"
-	@echo "cAdvisor  : http://localhost:$${HOST_CADVISOR_PORT:-8081}"
+# ── Demo & load test ────────────────────────────────────────────────────────
+# All demo / load-test logic lives in loadtest/Makefile (local docker-compose
+# + k3s prod, Demo A/B/C). These targets delegate so `make demo-*` keeps
+# working from the repo root. Command-line vars (DEMO_FIXTURE=..., ENV=prod,
+# OCT_ADMIN_PASSWORD=...) pass through to the sub-make automatically.
+# Full menu: `make -C loadtest help`  ·  details: loadtest/README.md
+demo-up demo-seed demo-load demo-watch demo-100 demo-down demo-urls demo-malicious clean-accounts clean-accounts-apply:
+	@$(MAKE) -C loadtest $@
 
 EndtoEnd: isolate-rootfs ## Run full E2E suite (API + Browser) against running Docker stack (run make up first)
 	@v=$$(node -e 'console.log(parseInt(process.versions.node.split(".")[0]))' 2>/dev/null); \

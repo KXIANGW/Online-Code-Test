@@ -71,7 +71,7 @@ RUN chmod 4755 /usr/local/bin/isolate \
       'cg_root = /sys/fs/cgroup' \
       'first_uid = 60000' \
       'first_gid = 60000' \
-      'num_boxes = 100' \
+      'num_boxes = 256' \
     > /usr/local/etc/isolate
 
 WORKDIR /app
